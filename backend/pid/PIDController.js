@@ -64,4 +64,4 @@ class PIDController {
     }
 }
 
-module.exports = PIDController;
+export default PIDController;

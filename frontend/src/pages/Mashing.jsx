@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Droplets, Zap, ShieldCheck, Timer, CheckCircle, Flame, Thermometer, ZoomIn, ZoomOut } from 'lucide-react';
@@ -16,7 +16,7 @@ const Mashing = () => {
 
     // Hooks
     const { sensors } = useSensors();
-    const { control, setHeater, setPump } = useControl();
+    const { control, setHeater, setPump, setPidMode, setPidTarget } = useControl();
 
     // Load recipe from localStorage
     const [recipeData, setRecipeData] = useState(null);
@@ -34,11 +34,11 @@ const Mashing = () => {
         }
     }, []);
 
-    const steps = recipeData?.steps?.map(s => ({
+    const steps = useMemo(() => recipeData?.steps?.map(s => ({
         name: s.name,
         temp: s.temp,
         duration: s.duration
-    })) || DEFAULT_STEPS;
+    })) || DEFAULT_STEPS, [recipeData]);
 
     const recipeName = recipeData?.name || 'IPA "Orange Sunshine"';
 
@@ -172,9 +172,31 @@ const Mashing = () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const handleStart = () => {
-        setIsStarted(!isStarted);
+    // Handle Auto Toggle
+    const toggleAuto = () => {
+        const nextState = !isStarted;
+        setIsStarted(nextState);
+        setPidMode(nextState);
+
+        if (nextState) {
+            // Set initial target based on current step
+            const currentStep = steps[activeStep];
+            if (currentStep) {
+                setPidTarget(currentStep.temp);
+            }
+        } else {
+            // If turning off auto, maybe set heater to 0? Or leave as is?
+            // Let's leave as is or set to 0 for safety
+            setHeater(0);
+        }
     };
+
+    // Update PID target when step changes
+    useEffect(() => {
+        if (isStarted && steps[activeStep]) {
+            setPidTarget(steps[activeStep].temp);
+        }
+    }, [activeStep, isStarted, steps, setPidTarget]);
 
     const currentStep = steps[activeStep];
     const targetTemp = currentStep?.temp || 65;
@@ -245,23 +267,52 @@ const Mashing = () => {
                         </div>
 
                         {/* Heater Control */}
-                        <div className="industrial-panel" style={{ padding: '2rem', position: 'relative' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>ТЭН</span>
-                                <Zap size={18} color={heaterPower > 0 ? 'var(--primary-color)' : '#444'} aria-hidden="true" />
+                        <div className="industrial-panel" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                            <div style={{ position: 'absolute', top: '10px', right: '10px' }}>
+                                <button
+                                    onClick={toggleAuto}
+                                    style={{
+                                        background: isStarted ? 'var(--accent-green)' : '#333',
+                                        color: isStarted ? '#000' : '#888',
+                                        border: 'none',
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    AUTO
+                                </button>
                             </div>
+
+                            <motion.div
+                                animate={{ height: `${heaterPower}%` }}
+                                style={{
+                                    position: 'absolute', bottom: 0, left: 0, right: 0,
+                                    background: 'linear-gradient(to top, rgba(255, 107, 0, 0.2), transparent)',
+                                    zIndex: 0, pointerEvents: 'none'
+                                }}
+                            />
+
+                            <Zap size={40} color={heaterPower > 0 ? "var(--primary-color)" : "#444"} style={{ zIndex: 1 }} />
+
+                            <h3 style={{ margin: '1rem 0', zIndex: 1 }}>ТЭН</h3>
+
                             <input
                                 type="range"
                                 min="0"
                                 max="100"
-                                value={heaterPower}
+                                value={heaterPower || 0}
                                 onChange={(e) => setHeater(parseInt(e.target.value))}
                                 disabled={isStarted} // Disabled during auto mode
-                                style={{ width: '100%', accentColor: 'var(--primary-color)' }}
+                                style={{ width: '100%', accentColor: 'var(--primary-color)', zIndex: 1, opacity: isStarted ? 0.5 : 1 }}
                             />
-                            <div className="text-mono" style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '1.5rem' }}>{heaterPower}%</div>
+                            <div className="text-mono" style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '1.5rem', zIndex: 1 }}>{heaterPower}%</div>
                             {isStarted && (
-                                <div style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>АВТО</div>
+                                <div style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--accent-green)', marginTop: '0.3rem', zIndex: 1 }}>
+                                    PID: {steps[activeStep]?.temp}°C
+                                </div>
                             )}
                         </div>
 
@@ -478,7 +529,7 @@ const Mashing = () => {
                             {/* Button first — stays in place */}
                             <button
                                 disabled={!isStarted && !isHeaterCovered}
-                                onClick={handleStart}
+                                onClick={toggleAuto}
                                 style={{
                                     padding: '1.5rem',
                                     borderRadius: '8px',

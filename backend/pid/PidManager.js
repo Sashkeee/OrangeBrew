@@ -1,6 +1,6 @@
-const PIDController = require('./PIDController');
+import PIDController from './PIDController.js';
 
-class PidManager {
+export default class PidManager {
     constructor(serial) {
         this.serial = serial;
         this.pid = new PIDController(5.0, 0.1, 1.0, 1.0); // Kp, Ki, Kd, dt
@@ -73,4 +73,4 @@ class PidManager {
     }
 }
 
-module.exports = PidManager;
+

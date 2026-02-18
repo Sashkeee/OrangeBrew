@@ -83,6 +83,31 @@ export function useControl() {
         }
     }, []);
 
+    // New PID methods
+    const setPidMode = useCallback(async (enabled) => {
+        try {
+            await fetch('http://localhost:3001/api/debug/pid/enable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+        } catch (e) {
+            console.error('[Control] setPidMode failed:', e);
+        }
+    }, []);
+
+    const setPidTarget = useCallback(async (target) => {
+        try {
+            await fetch('http://localhost:3001/api/debug/pid/target', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target })
+            });
+        } catch (e) {
+            console.error('[Control] setPidTarget failed:', e);
+        }
+    }, []);
+
     const emergencyStop = useCallback(async () => {
         try {
             await controlApi.emergencyStop();
@@ -92,5 +117,15 @@ export function useControl() {
         }
     }, []);
 
-    return { control, setHeater, setCooler, setPump, setDephleg, emergencyStop, loading };
+    return {
+        control,
+        setHeater,
+        setCooler,
+        setPump,
+        setDephleg,
+        setPidMode,
+        setPidTarget,
+        emergencyStop,
+        loading
+    };
 }
