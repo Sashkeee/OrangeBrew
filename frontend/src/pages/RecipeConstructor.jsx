@@ -1,19 +1,27 @@
 import React, { useState } from 'react';
-import { motion, Reorder } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Play, X, Plus, GripVertical } from 'lucide-react';
+import { ArrowLeft, Save, Play, X, Plus } from 'lucide-react';
+import { recipesApi } from '../api/client.js';
 
 const RecipeConstructor = () => {
     const navigate = useNavigate();
+    const [saving, setSaving] = useState(false);
     const [recipe, setRecipe] = useState({
         name: '',
-        brewer: '',
-        date: new Date().toISOString().split('T')[0],
-        location: '',
+        style: '',
         notes: '',
-        steps: [
+        og: 0,
+        fg: 0,
+        ibu: 0,
+        abv: 0,
+        batch_size: 20,
+        boil_time: 60,
+        mash_steps: [
             { id: '1', name: 'Пауза осахаривания', temp: 65, duration: 60 }
-        ]
+        ],
+        ingredients: [],
+        hop_additions: [],
     });
 
     const addStep = () => {
@@ -23,20 +31,66 @@ const RecipeConstructor = () => {
             temp: 65,
             duration: 15
         };
-        setRecipe({ ...recipe, steps: [...recipe.steps, newStep] });
+        setRecipe({ ...recipe, mash_steps: [...recipe.mash_steps, newStep] });
     };
 
     const removeStep = (id) => {
-        if (recipe.steps.length > 1) {
-            setRecipe({ ...recipe, steps: recipe.steps.filter(s => s.id !== id) });
+        if (recipe.mash_steps.length > 1) {
+            setRecipe({ ...recipe, mash_steps: recipe.mash_steps.filter(s => s.id !== id) });
         }
     };
 
     const updateStep = (id, field, value) => {
         setRecipe({
             ...recipe,
-            steps: recipe.steps.map(s => s.id === id ? { ...s, [field]: value } : s)
+            mash_steps: recipe.mash_steps.map(s => s.id === id ? { ...s, [field]: value } : s)
         });
+    };
+
+    /**
+     * Save recipe to the backend via REST API.
+     */
+    const handleSave = async () => {
+        if (!recipe.name.trim()) return;
+        try {
+            setSaving(true);
+            const created = await recipesApi.create(recipe);
+            // Also save to localStorage for the mashing page
+            localStorage.setItem('currentRecipe', JSON.stringify({
+                ...created,
+                steps: recipe.mash_steps, // backward compat for Mashing page
+            }));
+            navigate('/brewing/recipes');
+        } catch (e) {
+            console.error('[RecipeConstructor] Save failed:', e);
+            alert('Ошибка сохранения: ' + e.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    /**
+     * Save + navigate directly to mashing.
+     */
+    const handleStartBrew = async () => {
+        if (!recipe.name.trim()) {
+            alert('Введите название рецепта');
+            return;
+        }
+        try {
+            setSaving(true);
+            const created = await recipesApi.create(recipe);
+            localStorage.setItem('currentRecipe', JSON.stringify({
+                ...created,
+                steps: recipe.mash_steps,
+            }));
+            navigate(`/brewing/mash/${created.id}`);
+        } catch (e) {
+            console.error('[RecipeConstructor] Save+start failed:', e);
+            alert('Ошибка сохранения: ' + e.message);
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
@@ -53,6 +107,7 @@ const RecipeConstructor = () => {
             </header>
 
             <div className="industrial-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {/* ─── Row 1: Name + Style ───────────────── */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
                     <div className="form-group" style={{ flex: '1 1 300px' }}>
                         <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Название рецепта *</label>
@@ -66,38 +121,63 @@ const RecipeConstructor = () => {
                         />
                     </div>
                     <div className="form-group" style={{ flex: '1 1 300px' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Пивовар *</label>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Стиль</label>
                         <input
                             type="text"
-                            value={recipe.brewer}
-                            onChange={(e) => setRecipe({ ...recipe, brewer: e.target.value })}
+                            value={recipe.style}
+                            onChange={(e) => setRecipe({ ...recipe, style: e.target.value })}
                             style={{ width: '100%', padding: '0.8rem', background: '#000', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px' }}
-                            aria-required="true"
+                            placeholder="Напр: American IPA"
                         />
                     </div>
                 </div>
 
+                {/* ─── Row 2: Batch + Boil time ─────────── */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div className="form-group" style={{ flex: '1 1 300px' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Дата варки</label>
+                    <div className="form-group" style={{ flex: '1 1 200px' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Объём варки (л)</label>
                         <input
-                            type="date"
-                            value={recipe.date}
-                            onChange={(e) => setRecipe({ ...recipe, date: e.target.value })}
+                            type="number"
+                            value={recipe.batch_size}
+                            onChange={(e) => setRecipe({ ...recipe, batch_size: parseFloat(e.target.value) || 0 })}
                             style={{ width: '100%', padding: '0.8rem', background: '#000', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px' }}
                         />
                     </div>
-                    <div className="form-group" style={{ flex: '1 1 300px' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Место варки</label>
+                    <div className="form-group" style={{ flex: '1 1 200px' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Время кипячения (мин)</label>
                         <input
-                            type="text"
-                            value={recipe.location}
-                            onChange={(e) => setRecipe({ ...recipe, location: e.target.value })}
+                            type="number"
+                            value={recipe.boil_time}
+                            onChange={(e) => setRecipe({ ...recipe, boil_time: parseInt(e.target.value) || 0 })}
                             style={{ width: '100%', padding: '0.8rem', background: '#000', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px' }}
+                        />
+                    </div>
+                    <div className="form-group" style={{ flex: '1 1 200px' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>OG</label>
+                        <input
+                            type="number"
+                            step="0.001"
+                            value={recipe.og}
+                            onChange={(e) => setRecipe({ ...recipe, og: parseFloat(e.target.value) || 0 })}
+                            style={{ width: '100%', padding: '0.8rem', background: '#000', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px' }}
+                            placeholder="1.050"
                         />
                     </div>
                 </div>
 
+                {/* ─── Row 3: Notes ─────────────────────── */}
+                <div className="form-group">
+                    <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Заметки</label>
+                    <textarea
+                        value={recipe.notes}
+                        onChange={(e) => setRecipe({ ...recipe, notes: e.target.value })}
+                        rows={3}
+                        style={{ width: '100%', padding: '0.8rem', background: '#000', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', resize: 'vertical' }}
+                        placeholder="Дополнительные заметки к рецепту..."
+                    />
+                </div>
+
+                {/* ─── Mash Steps ───────────────────────── */}
                 <div style={{ marginTop: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
                         <h3 style={{ margin: 0 }}>Температурные паузы</h3>
@@ -111,7 +191,7 @@ const RecipeConstructor = () => {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                        {recipe.steps.map((step, index) => (
+                        {recipe.mash_steps.map((step) => (
                             <div key={step.id} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr)) 40px', gap: '0.8rem', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '0.8rem', borderRadius: '4px', border: '1px solid #333' }}>
                                 <input
                                     type="text"
@@ -153,6 +233,7 @@ const RecipeConstructor = () => {
                     </div>
                 </div>
 
+                {/* ─── Action Buttons ──────────────────── */}
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
                     <button
                         onClick={() => navigate('/brewing')}
@@ -161,19 +242,19 @@ const RecipeConstructor = () => {
                         Отмена
                     </button>
                     <button
+                        onClick={handleSave}
+                        disabled={saving || !recipe.name.trim()}
                         aria-label="Сохранить рецепт"
-                        style={{ flex: '1 1 150px', padding: '1rem', background: 'rgba(255,152,0,0.1)', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                        style={{ flex: '1 1 150px', padding: '1rem', background: 'rgba(255,152,0,0.1)', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.5 : 1 }}
                     >
-                        <Save size={20} aria-hidden="true" /> Сохранить
+                        <Save size={20} aria-hidden="true" /> {saving ? 'Сохранение...' : 'Сохранить'}
                     </button>
                     <button
-                        onClick={() => {
-                            localStorage.setItem('currentRecipe', JSON.stringify(recipe));
-                            navigate('/brewing/mash/new');
-                        }}
-                        style={{ flex: '2 1 200px', padding: '1rem', background: 'var(--primary-color)', border: 'none', color: '#000', fontWeight: 'bold', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                        onClick={handleStartBrew}
+                        disabled={saving || !recipe.name.trim()}
+                        style={{ flex: '2 1 200px', padding: '1rem', background: 'var(--primary-color)', border: 'none', color: '#000', fontWeight: 'bold', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.5 : 1 }}
                     >
-                        <Play size={20} aria-hidden="true" /> Начать варку
+                        <Play size={20} aria-hidden="true" /> {saving ? 'Сохранение...' : 'Начать варку'}
                     </button>
                 </div>
             </div>

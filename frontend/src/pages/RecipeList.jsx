@@ -1,57 +1,38 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, User, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
-
-// Mock data based on plan
-const mockRecipes = [
-    {
-        id: 1,
-        name: 'IPA "Orange Sunshine"',
-        brewer: 'Александр',
-        date: new Date(),
-        style: 'American IPA',
-        steps: [
-            { id: '1', name: 'Белковая пауза', temp: 52, duration: 15 },
-            { id: '2', name: 'Осахаривание', temp: 67, duration: 60 },
-            { id: '3', name: 'Мэш-аут', temp: 78, duration: 10 },
-        ]
-    },
-    {
-        id: 2,
-        name: 'Stout "Deep Dark"',
-        brewer: 'Иван',
-        date: new Date('2026-02-10'),
-        style: 'Oatmeal Stout',
-        steps: [
-            { id: '1', name: 'Кислотная пауза', temp: 40, duration: 10 },
-            { id: '2', name: 'Белковая пауза', temp: 52, duration: 20 },
-            { id: '3', name: 'Осахаривание 1', temp: 63, duration: 45 },
-            { id: '4', name: 'Осахаривание 2', temp: 72, duration: 15 },
-            { id: '5', name: 'Мэш-аут', temp: 78, duration: 10 },
-        ]
-    },
-    {
-        id: 3,
-        name: 'Lager "Crystal Clear"',
-        brewer: 'Александр',
-        date: new Date('2026-02-05'),
-        style: 'German Pilsner',
-        steps: [
-            { id: '1', name: 'Осахаривание', temp: 65, duration: 60 },
-            { id: '2', name: 'Мэш-аут', temp: 76, duration: 10 },
-        ]
-    },
-];
+import { ArrowLeft, Clock, User, Calendar, Loader, AlertTriangle, Plus } from 'lucide-react';
+import { useRecipes } from '../hooks/useRecipes.js';
 
 const RecipeList = () => {
     const navigate = useNavigate();
+    const { recipes, loading, error, deleteRecipe } = useRecipes();
 
     const handleSelectRecipe = (recipe) => {
-        localStorage.setItem('currentRecipe', JSON.stringify(recipe));
+        // Save to localStorage for the Mashing page backward compat
+        localStorage.setItem('currentRecipe', JSON.stringify({
+            ...recipe,
+            steps: recipe.mash_steps || [],
+        }));
         navigate(`/brewing/mash/${recipe.id}`);
+    };
+
+    const handleDelete = async (e, id) => {
+        e.stopPropagation();
+        if (!confirm('Удалить рецепт?')) return;
+        try {
+            await deleteRecipe(id);
+        } catch (err) {
+            console.error('[RecipeList] Delete failed:', err);
+        }
+    };
+
+    const formatDate = (dateStr) => {
+        if (!dateStr) return '—';
+        try {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        } catch { return dateStr; }
     };
 
     return (
@@ -70,11 +51,66 @@ const RecipeList = () => {
                 >
                     <ArrowLeft size={20} aria-hidden="true" />
                 </button>
-                <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)' }}>Выбор рецепта</h1>
+                <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)', flex: 1 }}>Выбор рецепта</h1>
+                <button
+                    onClick={() => navigate('/brewing/recipes/new')}
+                    aria-label="Добавить рецепт"
+                    style={{
+                        background: 'rgba(255,152,0,0.1)',
+                        border: '1px solid var(--primary-color)',
+                        color: 'var(--primary-color)',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                    }}
+                >
+                    <Plus size={18} aria-hidden="true" /> Новый
+                </button>
             </header>
 
+            {/* Loading state */}
+            {loading && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                    <Loader size={32} className="spin" /> <span style={{ marginLeft: '1rem' }}>Загрузка рецептов...</span>
+                </div>
+            )}
+
+            {/* Error state */}
+            {error && (
+                <div className="industrial-panel" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--accent-red)' }}>
+                    <AlertTriangle size={24} />
+                    <div>
+                        <div style={{ fontWeight: 'bold' }}>Ошибка загрузки</div>
+                        <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>{error}</div>
+                    </div>
+                </div>
+            )}
+
+            {/* Empty state */}
+            {!loading && !error && recipes.length === 0 && (
+                <div className="industrial-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Рецептов нет</p>
+                    <button
+                        onClick={() => navigate('/brewing/recipes/new')}
+                        style={{
+                            padding: '0.8rem 2rem',
+                            background: 'var(--primary-color)',
+                            border: 'none',
+                            color: '#000',
+                            fontWeight: 'bold',
+                            borderRadius: '4px',
+                        }}
+                    >
+                        Создать первый рецепт
+                    </button>
+                </div>
+            )}
+
+            {/* Recipe list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {mockRecipes.sort((a, b) => b.date - a.date).map((recipe, index) => (
+                {recipes.map((recipe, index) => (
                     <motion.div
                         key={recipe.id}
                         initial={{ opacity: 0, y: 10 }}
@@ -101,19 +137,35 @@ const RecipeList = () => {
                         <div style={{ flex: '1 1 300px' }}>
                             <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem' }}>{recipe.name}</h3>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem 1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                {recipe.style && (
+                                    <span className="text-mono" style={{ color: 'var(--primary-color)', opacity: 0.8 }}>
+                                        {recipe.style}
+                                    </span>
+                                )}
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <User size={14} aria-hidden="true" /> {recipe.brewer}
+                                    <Calendar size={14} aria-hidden="true" /> {formatDate(recipe.created_at)}
                                 </span>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <Calendar size={14} aria-hidden="true" /> {format(recipe.date, 'dd.MM.yyyy', { locale: ru })}
-                                </span>
-                                <span className="text-mono" style={{ color: 'var(--primary-color)', opacity: 0.8 }}>
-                                    {recipe.style}
-                                </span>
+                                {recipe.batch_size > 0 && (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        {recipe.batch_size} л
+                                    </span>
+                                )}
+                                {recipe.mash_steps?.length > 0 && (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <Clock size={14} aria-hidden="true" /> {recipe.mash_steps.length} пауз
+                                    </span>
+                                )}
                             </div>
                         </div>
-                        <div style={{ color: 'var(--primary-color)', display: 'flex', alignItems: 'center' }}>
-                            <ArrowLeft size={24} style={{ transform: 'rotate(180deg)' }} aria-hidden="true" />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <button
+                                onClick={(e) => handleDelete(e, recipe.id)}
+                                aria-label="Удалить рецепт"
+                                style={{ background: 'none', border: '1px solid #444', color: '#f44336', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                            >
+                                ✕
+                            </button>
+                            <ArrowLeft size={24} style={{ transform: 'rotate(180deg)', color: 'var(--primary-color)' }} aria-hidden="true" />
                         </div>
                     </motion.div>
                 ))}

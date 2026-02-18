@@ -152,7 +152,7 @@ export const recipeQueries = {
             JSON.stringify(recipe.hop_additions || []),
             recipe.notes || '',
         ]);
-        return { id: lastId, ...recipe };
+        return recipeQueries.getById(lastId);
     },
 
     update: (id, recipe) => {

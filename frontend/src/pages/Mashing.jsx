@@ -30,7 +30,9 @@ const Mashing = () => {
             const saved = localStorage.getItem('currentRecipe');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                if (parsed?.steps?.length > 0) setRecipeData(parsed);
+                // Support both old 'steps' and new 'mash_steps' field names
+                const recipeSteps = parsed?.steps || parsed?.mash_steps || [];
+                if (recipeSteps.length > 0) setRecipeData({ ...parsed, steps: recipeSteps });
             }
         } catch (e) { console.warn('Could not load recipe', e); }
     }, []);

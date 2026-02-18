@@ -40,7 +40,12 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
     try {
         const recipe = recipeQueries.create(req.body);
-        res.status(201).json(recipe);
+        res.status(201).json({
+            ...recipe,
+            ingredients: JSON.parse(recipe.ingredients || '[]'),
+            mash_steps: JSON.parse(recipe.mash_steps || '[]'),
+            hop_additions: JSON.parse(recipe.hop_additions || '[]'),
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -51,7 +56,12 @@ router.put('/:id', (req, res) => {
     try {
         const recipe = recipeQueries.update(req.params.id, req.body);
         if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
-        res.json(recipe);
+        res.json({
+            ...recipe,
+            ingredients: JSON.parse(recipe.ingredients || '[]'),
+            mash_steps: JSON.parse(recipe.mash_steps || '[]'),
+            hop_additions: JSON.parse(recipe.hop_additions || '[]'),
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
