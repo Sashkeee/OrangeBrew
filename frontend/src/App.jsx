@@ -41,17 +41,4 @@ function App() {
   );
 }
 
-const Placeholder = ({ title }) => (
-  <div style={{ padding: '4rem', textAlign: 'center' }}>
-    <h1 style={{ color: 'var(--primary-color)' }}>{title}</h1>
-    <p>Этот раздел находится в разработке.</p>
-    <button
-      onClick={() => window.history.back()}
-      style={{ marginTop: '2rem', padding: '1rem 2rem', background: '#333', border: 'none', color: '#fff', cursor: 'pointer', borderRadius: '4px' }}
-    >
-      Назад
-    </button>
-  </div>
-);
-
 export default App;

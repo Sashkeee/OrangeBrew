@@ -1,0 +1,706 @@
+/* ═══════════════════════════════════════════════
+   OrangeBrew — Shared Page Styles
+   ═══════════════════════════════════════════════ */
+
+/* ─── Page Layout ─────────────────────────────── */
+.page-container {
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.page-header__left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.page-header__right {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.page-title {
+    margin: 0;
+    font-size: 1.8rem;
+}
+
+.page-title__icon {
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+/* ─── Back Button ─────────────────────────────── */
+.btn-back {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.5rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.btn-back:hover {
+    border-color: var(--text-secondary);
+}
+
+/* ─── Timer Badge ─────────────────────────────── */
+.timer-badge {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    padding: 0.5rem 1.5rem;
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+/* ─── Two-Column Layout ───────────────────────── */
+.layout-2col {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.layout-2col--narrow {
+    grid-template-columns: 1fr 350px;
+}
+
+.col-main,
+.col-side {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* ─── Sensor Cards Grid ───────────────────────── */
+.sensor-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.sensor-grid--3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.sensor-grid--4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.sensor-card {
+    padding: 1.2rem;
+    text-align: center;
+    border-top-width: 3px;
+    border-top-style: solid;
+}
+
+.sensor-card__label {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+
+.sensor-card__value {
+    font-family: var(--font-mono);
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.sensor-card__value--lg {
+    font-size: 3.5rem;
+}
+
+.sensor-card__sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* ─── Controls Grid ───────────────────────────── */
+.controls-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.controls-grid--2 {
+    grid-template-columns: 1fr 1fr;
+}
+
+.controls-grid--3 {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+.controls-grid--4 {
+    grid-template-columns: 1fr 1.5fr 1fr 0.8fr;
+}
+
+.control-panel {
+    padding: 1.2rem;
+}
+
+.control-panel__label {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.control-slider {
+    width: 100%;
+    transition: opacity 0.2s;
+}
+
+.control-slider:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.control-value {
+    font-family: var(--font-mono);
+    text-align: center;
+    font-size: 1.2rem;
+    margin-top: 0.2rem;
+}
+
+.control-value--lg {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* ─── Mode Toggle (Auto/Manual) ───────────────── */
+.btn-mode {
+    font-size: 0.6rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid #555;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.btn-mode--active {
+    background: rgba(3, 169, 244, 0.2);
+    border-color: #03a9f4;
+    color: #03a9f4;
+}
+
+.btn-mode:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ─── Chart Panel ─────────────────────────────── */
+.chart-panel {
+    padding: 1.5rem;
+    position: relative;
+}
+
+.chart-panel--sm {
+    height: 280px;
+}
+
+.chart-panel--md {
+    height: 320px;
+}
+
+.chart-panel--lg {
+    height: 400px;
+}
+
+.chart-zoom {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.chart-zoom__btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 0.2rem;
+    cursor: pointer;
+    display: flex;
+    color: var(--text-secondary);
+    transition: border-color 0.2s;
+}
+
+.chart-zoom__btn:hover {
+    border-color: #666;
+}
+
+.chart-zoom__btn--text {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.65rem;
+}
+
+/* ─── Phase List ──────────────────────────────── */
+.phase-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.phase-list__title {
+    margin: 0 0 1rem;
+    font-size: 0.85rem;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+}
+
+.phase-item {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.7rem;
+    border: 1px solid #333;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.phase-item--active {
+    border-width: 1px;
+    border-style: solid;
+}
+
+.phase-item--complete {
+    background: rgba(76, 175, 80, 0.05);
+    border-color: var(--accent-green);
+    opacity: 0.6;
+}
+
+.phase-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: all 0.3s;
+}
+
+.phase-item__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.phase-item__name {
+    font-size: 0.85rem;
+}
+
+.phase-item--active .phase-item__name {
+    font-weight: bold;
+}
+
+.phase-item__desc {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.btn-advance {
+    margin-top: 0.8rem;
+    width: 100%;
+    padding: 0.6rem;
+    border-radius: 6px;
+    border-width: 1px;
+    border-style: solid;
+    font-weight: bold;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: opacity 0.2s;
+}
+
+.btn-advance:hover {
+    opacity: 0.9;
+}
+
+/* ─── Safety Checkbox ─────────────────────────── */
+.safety-check {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    padding: 1rem;
+    margin-top: 1.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--accent-red);
+    background: rgba(244, 67, 54, 0.1);
+    transition: all 0.2s;
+}
+
+.safety-check--checked {
+    border-color: var(--accent-green);
+    background: rgba(76, 175, 80, 0.1);
+}
+
+.safety-check__input {
+    width: 20px;
+    height: 20px;
+}
+
+.safety-check__text {
+    flex: 1;
+}
+
+.safety-check__title {
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.safety-check__subtitle {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+/* ─── Start/Stop Button ───────────────────────── */
+.btn-start {
+    width: 100%;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: none;
+    font-weight: bold;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+}
+
+.btn-start:hover {
+    opacity: 0.95;
+}
+
+.btn-start:active {
+    transform: scale(0.98);
+}
+
+.btn-start:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-start--go {
+    background: var(--accent-green);
+    color: #000;
+}
+
+.btn-start--stop {
+    background: var(--accent-red);
+    color: #fff;
+}
+
+.btn-start--primary {
+    background: var(--primary-color);
+    color: #000;
+}
+
+/* ─── Fraction Log Table ──────────────────────── */
+.fraction-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.fraction-header__title {
+    margin: 0;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.fraction-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.fraction-total {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.btn-add-fraction {
+    border-radius: 4px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    border: 1px solid;
+    background: transparent;
+    transition: opacity 0.2s;
+}
+
+.btn-add-fraction:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.fraction-form {
+    display: grid;
+    grid-template-columns: 100px 100px 1fr auto;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
+    border: 1px solid #333;
+}
+
+.form-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--surface-lighter);
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.btn-submit {
+    padding: 0.5rem 1rem;
+    background: var(--accent-green);
+    border: none;
+    border-radius: 4px;
+    color: #000;
+    font-weight: bold;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn-submit:hover {
+    opacity: 0.9;
+}
+
+.fraction-table-wrap {
+    overflow-x: auto;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.fraction-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.fraction-table th {
+    padding: 0.4rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid #333;
+    position: sticky;
+    top: 0;
+    background: var(--surface-color);
+}
+
+.fraction-table td {
+    padding: 0.4rem;
+}
+
+.fraction-table tr+tr {
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.fraction-table__empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.btn-delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0.1rem;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+}
+
+.btn-delete:hover {
+    opacity: 1;
+}
+
+.fraction-summary {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.8rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid #333;
+    font-size: 0.75rem;
+}
+
+/* ─── Phase Badge (inline pill) ───────────────── */
+.phase-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    font-weight: bold;
+    display: inline-block;
+}
+
+/* ─── Status Badge ────────────────────────────── */
+.status-badge {
+    margin-top: 0.5rem;
+    padding: 0.3rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    display: inline-block;
+    border: 1px solid;
+}
+
+/* ─── Info Panel ──────────────────────────────── */
+.info-panel {
+    padding: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.info-panel__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.info-panel__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.info-panel__warning {
+    margin-top: 0.5rem;
+    padding: 0.4rem;
+    background: rgba(244, 67, 54, 0.1);
+    border-radius: 4px;
+    color: var(--accent-red);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+/* ─── Pump Button ─────────────────────────────── */
+.btn-pump {
+    margin-top: 0.5rem;
+    padding: 0.5rem 2rem;
+    border-radius: 20px;
+    border: 1px solid #444;
+    background: transparent;
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-pump--on {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #000;
+}
+
+/* ─── +/- Stepper ─────────────────────────────── */
+.stepper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.stepper__btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid #444;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s;
+}
+
+.stepper__btn:hover:not(:disabled) {
+    border-color: #666;
+}
+
+.stepper__btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.stepper__value {
+    flex: 1;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+/* ─── Responsive ──────────────────────────────── */
+@media (max-width: 900px) {
+
+    .layout-2col,
+    .layout-2col--narrow {
+        grid-template-columns: 1fr;
+    }
+
+    .sensor-grid--4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .controls-grid--4 {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .page-container {
+        padding: 1rem;
+    }
+}

@@ -3,7 +3,7 @@
  * Real-time connection to the backend for live sensor data and control.
  */
 
-const WS_URL = 'ws://localhost:3001/ws';
+import { WS_URL } from '../utils/constants';
 
 class WsClient {
     constructor() {

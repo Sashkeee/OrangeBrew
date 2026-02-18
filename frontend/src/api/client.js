@@ -3,7 +3,7 @@
  * HTTP client for communicating with the backend REST API.
  */
 
-const API_BASE = 'http://localhost:3001/api';
+import { API_BASE } from '../utils/constants';
 
 async function request(path, options = {}) {
     const url = `${API_BASE}${path}`;

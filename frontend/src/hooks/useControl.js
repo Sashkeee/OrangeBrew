@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { controlApi } from '../api/client.js';
 import wsClient from '../api/wsClient.js';
+import { debugPost } from '../utils/constants';
 
 /**
  * Hook for controlling hardware (heater, cooler, pump, dephlegmator).
@@ -86,11 +87,7 @@ export function useControl() {
     // New PID methods
     const setPidMode = useCallback(async (enabled) => {
         try {
-            await fetch('http://localhost:3001/api/debug/pid/enable', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled })
-            });
+            await debugPost('/pid/enable', { enabled });
         } catch (e) {
             console.error('[Control] setPidMode failed:', e);
         }
@@ -98,11 +95,7 @@ export function useControl() {
 
     const setPidTarget = useCallback(async (target) => {
         try {
-            await fetch('http://localhost:3001/api/debug/pid/target', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target })
-            });
+            await debugPost('/pid/target', { target });
         } catch (e) {
             console.error('[Control] setPidTarget failed:', e);
         }
