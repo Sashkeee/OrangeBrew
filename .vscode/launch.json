@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "pwa-chrome", // Или просто "chrome"
+            "request": "launch",
+            "name": "Launch Yandex Browser",
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}",
+            // Путь к Яндекс.Браузеру (обычно такой):
+            "runtimeExecutable": "C:\\Users\\user\\AppData\\Local\\Yandex\\YandexBrowser\\Application\\browser.exe"
+        }
+    ]
+}

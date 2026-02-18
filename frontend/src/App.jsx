@@ -1,35 +1,48 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Home from './pages/Home';
+import Brewing from './pages/Brewing';
+import RecipeList from './pages/RecipeList';
+import RecipeConstructor from './pages/RecipeConstructor';
+import Mashing from './pages/Mashing';
+import Boiling from './pages/Boiling';
+import History from './pages/History';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <Router>
+      <div className="app-container">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/brewing" element={<Brewing />} />
+          <Route path="/brewing/recipes" element={<RecipeList />} />
+          <Route path="/brewing/recipes/new" element={<RecipeConstructor />} />
+          <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
+          <Route path="/brewing/boil/:sessionId" element={<Boiling />} />
+          <Route path="/brewing/history" element={<History />} />
+
+          {/* Fallbacks for unfinished sections */}
+          <Route path="/fermentation" element={<Placeholder title="Брожение" />} />
+          <Route path="/distillation" element={<Placeholder title="Дистилляция" />} />
+          <Route path="/rectification" element={<Placeholder title="Ректификация" />} />
+          <Route path="/settings" element={<Placeholder title="Настройки" />} />
+        </Routes>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    </Router>
+  );
 }
 
-export default App
+const Placeholder = ({ title }) => (
+  <div style={{ padding: '4rem', textAlign: 'center' }}>
+    <h1 style={{ color: 'var(--primary-color)' }}>{title}</h1>
+    <p>Этот раздел находится в разработке.</p>
+    <button
+      onClick={() => window.history.back()}
+      style={{ marginTop: '2rem', padding: '1rem 2rem', background: '#333', border: 'none', color: '#fff', cursor: 'pointer', borderRadius: '4px' }}
+    >
+      Назад
+    </button>
+  </div>
+);
+
+export default App;

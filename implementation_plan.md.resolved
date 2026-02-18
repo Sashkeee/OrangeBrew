@@ -1,0 +1,451 @@
+# OrangeBrew — План разработки системы мониторинга пивоварни
+
+## Описание
+
+Система мониторинга и управления пивоварней на базе **OrangePi Zero 3** (сервер) и **NodeMCU ESP8266** (контроллер). Поддерживает варку, брожение, дистилляцию, ректификацию. Доступ — через веб-интерфейс из любой точки мира.
+
+## Решённые вопросы
+
+| Вопрос | Решение |
+|---|---|
+| Удалённый доступ | **Cloudflare Tunnel** (домен уже есть) |
+| UI | Адаптивный веб-интерфейс (PWA) |
+| Опыт пользователя | Arduino/C++ — есть, Python/JS — нет → код с подробными комментариями |
+| NodeMCU | Одна для варки, при необходимости — докупить для ферментации |
+| ШИМ ТЭНа | Программный slow-PWM, период 1–10 сек ✅ |
+
+> [!NOTE]
+> **Docker**: Для данного проекта Docker **не обязателен**. OrangePi Zero 3 с 4 ГБ RAM потянет Docker, но systemd проще и экономичнее по ресурсам. Рекомендация — **systemd** на первом этапе, Docker можно добавить позже при желании. Мы подготовим Docker-файлы как опцию.
+
+> [!IMPORTANT]
+> Уточните: SSR — **zero-cross** типа? Это важно для корректной работы ШИМ с ТЭНом.
+
+---
+
+## Архитектура
+
+```mermaid
+graph TB
+    subgraph "Дача (LAN)"
+        subgraph "OrangePi Zero 3"
+            MQTT["Mosquitto MQTT Broker"]
+            API["FastAPI Backend"]
+            DB["SQLite DB"]
+            TG["Telegram Bot"]
+            WEB["React Frontend (Nginx)"]
+        end
+        subgraph "NodeMCU ESP8266"
+            OW["OneWire Bus"]
+            SSR1["SSR → ТЭН 3kW"]
+            SSR2["SSR → Насос 220V"]
+            DS["DS18B20 x N"]
+        end
+        OW --> DS
+        MQTT <-->|WiFi| ESP8266
+        API <--> MQTT
+        API <--> DB
+        API <--> TG
+    end
+    USER["Браузер / Телефон"] <-->|Cloudflare Tunnel| WEB
+    USER <-->|Telegram| TG
+```
+
+### Протокол связи (MQTT)
+
+| Топик | Направление | Описание |
+|---|---|---|
+| `orangebrew/sensors/temperature` | ESP → Server | `{"sensor_id": "28-xxxx", "value": 65.3, "ts": 1700000000}` |
+| `orangebrew/sensors/discovery` | ESP → Server | Список обнаруженных датчиков на шине |
+| `orangebrew/cmd/heater` | Server → ESP | `{"power": 75}` (0–100%) |
+| `orangebrew/cmd/pump` | Server → ESP | `{"state": "on"}` / `{"state": "off"}` |
+| `orangebrew/cmd/scan_sensors` | Server → ESP | Команда пересканировать OneWire шину |
+| `orangebrew/status` | ESP → Server | Heartbeat + текущее состояние реле |
+
+---
+
+## Стек технологий
+
+| Слой | Технология | Причина выбора |
+|---|---|---|
+| **Firmware** | PlatformIO + Arduino (C++) | Стандарт для ESP8266, OTA, обилие библиотек |
+| **MQTT Broker** | Mosquitto | Лёгкий, стабильный, запускается на OrangePi |
+| **Backend** | Python 3.11 + FastAPI | Асинхронный, лёгкий на ARM, WebSocket из коробки |
+| **ORM / DB** | SQLAlchemy + SQLite | Нет необходимости в отдельной СУБД, файловая БД |
+| **Frontend** | React 18 + Vite | Быстрая сборка, HMR, SPA |
+| **Графики** | Recharts | React-нативная библиотека графиков |
+| **WebSocket** | FastAPI WebSocket | Реалтайм обновление UI без polling |
+| **Telegram** | python-telegram-bot | Уведомления и базовые команды |
+| **Удалённый доступ** | Cloudflare Tunnel | У пользователя есть настроенный домен |
+| **Деплой** | systemd + Nginx | Простой и надёжный автозапуск |
+
+---
+
+## Proposed Changes
+
+### Фаза 1 — Firmware (ESP8266)
+
+#### [NEW] [platformio.ini](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/firmware/platformio.ini)
+
+Конфигурация PlatformIO-проекта: board = `nodemcuv2`, зависимости:
+- `PubSubClient` (MQTT)
+- `DallasTemperature` + `OneWire`
+- `ArduinoJson`
+- `ArduinoOTA`
+
+#### [NEW] [main.cpp](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/firmware/src/main.cpp)
+
+Основной файл прошивки:
+- **Wi-Fi**: подключение к домашней сети, реконнект при потере
+- **OneWire / DS18B20**: сканирование шины, чтение температуры всех датчиков каждые 2 секунды
+- **MQTT**: публикация температур, подписка на команды управления
+- **ШИМ ТЭН**: программный slow-PWM (период ~2 сек, duty cycle 0–100%)
+- **Насос**: включение/выключение через GPIO → SSR
+- **OTA**: обновление прошивки по воздуху
+- **Watchdog**: перезагрузка при зависании
+
+#### [NEW] [config.h](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/firmware/src/config.h)
+
+Конфигурация: Wi-Fi SSID/password, MQTT broker IP, GPIO пины, интервалы опроса.
+
+---
+
+### Фаза 2 — Backend (FastAPI)
+
+#### [NEW] [main.py](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/main.py)
+
+Точка входа FastAPI: роутинг, CORS, монтирование статики, lifecycle events.
+
+#### [NEW] [models.py](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/models.py)
+
+SQLAlchemy модели:
+
+```python
+# === Рецепт (конструктор) ===
+Recipe:
+    brewer: str           # Пивовар
+    name: str             # Название рецепта
+    location: str         # Место варки
+    style: str            # Стиль пива (IPA, Stout...)
+    batch_volume: float   # Объём варки (литры)
+    boil_time: int        # Время кипячения (мин)
+    notes: str            # Заметки
+
+Ingredient:              # Ингредиенты рецепта
+    recipe_id: FK
+    type: enum            # malt / hop / yeast / other
+    name: str             # Название (Пилснер, Каскад...)
+    amount: float         # Количество (г/кг/шт)
+    unit: str             # Единица (г, кг, мл, шт)
+    notes: str            # Заметки (время внесения хмеля и т.п.)
+
+MashStep:                # Температурные паузы
+    recipe_id: FK
+    order: int            # Порядок паузы
+    name: str             # Название (белковая, мальтозная...)
+    temperature: float    # Целевая температура °C
+    duration: int         # Длительность (мин)
+
+# === Варка ===
+BrewSession:
+    recipe_id: FK
+    status: enum          # IDLE/MASHING/BOILING/COOLING/DONE
+    started_at: datetime
+    finished_at: datetime
+    total_duration: int   # Общее время варки (мин)
+
+BrewHistory:             # Успешные варки
+    session_id: FK
+    recipe_name: str
+    brewer: str
+    location: str
+    date: datetime
+    total_time: int       # Общее время (мин)
+    notes: str            # Заметки пивовара
+
+# === Оборудование ===
+TemperatureLog:
+    sensor_id: str
+    value: float
+    timestamp: datetime
+
+Sensor:
+    address: str          # 1-Wire адрес
+    name: str             # Человекочитаемое имя
+    role: str             # Назначение (варочник, ЦКТ...)
+```
+
+#### [NEW] [mqtt_service.py](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/services/mqtt_service.py)
+
+MQTT-клиент (asyncio-mqtt): подписка на данные сенсоров, отправка команд, запись в БД.
+
+#### [NEW] [brew_controller.py](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/services/brew_controller.py)
+
+Автоматика варки:
+- Стейт-машина: `IDLE → MASHING → BOILING → COOLING → DONE`
+- Каждый этап читает рецепт, управляет ТЭНом и насосом
+- PID-регулятор для поддержания температуры пауз затирания
+- Таймеры для хмеля с уведомлениями в Telegram
+
+#### [NEW] [telegram_service.py](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/services/telegram_service.py)
+
+Telegram-бот:
+- Уведомления: «пауза 65°C достигнута», «внесите хмель», «варка завершена»
+- Команды: `/status`, `/stop`, `/history`
+
+#### [NEW] [routers/](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/routers/)
+
+REST API эндпоинты:
+- `recipes.py` — CRUD рецептов
+- `sessions.py` — управление сессиями варки
+- `sensors.py` — список датчиков, назначение, пересканирование
+- `control.py` — ручное управление ТЭНом/насосом
+- `ws.py` — WebSocket для реалтайм данных на фронтенд
+
+---
+
+### Фаза 3 — Frontend (React + Vite)
+
+#### [NEW] [frontend/](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/frontend/)
+
+React SPA с Premium тёмным дизайном в стиле промышленного контроллера.
+
+**Дизайн:** тёмная тема (industrial/SCADA), анимации реле и насоса, адаптивный PWA-ready layout.
+
+---
+
+#### Страница «Главная» (`/`)
+
+- Логотип OrangeBrew — **крупно, по центру**, без дополнительных надписей
+- Навигация к разделам: **Пивоварение**, Брожение, Дистилляция, Ректификация, Настройки
+
+---
+
+#### Страница «Пивоварение» (`/brewing`)
+
+Три пункта-карточки:
+
+| Пункт | Иконка | Действие |
+|---|---|---|
+| **Выбрать рецепт** | 📜 свиток | → Список рецептов |
+| **Добавить рецепт** | ➕ плюс | → Конструктор рецептов |
+| **История варок** | 📖 история | → История варок |
+
+---
+
+#### Страница «Список рецептов» (`/brewing/recipes`)
+
+- Список рецептов, **упорядоченных по дате** (новые сверху)
+- Каждая карточка: **заголовок** = название рецепта, **подзаголовок** = имя пивовара + дата
+- **По клику** → переход на страницу «Затирание» с подставленными значениями из рецепта
+
+---
+
+#### Страница «Конструктор рецептов» (`/brewing/recipes/new`)
+
+**Поля формы:**
+
+| Поле | Обязательное | По умолчанию |
+|---|---|---|
+| Имя пивовара | ✅ | — |
+| Дата варки | ✅ | Текущая дата |
+| Место варки | ❌ | — |
+| Название рецепта | ✅ | — |
+| Ингредиенты | ❌ | — |
+| Температурные паузы | ✅ | 1 пауза (температура + время), кнопка ➕ для добавления |
+
+**Кнопки:**
+- **Отмена** → возврат на «Пивоварение»
+- **Сохранить** → сохранение в БД, возврат на «Пивоварение»
+- **Начать варку** → сохранение + переход на «Затирание» с этим рецептом
+
+---
+
+#### Страница «Затирание» (`/brewing/mash/:sessionId`)
+
+**Шапка:** название рецепта
+
+**Список температурных пауз** (из рецепта):
+- 🔸 Кислотная пауза — 35–45 °C
+- 🔸 Белковая пауза — 44–59 °C
+- 🔸 Пауза осахаривания — 61–72 °C
+- 🔸 Мэш-аут — 77–79 °C
+
+**Элементы управления:**
+- ☑️ Чекбокс **«ТЭН покрыт водой»** (безопасность)
+- 🔘 Кнопка **«Начать затирание»** — **неактивна**, пока чекбокс не отмечен
+- 🎚️ **Слайдер мощности ТЭНа** (0–100%)
+- 💧 **Кнопка насоса** с анимацией вращения при включении
+- ⏱️ **Секундомер общего времени варки** (с нуля)
+
+**Автоматика при нажатии «Начать затирание»:**
+
+```
+1. ТЭН → 100% мощности
+2. Запуск секундомера общего времени варки
+3. Температура достигла первой паузы →
+   → начать таймер обратного отсчёта паузы
+   → ШИМ поддерживает целевую температуру (PID)
+4. Время паузы истекло →
+   → ТЭН → 100%, нагрев до следующей паузы
+5. Все паузы пройдены →
+   → диалог «Затирание завершено. Перейти к кипячению?»
+   → [Да] → переход на «Кипячение» (общий таймер НЕ останавливается)
+   → [Нет] → общий таймер останавливается, варка → «История варок», выход на главную
+```
+
+---
+
+#### Страница «Кипячение» (`/brewing/boil/:sessionId`)
+
+**Шапка:** «Кипячение» + общее время варки (продолжает считать)
+
+**Элементы:**
+- ТЭН включён на **максимум** при входе
+- При достижении **100°C** (±1°C) → запуск **отдельного таймера кипячения**
+- 🎚️ **Слайдер мощности ТЭНа** (0–100%) — для регулировки после закипания
+- 💧 **Кнопка насоса** с анимацией
+- 📊 **Живой график температуры**
+- Кнопка **«Завершить кипячение»** → общий таймер останавливается, варка → «История варок»
+
+---
+
+#### Страница «История варок» (`/brewing/history`)
+
+- Список **завершённых варок**, упорядоченных по дате (новые сверху)
+- Вид аналогичен списку рецептов: **заголовок** = название рецепта, **подзаголовок** = пивовар + дата + общее время варки
+
+---
+
+#### Дополнительные страницы (позже)
+
+- **Датчики** — обнаружение OneWire, присвоение имён, калибровка
+- **Настройки** — Telegram token, MQTT, единицы измерения
+
+---
+
+### Фаза 4 — Брожение
+
+#### [MODIFY] [brew_controller.py](file:///c:/Users/user/Documents/Antigravity/OrangeBrew/backend/app/services/brew_controller.py)
+
+Добавление режима `FERMENTATION`:
+- Профиль брожения (температурная кривая по дням)
+- Управление пивным охладителем (SSR) и насосом хладагента
+- Гистерезис ±0.5°C
+
+#### Frontend: страница «Брожение» с графиком температуры ЦКТ по дням
+
+---
+
+### Фаза 5 — Дистилляция / Ректификация (заглушки)
+
+Минимальные режимы мониторинга температур, расширяемые в будущем.
+
+---
+
+### Фаза 6 — Удалённый доступ
+
+- **Cloudflare Tunnel** (`cloudflared`) на OrangePi → привязка к домену пользователя
+- Nginx reverse proxy для FastAPI + фронтенда
+- systemd-сервисы с автозапуском
+- Опционально: Dockerfile + docker-compose как альтернатива systemd
+
+---
+
+## Структура проекта
+
+```
+OrangeBrew/
+├── firmware/                    # ESP8266 PlatformIO проект
+│   ├── platformio.ini
+│   └── src/
+│       ├── main.cpp
+│       └── config.h
+├── backend/                     # FastAPI сервер
+│   ├── requirements.txt
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   ├── schemas.py
+│   │   ├── services/
+│   │   │   ├── mqtt_service.py
+│   │   │   ├── brew_controller.py
+│   │   │   ├── fermentation_controller.py
+│   │   │   └── telegram_service.py
+│   │   └── routers/
+│   │       ├── recipes.py
+│   │       ├── sessions.py
+│   │       ├── sensors.py
+│   │       ├── control.py
+│   │       └── ws.py
+│   └── deploy/
+│       ├── orangebrew.service
+│       └── nginx.conf
+├── frontend/                    # React + Vite
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── index.html
+│   └── src/
+│       ├── App.jsx
+│       ├── index.css
+│       ├── components/
+│       ├── pages/
+│       └── services/
+└── docs/
+    ├── wiring.md                # Схема подключения
+    └── deploy.md                # Инструкция по развёртыванию
+```
+
+---
+
+## Схема подключения (ESP8266)
+
+| GPIO | Назначение | Подключение |
+|---|---|---|
+| **D2 (GPIO4)** | OneWire Data | DS18B20 (подтяжка 4.7kΩ к 3.3V) |
+| **D1 (GPIO5)** | SSR1 — ТЭН | SSR input (+), GND |
+| **D5 (GPIO14)** | SSR2 — Насос | SSR input (+), GND |
+| **3V3** | Питание датчиков | DS18B20 VCC |
+| **GND** | Общая земля | DS18B20 GND, SSR GND |
+
+> [!NOTE]
+> При добавлении оборудования для брожения (охладитель + насос хладагента) потребуется ещё 2 GPIO и 2 SSR.
+
+---
+
+## Verification Plan
+
+### Автоматические тесты
+
+1. **Backend unit-тесты** (pytest):
+   ```bash
+   cd backend && python -m pytest tests/ -v
+   ```
+   - Тесты моделей БД (CRUD рецептов, сессий)
+   - Тесты стейт-машины brew_controller
+   - Тесты PID-регулятора
+   - Тесты MQTT-хэндлеров (mock broker)
+
+2. **Frontend тесты** (Vitest):
+   ```bash
+   cd frontend && npm run test
+   ```
+   - Тесты компонентов (рендеринг страниц)
+   - Тесты API-сервисов (mock fetch)
+
+3. **Firmware**: компиляция через PlatformIO:
+   ```bash
+   cd firmware && pio run
+   ```
+
+### Ручная верификация
+
+1. **MQTT-связь**: на OrangePi запустить `mosquitto_sub -t "orangebrew/#"`, проверить получение данных от ESP
+2. **Веб-интерфейс**: открыть в браузере, проверить живой график, управление ТЭНом/насосом
+3. **Telegram**: отправить `/status` боту, проверить ответ
+4. **Автоматика**: запустить тестовый рецепт, проверить прохождение пауз
+5. **Удалённый доступ**: подключиться через Cloudflare Tunnel с телефона по домену
+
+> [!TIP]
+> Для тестирования без реального оборудования в backend предусмотрен **режим симуляции** (`SIMULATE=true`), который генерирует фейковые данные температуры и эмулирует отклик SSR.
