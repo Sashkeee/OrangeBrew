@@ -7,6 +7,9 @@ import RecipeConstructor from './pages/RecipeConstructor';
 import Mashing from './pages/Mashing';
 import Boiling from './pages/Boiling';
 import Fermentation from './pages/Fermentation';
+import Distillation from './pages/Distillation';
+import Rectification from './pages/Rectification';
+import SettingsPage from './pages/Settings';
 import History from './pages/History';
 
 function App() {
@@ -23,10 +26,11 @@ function App() {
           <Route path="/brewing/history" element={<History />} />
           <Route path="/fermentation" element={<Fermentation />} />
 
-          {/* Fallbacks for unfinished sections */}
-          <Route path="/distillation" element={<Placeholder title="Дистилляция" />} />
-          <Route path="/rectification" element={<Placeholder title="Ректификация" />} />
-          <Route path="/settings" element={<Placeholder title="Настройки" />} />
+          <Route path="/distillation" element={<Distillation />} />
+
+          <Route path="/rectification" element={<Rectification />} />
+
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </div>
     </Router>
