@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, User, Calendar, Loader, AlertTriangle, Plus } from 'lucide-react';
+import { ArrowLeft, Clock, Calendar, Loader, AlertTriangle, Plus, Pencil, Download, Upload } from 'lucide-react';
 import { useRecipes } from '../hooks/useRecipes.js';
 
 const RecipeList = () => {
@@ -35,6 +35,52 @@ const RecipeList = () => {
         } catch { return dateStr; }
     };
 
+    const handleExport = async () => {
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/recipes/export`);
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `orangebrew_recipes_${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            alert('Ошибка экспорта: ' + err.message);
+        }
+    };
+
+    const handleImport = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/recipes/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    alert(`Импорт завершен: добавлено ${result.imported} рецептов`);
+                    window.location.reload();
+                } else {
+                    alert('Ошибка импорта: ' + result.error);
+                }
+            } catch (err) {
+                alert('Ошибка чтения файла: ' + err.message);
+            }
+        };
+        input.click();
+    };
+
     return (
         <div style={{ padding: '2rem 1rem', maxWidth: '1000px', margin: '0 auto' }}>
             <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
@@ -52,22 +98,50 @@ const RecipeList = () => {
                     <ArrowLeft size={20} aria-hidden="true" />
                 </button>
                 <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)', flex: 1 }}>Выбор рецепта</h1>
-                <button
-                    onClick={() => navigate('/brewing/recipes/new')}
-                    aria-label="Добавить рецепт"
-                    style={{
-                        background: 'rgba(255,152,0,0.1)',
-                        border: '1px solid var(--primary-color)',
-                        color: 'var(--primary-color)',
-                        padding: '0.5rem 1rem',
-                        borderRadius: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                    }}
-                >
-                    <Plus size={18} aria-hidden="true" /> Новый
-                </button>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        onClick={handleExport}
+                        title="Экспорт"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid #444',
+                            color: 'var(--text-secondary)',
+                            padding: '0.5rem',
+                            borderRadius: '4px'
+                        }}
+                    >
+                        <Download size={18} />
+                    </button>
+                    <button
+                        onClick={handleImport}
+                        title="Импорт"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid #444',
+                            color: 'var(--text-secondary)',
+                            padding: '0.5rem',
+                            borderRadius: '4px'
+                        }}
+                    >
+                        <Upload size={18} />
+                    </button>
+                    <button
+                        onClick={() => navigate('/brewing/recipes/new')}
+                        style={{
+                            background: 'rgba(255,152,0,0.1)',
+                            border: '1px solid var(--primary-color)',
+                            color: 'var(--primary-color)',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                        }}
+                    >
+                        <Plus size={18} /> Новый
+                    </button>
+                </div>
             </header>
 
             {/* Loading state */}
@@ -101,6 +175,7 @@ const RecipeList = () => {
                             color: '#000',
                             fontWeight: 'bold',
                             borderRadius: '4px',
+                            cursor: 'pointer'
                         }}
                     >
                         Создать первый рецепт
@@ -108,7 +183,6 @@ const RecipeList = () => {
                 </div>
             )}
 
-            {/* Recipe list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {recipes.map((recipe, index) => (
                     <motion.div
@@ -116,15 +190,12 @@ const RecipeList = () => {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        onClick={() => handleSelectRecipe(recipe)}
                         className="industrial-panel"
-                        role="button"
-                        aria-label={`Выбрать рецепт ${recipe.name}`}
+                        onClick={() => handleSelectRecipe(recipe)}
                         style={{
-                            padding: '1.5rem',
+                            padding: '1.2rem 1.5rem',
                             cursor: 'pointer',
                             display: 'flex',
-                            flexWrap: 'wrap',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '1rem',
@@ -158,6 +229,13 @@ const RecipeList = () => {
                             </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); navigate(`/brewing/recipes/${recipe.id}/edit`); }}
+                                aria-label="Редактировать рецепт"
+                                style={{ background: 'none', border: '1px solid #444', color: 'var(--primary-color)', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                            >
+                                <Pencil size={14} />
+                            </button>
                             <button
                                 onClick={(e) => handleDelete(e, recipe.id)}
                                 aria-label="Удалить рецепт"

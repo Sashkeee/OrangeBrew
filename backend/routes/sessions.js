@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { sessionQueries, temperatureQueries, fractionQueries, fermentationQueries } from '../db/database.js';
+import { sessionQueries, recipeQueries, temperatureQueries, fractionQueries, fermentationQueries } from '../db/database.js';
+import telegram from '../services/telegram.js';
 
 const router = Router();
 
@@ -25,11 +26,28 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/sessions — create session
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
+        console.log('[Sessions] Creating new session:', req.body.type);
         const session = sessionQueries.create(req.body);
+
+        let recipeName = '—';
+        if (req.body.recipe_id) {
+            const recipe = recipeQueries.getById(req.body.recipe_id);
+            if (recipe) recipeName = recipe.name;
+        }
+
+        console.log(`[Sessions] Notifying Telegram: process=${req.body.type}, recipe=${recipeName}`);
+        telegram.setCurrentProcessType(req.body.type || 'brew');
+        await telegram.notifyPhaseChange(
+            req.body.type || 'brew',
+            'Начало процесса',
+            `Рецепт: *${recipeName}*`
+        );
+
         res.status(201).json(session);
     } catch (err) {
+        console.error('[Sessions] Error creating session:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -50,6 +68,7 @@ router.post('/:id/complete', (req, res) => {
     try {
         const session = sessionQueries.complete(req.params.id);
         if (!session) return res.status(404).json({ error: 'Session not found' });
+        telegram.notifyComplete(session.type || 'brew', { notes: session.notes });
         res.json(session);
     } catch (err) {
         res.status(500).json({ error: err.message });

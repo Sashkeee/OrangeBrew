@@ -20,6 +20,56 @@ router.get('/', (req, res) => {
     }
 });
 
+// ─── Export / Import ──────────────────────────────────────
+
+// GET /api/recipes/export — export all recipes as JSON download
+router.get('/export', (req, res) => {
+    try {
+        const recipes = recipeQueries.getAll().map(r => ({
+            ...r,
+            ingredients: JSON.parse(r.ingredients || '[]'),
+            mash_steps: JSON.parse(r.mash_steps || '[]'),
+            hop_additions: JSON.parse(r.hop_additions || '[]'),
+        }));
+
+        // Strip internal IDs and timestamps for clean export
+        const exportData = recipes.map(({ id, created_at, updated_at, ...rest }) => rest);
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="orangebrew_recipes_${new Date().toISOString().slice(0, 10)}.json"`);
+        res.json({ version: 1, exported_at: new Date().toISOString(), recipes: exportData });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/recipes/import — import recipes from JSON
+router.post('/import', (req, res) => {
+    try {
+        const { recipes } = req.body;
+        if (!Array.isArray(recipes)) {
+            return res.status(400).json({ error: 'Expected { recipes: [...] }' });
+        }
+
+        let imported = 0;
+        let skipped = 0;
+        for (const recipe of recipes) {
+            try {
+                recipeQueries.create(recipe);
+                imported++;
+            } catch {
+                skipped++;
+            }
+        }
+
+        res.json({ ok: true, imported, skipped, total: recipes.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Individual Ops ───────────────────────────────────────
+
 // GET /api/recipes/:id — single recipe
 router.get('/:id', (req, res) => {
     try {

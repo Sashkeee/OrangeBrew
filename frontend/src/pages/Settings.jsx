@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -8,6 +8,7 @@ import {
     Usb, Radio, Bot, Eye, Moon, Sun, Globe, Gauge,
     Zap, Droplets, Timer, Database, Download, Upload, Trash2
 } from 'lucide-react';
+import { settingsApi } from '../api/client.js';
 
 // Дефолтные настройки
 const DEFAULT_SETTINGS = {
@@ -96,15 +97,32 @@ const SettingsPage = () => {
     const [saved, setSaved] = useState(false);
     const [expandedSensors, setExpandedSensors] = useState({});
 
-    // Загрузка из localStorage
+    // Загрузка из API (с фоллбэком на localStorage)
     useEffect(() => {
-        const stored = localStorage.getItem('orangebrew_settings');
-        if (stored) {
+        (async () => {
             try {
-                const parsed = JSON.parse(stored);
-                setSettings(prev => ({ ...prev, ...parsed }));
-            } catch (e) { /* ignore */ }
-        }
+                const apiSettings = await settingsApi.getAll();
+                if (apiSettings && Object.keys(apiSettings).length > 0) {
+                    // API returns flat key-value; each key is a section name with nested object
+                    const merged = { ...DEFAULT_SETTINGS };
+                    for (const [key, value] of Object.entries(apiSettings)) {
+                        if (typeof value === 'object' && value !== null && merged[key]) {
+                            merged[key] = { ...merged[key], ...value };
+                        } else {
+                            merged[key] = value;
+                        }
+                    }
+                    setSettings(merged);
+                    return;
+                }
+            } catch { /* API unavailable, fallback to localStorage */ }
+            const stored = localStorage.getItem('orangebrew_settings');
+            if (stored) {
+                try {
+                    setSettings(prev => ({ ...prev, ...JSON.parse(stored) }));
+                } catch { /* ignore */ }
+            }
+        })();
     }, []);
 
     const updateSetting = (section, key, value) => {
@@ -128,7 +146,13 @@ const SettingsPage = () => {
         setSaved(false);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        // Save to both API and localStorage
+        try {
+            await settingsApi.update(settings);
+        } catch (e) {
+            console.warn('[Settings] API save failed, saving to localStorage only', e);
+        }
         localStorage.setItem('orangebrew_settings', JSON.stringify(settings));
         setHasChanges(false);
         setSaved(true);
@@ -423,6 +447,34 @@ const SettingsPage = () => {
                                         onChange={e => updateSetting('telegram', 'notifyInterval', parseInt(e.target.value))}
                                         style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
                                 </SettingRow>
+
+                                <div style={{ marginTop: '1rem' }}>
+                                    <button
+                                        onClick={async () => {
+                                            if (hasChanges) {
+                                                alert('⚠️ Пожалуйста, сначала сохраните настройки (кнопка "Сохранить" внизу), чтобы изменения вступили в силу на сервере.');
+                                                return;
+                                            }
+                                            try {
+                                                const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/settings/test-telegram`, { method: 'POST' });
+                                                const data = await res.json();
+                                                if (data.ok) {
+                                                    alert('✅ Сообщение отправлено! Проверьте ваш Telegram.');
+                                                } else {
+                                                    alert(`❌ Ошибка: ${data.message || 'Неизвестная ошибка'}`);
+                                                }
+                                            } catch (e) {
+                                                alert('❌ Ошибка: Сервер не ответил. Проверьте запущен ли бэкенд.');
+                                            }
+                                        }}
+                                        style={{
+                                            width: '100%', padding: '0.8rem', borderRadius: '6px',
+                                            border: '1px solid rgba(41,182,246,0.3)', background: 'rgba(41,182,246,0.08)',
+                                            color: '#29b6f6', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem',
+                                        }}>
+                                        📨 Отправить тестовое сообщение
+                                    </button>
+                                </div>
                             </motion.div>
                         )}
                     </div>

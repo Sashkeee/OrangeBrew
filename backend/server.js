@@ -6,15 +6,17 @@ import { createServer } from 'http';
 import { initDatabase, closeDatabase } from './db/database.js';
 import { initWebSocket, broadcastSensors } from './ws/liveServer.js';
 import { updateSensorReadings } from './routes/sensors.js';
-import { setCommandSender } from './routes/control.js';
+import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
-import PidManager from './pid/PidManager.js'; // Import PID Manager
+import PidManager from './pid/PidManager.js';
+import telegram from './services/telegram.js';
 
 import recipesRouter from './routes/recipes.js';
 import sessionsRouter from './routes/sessions.js';
 import sensorsRouter from './routes/sensors.js';
 import controlRouter from './routes/control.js';
 import settingsRouter from './routes/settings.js';
+import telegramRouter from './routes/telegram.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
 const DB_PATH = process.env.DB_PATH || './data/orangebrew.db';
@@ -42,6 +44,7 @@ app.use('/api/sessions', sessionsRouter);
 app.use('/api/sensors', sensorsRouter);
 app.use('/api/control', controlRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/telegram', telegramRouter);
 
 // Debug routes for Mock
 app.post('/api/debug/mock/temps', (req, res) => {
@@ -90,6 +93,9 @@ async function main() {
     const server = createServer(app);
     initWebSocket(server);
 
+    // Initialize Telegram
+    telegram.initTelegram();
+
     // ─── Serial / Mock Connection ─────────────────────────────
 
     if (CONNECTION_TYPE === 'mock') {
@@ -109,6 +115,8 @@ async function main() {
         serial.on('data', (data) => {
             updateSensorReadings(data);
             broadcastSensors(data);
+            telegram.updateSensorData(data);
+            telegram.updateControlState(getControlState());
         });
 
         serial.on('ack', (ack) => {
@@ -126,6 +134,8 @@ async function main() {
         serial.on('data', (data) => {
             updateSensorReadings(data);
             broadcastSensors(data);
+            telegram.updateSensorData(data);
+            telegram.updateControlState(getControlState());
         });
         pidManager = new PidManager(serial); // Also init PID for "real" serial
     }
@@ -163,6 +173,8 @@ async function main() {
         if (pidManager) {
             pidManager.setEnabled(false);
         }
+
+        telegram.shutdownTelegram();
 
         closeDatabase();
 

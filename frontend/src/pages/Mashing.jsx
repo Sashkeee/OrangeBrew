@@ -23,6 +23,16 @@ const Mashing = () => {
     const { sensors } = useSensors();
     const { control, setHeater, setPump, setPidMode, setPidTarget } = useControl();
 
+    const sendTelegramNotify = async (type, payload = {}) => {
+        try {
+            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/telegram/${type}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } catch (e) { console.error('[Telegram] Notify failed:', e); }
+    };
+
     // Recipe
     const [recipeData, setRecipeData] = useState(null);
     useEffect(() => {
@@ -35,6 +45,9 @@ const Mashing = () => {
                 if (recipeSteps.length > 0) setRecipeData({ ...parsed, steps: recipeSteps });
             }
         } catch (e) { console.warn('Could not load recipe', e); }
+
+        // Set process type for TG reports
+        sendTelegramNotify('set-process-type', { type: 'mash' });
     }, []);
 
     const steps = useMemo(() => recipeData?.steps?.map(s => ({
@@ -106,6 +119,7 @@ const Mashing = () => {
                 if (temperatureRef.current >= step.temp) {
                     setStepPhase('holding');
                     setStepTimeRemaining(step.duration * 60);
+                    sendTelegramNotify('notify-mash-step', { type: 'reached', step });
                 }
             } else {
                 setStepTimeRemaining(prev => {
@@ -115,7 +129,10 @@ const Mashing = () => {
                         if (next < steps.length) {
                             setActiveStep(next);
                             setStepPhase('heating');
+                            sendTelegramNotify('notify-mash-step', { type: 'completed', step });
                         } else {
+                            sendTelegramNotify('notify-mash-step', { type: 'completed', step });
+                            sendTelegramNotify('notify-boil', { type: 'complete', details: 'Все температурные паузы завершены. Приступаем к кипячению.' });
                             setAllDone(true);
                             setIsStarted(false);
                         }
@@ -135,6 +152,13 @@ const Mashing = () => {
         return () => clearTimeout(t);
     }, [allDone, navigate, sessionId]);
 
+    // Pump toggle
+    const handlePumpToggle = () => {
+        const next = !pumpOn;
+        setPump(next);
+        sendTelegramNotify('notify-pump', { value: next });
+    };
+
     // Auto toggle
     const toggleAuto = () => {
         const next = !isStarted;
@@ -142,6 +166,7 @@ const Mashing = () => {
         setPidMode(next);
         if (next && currentStep) {
             setPidTarget(currentStep.temp);
+            sendTelegramNotify('notify-boil', { type: 'start', details: `Начало варки рецепта: *${recipeName}*` });
         } else {
             setHeater(0);
         }
@@ -255,7 +280,7 @@ const Mashing = () => {
                             </motion.div>
                             <button
                                 className={`btn-pump ${pumpOn ? 'btn-pump--on' : ''}`}
-                                onClick={() => setPump(!pumpOn)}
+                                onClick={handlePumpToggle}
                             >
                                 НАСОС {pumpOn ? 'ВКЛ' : 'ВЫКЛ'}
                             </button>

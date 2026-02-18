@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Play, X, Plus } from 'lucide-react';
-import { recipesApi } from '../api/client.js';
+import { ArrowLeft, Clock, Calendar, Plus, X, Save, Play, Loader, AlertTriangle } from 'lucide-react';
+import { recipesApi, sessionsApi } from '../api/client.js';
 
 const RecipeConstructor = () => {
     const navigate = useNavigate();
@@ -80,11 +80,17 @@ const RecipeConstructor = () => {
         try {
             setSaving(true);
             const created = await recipesApi.create(recipe);
+            // Create a brew session
+            const session = await sessionsApi.create({
+                recipe_id: created.id,
+                type: 'mash',
+                status: 'active'
+            });
             localStorage.setItem('currentRecipe', JSON.stringify({
                 ...created,
                 steps: recipe.mash_steps,
             }));
-            navigate(`/brewing/mash/${created.id}`);
+            navigate(`/brewing/mash/${session.id}`);
         } catch (e) {
             console.error('[RecipeConstructor] Save+start failed:', e);
             alert('Ошибка сохранения: ' + e.message);
