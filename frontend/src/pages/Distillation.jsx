@@ -10,6 +10,8 @@ import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, ReferenceLine, Legend
 } from 'recharts';
+import { useSensors } from '../hooks/useSensors';
+import { useControl } from '../hooks/useControl';
 
 // Фазы дистилляции
 const PHASES = [
@@ -22,20 +24,24 @@ const PHASES = [
 const Distillation = () => {
     const navigate = useNavigate();
 
+    // Hooks
+    const { sensors, connected } = useSensors();
+    const { control, setHeater, setCooler } = useControl();
+
     // Основное состояние
     const [isStarted, setIsStarted] = useState(false);
     const [currentPhase, setCurrentPhase] = useState(0);
-    const [heaterPower, setHeaterPower] = useState(100);
     const [isHeaterCovered, setIsHeaterCovered] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-    // Температуры (несколько точек)
-    const [tempBoiler, setTempBoiler] = useState(25.0);   // Куб
-    const [tempColumn, setTempColumn] = useState(25.0);    // Верх колонны
-    const [tempOutput, setTempOutput] = useState(20.0);    // Выход продукта
+    // Температуры (from sensors hook)
+    const tempBoiler = sensors.boiler?.value || 0;
+    const tempColumn = sensors.column?.value || 0;
+    const tempOutput = sensors.output?.value || 0;
 
-    // Охлаждение
-    const [coolingPower, setCoolingPower] = useState(50);
+    // Управление (from control hook)
+    const heaterPower = control.heater;
+    const coolingPower = control.cooler;
 
     // График
     const [history, setHistory] = useState([]);
@@ -48,58 +54,32 @@ const Distillation = () => {
     const [showAddFraction, setShowAddFraction] = useState(false);
     const [newFraction, setNewFraction] = useState({ volume: '', abv: '', note: '' });
 
-    // Скорость отбора
+    // Скорость отбора (расчетная)
     const [collectSpeed, setCollectSpeed] = useState(0);
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    // Симуляция
+    // Таймер
     useEffect(() => {
         let interval;
         if (isStarted) {
-            interval = setInterval(() => {
-                setElapsedSeconds(prev => prev + 1);
-
-                // Симуляция температур
-                setTempBoiler(prev => {
-                    const powerEffect = (heaterPower / 100) * 0.5;
-                    const loss = (prev - 20) * 0.003;
-                    return parseFloat(Math.min(prev + powerEffect - loss, 100).toFixed(1));
-                });
-
-                setTempColumn(prev => {
-                    // Верх колонны следует за кубом с задержкой
-                    const target = tempBoiler * 0.85;
-                    const diff = target - prev;
-                    return parseFloat((prev + diff * 0.05).toFixed(1));
-                });
-
-                setTempOutput(prev => {
-                    // Выход зависит от охлаждения
-                    const incoming = tempColumn * 0.4;
-                    const cooling = (coolingPower / 100) * 0.3;
-                    const target = incoming - cooling * 20 + 15;
-                    const diff = target - prev;
-                    return parseFloat(Math.max(15, prev + diff * 0.08).toFixed(1));
-                });
-
-                // Скорость отбора (мл/мин) — растёт когда куб выше 78°C
-                setCollectSpeed(tempBoiler > 78 ? Math.round((tempBoiler - 78) * 8 + Math.random() * 3) : 0);
-
-                // Запись в историю
-                const now = new Date();
-                setHistory(h => [...h.slice(-120), {
-                    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                    boiler: tempBoiler,
-                    column: tempColumn,
-                    output: tempOutput
-                }]);
-            }, 1000);
+            interval = setInterval(() => setElapsedSeconds(prev => prev + 1), 1000);
         }
         return () => clearInterval(interval);
-    }, [isStarted, heaterPower, tempBoiler, tempColumn, tempOutput, coolingPower]);
+    }, [isStarted]);
+
+    // История для графика
+    useEffect(() => {
+        const now = new Date();
+        setHistory(h => [...h.slice(-120), {
+            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            boiler: tempBoiler,
+            column: tempColumn,
+            output: tempOutput
+        }]);
+    }, [tempBoiler, tempColumn, tempOutput]);
 
     // Форматирование
     const formatTime = (seconds) => {
@@ -244,7 +224,7 @@ const Distillation = () => {
                             </div>
                             <input
                                 type="range" min={0} max={100} value={heaterPower}
-                                onChange={e => setHeaterPower(parseInt(e.target.value))}
+                                onChange={e => setHeater(parseInt(e.target.value))}
                                 disabled={!isStarted}
                                 style={{ width: '100%', accentColor: 'var(--primary-color)', opacity: isStarted ? 1 : 0.3 }}
                             />
@@ -258,7 +238,7 @@ const Distillation = () => {
                             </div>
                             <input
                                 type="range" min={0} max={100} value={coolingPower}
-                                onChange={e => setCoolingPower(parseInt(e.target.value))}
+                                onChange={e => setCooler(parseInt(e.target.value))}
                                 disabled={!isStarted}
                                 style={{ width: '100%', accentColor: 'var(--accent-blue)', opacity: isStarted ? 1 : 0.3 }}
                             />

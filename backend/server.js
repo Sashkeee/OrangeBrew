@@ -8,6 +8,7 @@ import { initWebSocket, broadcastSensors } from './ws/liveServer.js';
 import { updateSensorReadings } from './routes/sensors.js';
 import { setCommandSender } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
+import PidManager from './pid/PidManager.js'; // Import PID Manager
 
 import recipesRouter from './routes/recipes.js';
 import sessionsRouter from './routes/sessions.js';
@@ -55,9 +56,31 @@ app.post('/api/debug/mock/simulation', (req, res) => {
     res.json({ ok: true, enabled: req.body.enabled });
 });
 
+// PID Debug Routes (Temporary until standard control route updated)
+app.post('/api/debug/pid/enable', (req, res) => {
+    if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
+    pidManager.setEnabled(req.body.enabled);
+    res.json({ ok: true, enabled: req.body.enabled });
+});
+
+app.post('/api/debug/pid/target', (req, res) => {
+    if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
+    pidManager.setTarget(req.body.target);
+    res.json({ ok: true, target: req.body.target });
+});
+
+app.post('/api/debug/pid/tunings', (req, res) => {
+    if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
+    const { kp, ki, kd } = req.body;
+    pidManager.setTunings(kp, ki, kd);
+    res.json({ ok: true, tunings: { kp, ki, kd } });
+});
+
+
 // ─── Initialize ───────────────────────────────────────────
 
 let serial = null;
+let pidManager = null; // Global PID Manager
 
 async function main() {
     // Database (async — sql.js loads WASM)
@@ -74,10 +97,16 @@ async function main() {
         serial = new MockSerial();
 
         // Forward commands from control routes to mock
-        setCommandSender((cmd) => serial.handleCommand(cmd));
+        setCommandSender((cmd) => {
+            // If manual heater command, disable PID
+            if (cmd.cmd === 'setHeater' && pidManager && pidManager.enabled) {
+                // pidManager.setEnabled(false); // Optional: auto-disable PID on manual override
+            }
+            serial.write(JSON.stringify(cmd));
+        });
 
         // Listen for sensor data from mock
-        serial.on('sensors', (data) => {
+        serial.on('data', (data) => {
             updateSensorReadings(data);
             broadcastSensors(data);
         });
@@ -86,17 +115,24 @@ async function main() {
             console.log(`[Mock] ACK: ${ack.cmd} → ${ack.ok ? 'OK' : 'FAIL'}`);
         });
 
-        serial.start();
+        // Initialize PID Manager
+        pidManager = new PidManager(serial);
+
+        // serial.start(); // Not needed for MockSerial (auto-starts)
     } else {
         console.log(`[Server] Serial mode: ${CONNECTION_TYPE} (not implemented yet — falling back to mock)`);
         serial = new MockSerial();
-        setCommandSender((cmd) => serial.handleCommand(cmd));
-        serial.on('sensors', (data) => {
+        setCommandSender((cmd) => serial.write(JSON.stringify(cmd)));
+        serial.on('data', (data) => {
             updateSensorReadings(data);
             broadcastSensors(data);
         });
-        serial.start();
+        pidManager = new PidManager(serial); // Also init PID for "real" serial
     }
+
+    // Broadcast PID status occasionally? 
+    // Or hooks into PidManager to emit WebSocket events?
+    // For now, let's just let it run.
 
     // ─── Start ────────────────────────────────────────────────
 
@@ -119,8 +155,13 @@ async function main() {
         console.log(`\n[Server] Received ${signal}. Shutting down gracefully...`);
 
         if (serial) {
-            serial.handleCommand({ cmd: 'emergencyStop' });
-            serial.stop();
+            // serial.handleCommand({ cmd: 'emergencyStop' }); // Old mock method
+            serial.write(JSON.stringify({ cmd: 'emergencyStop' }));
+            if (serial.stop) serial.stop();
+        }
+
+        if (pidManager) {
+            pidManager.setEnabled(false);
         }
 
         closeDatabase();

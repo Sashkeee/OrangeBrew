@@ -3,15 +3,24 @@ import { motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Droplets, Zap, ShieldCheck, Timer, AlertCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useSensors } from '../hooks/useSensors';
+import { useControl } from '../hooks/useControl';
 
 const Boiling = () => {
     const navigate = useNavigate();
     const { sessionId } = useParams();
 
+    // Hooks
+    const { sensors } = useSensors();
+    const { control, setHeater, setPump } = useControl();
+
     const [isStarted, setIsStarted] = useState(false);
-    const [heaterPower, setHeaterPower] = useState(100);
-    const [pumpOn, setPumpOn] = useState(false);
-    const [temperature, setTemperature] = useState(78);
+
+    // Data from hooks
+    const temperature = sensors.boiler?.value || 20;
+    const heaterPower = control.heater;
+    const pumpOn = control.pump;
+
     const [elapsedTime, setElapsedTime] = useState(0);
     const [boilTimer, setBoilTimer] = useState(60 * 60); // 60 mins default
     const [history, setHistory] = useState([]);
@@ -21,6 +30,12 @@ const Boiling = () => {
         setMounted(true);
     }, []);
 
+    // Graph history update
+    useEffect(() => {
+        const now = new Date();
+        setHistory(h => [...h.slice(-50), { time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), temp: temperature }]);
+    }, [temperature]);
+
     useEffect(() => {
         let interval;
         if (isStarted) {
@@ -29,21 +44,10 @@ const Boiling = () => {
                 if (temperature >= 99 && boilTimer > 0) {
                     setBoilTimer(prev => prev - 1);
                 }
-
-                setTemperature(prev => {
-                    const powerEffect = (heaterPower / 100) * 0.4;
-                    const heatLoss = (prev - 20) * 0.005;
-                    const newVal = Math.min(prev + powerEffect - heatLoss, 100.2);
-
-                    const now = new Date();
-                    setHistory(h => [...h.slice(-50), { time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), temp: parseFloat(newVal.toFixed(1)) }]);
-
-                    return newVal;
-                });
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [isStarted, heaterPower, temperature]);
+    }, [isStarted, temperature, boilTimer]);
 
     const formatTime = (seconds) => {
         const h = Math.floor(seconds / (60 * 60));
@@ -98,7 +102,7 @@ const Boiling = () => {
                                 min="0"
                                 max="100"
                                 value={heaterPower}
-                                onChange={(e) => setHeaterPower(parseInt(e.target.value))}
+                                onChange={(e) => setHeater(parseInt(e.target.value))}
                                 style={{ width: '100%', accentColor: 'var(--accent-red)' }}
                             />
                             <div className="text-mono" style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '1.5rem' }}>{heaterPower}%</div>
@@ -108,7 +112,7 @@ const Boiling = () => {
                             <motion.div animate={{ rotate: pumpOn ? 360 : 0 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} style={{ color: pumpOn ? 'var(--accent-blue)' : '#444' }}>
                                 <Droplets size={40} aria-hidden="true" />
                             </motion.div>
-                            <button onClick={() => setPumpOn(!pumpOn)} style={{ marginTop: '0.5rem', padding: '0.5rem 2rem', borderRadius: '20px', background: pumpOn ? 'var(--accent-blue)' : 'transparent', border: `1px solid ${pumpOn ? 'var(--accent-blue)' : '#444'}`, color: pumpOn ? '#000' : '#fff', fontWeight: 'bold' }}>
+                            <button onClick={() => setPump(!pumpOn)} style={{ marginTop: '0.5rem', padding: '0.5rem 2rem', borderRadius: '20px', background: pumpOn ? 'var(--accent-blue)' : 'transparent', border: `1px solid ${pumpOn ? 'var(--accent-blue)' : '#444'}`, color: pumpOn ? '#000' : '#fff', fontWeight: 'bold' }}>
                                 НАСОС {pumpOn ? 'ВКЛ' : 'ВЫКЛ'}
                             </button>
                         </div>

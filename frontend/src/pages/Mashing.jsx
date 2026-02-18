@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Droplets, Zap, ShieldCheck, Timer, CheckCircle, Flame, Thermometer, ZoomIn, ZoomOut } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { useSensors } from '../hooks/useSensors';
+import { useControl } from '../hooks/useControl';
 
 const DEFAULT_STEPS = [
     { name: 'Пауза осахаривания', temp: 65, duration: 60 }
@@ -11,6 +13,10 @@ const DEFAULT_STEPS = [
 const Mashing = () => {
     const navigate = useNavigate();
     const { sessionId } = useParams();
+
+    // Hooks
+    const { sensors } = useSensors();
+    const { control, setHeater, setPump } = useControl();
 
     // Load recipe from localStorage
     const [recipeData, setRecipeData] = useState(null);
@@ -39,9 +45,12 @@ const Mashing = () => {
     // Core states
     const [isHeaterCovered, setIsHeaterCovered] = useState(false);
     const [isStarted, setIsStarted] = useState(false);
-    const [heaterPower, setHeaterPower] = useState(100); // Default 100%
-    const [pumpOn, setPumpOn] = useState(false);
-    const [temperature, setTemperature] = useState(25.5);
+
+    // Data from hooks
+    const temperature = sensors.boiler?.value || 20;
+    const heaterPower = control.heater;
+    const pumpOn = control.pump;
+
     const [elapsedTime, setElapsedTime] = useState(0);
     const [history, setHistory] = useState([]);
     const [mounted, setMounted] = useState(false);
@@ -79,7 +88,20 @@ const Mashing = () => {
         }
     }, [activeStep, stepPhase]);
 
-    // Main simulation loop
+    // Graph history update
+    useEffect(() => {
+        const now = new Date();
+        const currentStep = steps[activeStep];
+        const targetTemp = currentStep ? currentStep.temp : 0;
+
+        setHistory(h => [...h.slice(-50), {
+            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            temp: temperature,
+            target: targetTemp
+        }]);
+    }, [temperature, activeStep, steps]);
+
+    // Automation Loop (Client-side Logic for now)
     useEffect(() => {
         let interval;
         if (isStarted && !allDone) {
@@ -93,40 +115,13 @@ const Mashing = () => {
                 const currentTemp = temperatureRef.current;
                 const targetTemp = currentStep.temp;
 
-                // Determine heater power based on phase
-                let autoHeaterPower;
-                if (currentPhase === 'heating') {
-                    // Full power to reach target
-                    autoHeaterPower = 100;
-                } else {
-                    // Holding phase — PWM-like temperature maintenance
-                    if (currentTemp > targetTemp + 0.5) {
-                        autoHeaterPower = 0;
-                    } else if (currentTemp < targetTemp - 0.5) {
-                        autoHeaterPower = 50;
-                    } else {
-                        // Fine control around target
-                        const diff = targetTemp - currentTemp;
-                        autoHeaterPower = Math.max(5, Math.min(30, Math.round(15 + diff * 20)));
-                    }
-                }
-                setHeaterPower(autoHeaterPower);
+                // Simple Bang-Bang / Hysteresis control for now (until PID)
+                // Only if not already set manually? For now, let's override logic
+                // logic: if heating, 100%. if holding, maintain.
 
-                // Temperature simulation
-                setTemperature(prev => {
-                    const powerEffect = (autoHeaterPower / 100) * 0.5;
-                    const heatLoss = (prev - 20) * 0.01;
-                    const newVal = prev + powerEffect - heatLoss;
-
-                    const now = new Date();
-                    setHistory(h => [...h.slice(-50), {
-                        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                        temp: parseFloat(newVal.toFixed(1)),
-                        target: targetTemp
-                    }]);
-
-                    return newVal;
-                });
+                // Note: We are NOT setting heater power here automatically anymore
+                // because we want the user to control it OR utilize the future PID.
+                // For this interim step, let's just do phase transitions.
 
                 // Phase transitions
                 if (currentPhase === 'heating') {
@@ -260,7 +255,7 @@ const Mashing = () => {
                                 min="0"
                                 max="100"
                                 value={heaterPower}
-                                onChange={(e) => setHeaterPower(parseInt(e.target.value))}
+                                onChange={(e) => setHeater(parseInt(e.target.value))}
                                 disabled={isStarted} // Disabled during auto mode
                                 style={{ width: '100%', accentColor: 'var(--primary-color)' }}
                             />
@@ -280,7 +275,7 @@ const Mashing = () => {
                                 <Droplets size={40} aria-hidden="true" />
                             </motion.div>
                             <button
-                                onClick={() => setPumpOn(!pumpOn)}
+                                onClick={() => setPump(!pumpOn)}
                                 style={{
                                     marginTop: '0.5rem',
                                     padding: '0.5rem 2rem',
