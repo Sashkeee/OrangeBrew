@@ -1,60 +1,175 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Droplets, Zap, ShieldCheck, Timer } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, Play, Pause, Droplets, Zap, ShieldCheck, Timer, CheckCircle, Flame, Thermometer, ZoomIn, ZoomOut } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+
+const DEFAULT_STEPS = [
+    { name: 'Пауза осахаривания', temp: 65, duration: 60 }
+];
 
 const Mashing = () => {
     const navigate = useNavigate();
     const { sessionId } = useParams();
 
-    // States
-    const [isHeaterCovered, setIsHeaterCovered] = useState(false);
-    const [isStarted, setIsStarted] = useState(false);
-    const [heaterPower, setHeaterPower] = useState(0);
-    const [pumpOn, setPumpOn] = useState(false);
-    const [temperature, setTemperature] = useState(25.5);
-    const [targetTemp, setTargetTemp] = useState(65);
-    const [elapsedTime, setElapsedTime] = useState(0); // in seconds
-    const [history, setHistory] = useState([]);
-    const [activeStep, setActiveStep] = useState(0);
-    const [mounted, setMounted] = useState(false);
-
+    // Load recipe from localStorage
+    const [recipeData, setRecipeData] = useState(null);
     useEffect(() => {
-        setMounted(true);
+        try {
+            const saved = localStorage.getItem('currentRecipe');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed && parsed.steps && parsed.steps.length > 0) {
+                    setRecipeData(parsed);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load recipe from localStorage', e);
+        }
     }, []);
 
-    const steps = [
-        { name: 'Кислотная пауза', temp: 40, duration: 15 },
-        { name: 'Белковая пауза', temp: 52, duration: 20 },
-        { name: 'Осахаривание 1', temp: 63, duration: 45 },
-        { name: 'Осахаривание 2', temp: 72, duration: 15 },
-        { name: 'Мэш-аут', temp: 78, duration: 10 },
-    ];
+    const steps = recipeData?.steps?.map(s => ({
+        name: s.name,
+        temp: s.temp,
+        duration: s.duration
+    })) || DEFAULT_STEPS;
 
-    // Simulation effect
+    const recipeName = recipeData?.name || 'IPA "Orange Sunshine"';
+
+    // Core states
+    const [isHeaterCovered, setIsHeaterCovered] = useState(false);
+    const [isStarted, setIsStarted] = useState(false);
+    const [heaterPower, setHeaterPower] = useState(100); // Default 100%
+    const [pumpOn, setPumpOn] = useState(false);
+    const [temperature, setTemperature] = useState(25.5);
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const [history, setHistory] = useState([]);
+    const [mounted, setMounted] = useState(false);
+
+    // Graph scale state
+    const [graphYMin, setGraphYMin] = useState(20);
+    const [graphYMax, setGraphYMax] = useState(100);
+
+    // Step automation states
+    const [activeStep, setActiveStep] = useState(0);
+    const [stepPhase, setStepPhase] = useState('heating'); // 'heating' | 'holding'
+    const [stepTimeRemaining, setStepTimeRemaining] = useState(0); // seconds remaining in pause
+    const [completedSteps, setCompletedSteps] = useState([]);
+    const [allDone, setAllDone] = useState(false);
+
+    // Refs for accessing latest state in interval
+    const temperatureRef = useRef(temperature);
+    const activeStepRef = useRef(activeStep);
+    const stepPhaseRef = useRef(stepPhase);
+    const stepTimeRemainingRef = useRef(stepTimeRemaining);
+
+    useEffect(() => { temperatureRef.current = temperature; }, [temperature]);
+    useEffect(() => { activeStepRef.current = activeStep; }, [activeStep]);
+    useEffect(() => { stepPhaseRef.current = stepPhase; }, [stepPhase]);
+    useEffect(() => { stepTimeRemainingRef.current = stepTimeRemaining; }, [stepTimeRemaining]);
+
+    useEffect(() => { setMounted(true); }, []);
+
+    // Set initial target and step time
+    useEffect(() => {
+        if (steps.length > 0 && activeStep < steps.length) {
+            if (stepPhase === 'holding') {
+                setStepTimeRemaining(steps[activeStep].duration * 60); // convert minutes to seconds
+            }
+        }
+    }, [activeStep, stepPhase]);
+
+    // Main simulation loop
     useEffect(() => {
         let interval;
-        if (isStarted) {
+        if (isStarted && !allDone) {
             interval = setInterval(() => {
                 setElapsedTime(prev => prev + 1);
 
+                const currentStep = steps[activeStepRef.current];
+                if (!currentStep) return;
+
+                const currentPhase = stepPhaseRef.current;
+                const currentTemp = temperatureRef.current;
+                const targetTemp = currentStep.temp;
+
+                // Determine heater power based on phase
+                let autoHeaterPower;
+                if (currentPhase === 'heating') {
+                    // Full power to reach target
+                    autoHeaterPower = 100;
+                } else {
+                    // Holding phase — PWM-like temperature maintenance
+                    if (currentTemp > targetTemp + 0.5) {
+                        autoHeaterPower = 0;
+                    } else if (currentTemp < targetTemp - 0.5) {
+                        autoHeaterPower = 50;
+                    } else {
+                        // Fine control around target
+                        const diff = targetTemp - currentTemp;
+                        autoHeaterPower = Math.max(5, Math.min(30, Math.round(15 + diff * 20)));
+                    }
+                }
+                setHeaterPower(autoHeaterPower);
+
                 // Temperature simulation
                 setTemperature(prev => {
-                    const powerEffect = (heaterPower / 100) * 0.5;
+                    const powerEffect = (autoHeaterPower / 100) * 0.5;
                     const heatLoss = (prev - 20) * 0.01;
                     const newVal = prev + powerEffect - heatLoss;
 
-                    // Update history
                     const now = new Date();
-                    setHistory(h => [...h.slice(-50), { time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), temp: parseFloat(newVal.toFixed(1)) }]);
+                    setHistory(h => [...h.slice(-50), {
+                        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                        temp: parseFloat(newVal.toFixed(1)),
+                        target: targetTemp
+                    }]);
 
                     return newVal;
                 });
+
+                // Phase transitions
+                if (currentPhase === 'heating') {
+                    if (currentTemp >= targetTemp) {
+                        // Reached target — switch to holding
+                        setStepPhase('holding');
+                        setStepTimeRemaining(currentStep.duration * 60);
+                    }
+                } else {
+                    // Holding — count down timer
+                    setStepTimeRemaining(prev => {
+                        const next = prev - 1;
+                        if (next <= 0) {
+                            // Pause complete → advance
+                            setCompletedSteps(cs => [...cs, activeStepRef.current]);
+                            const nextStep = activeStepRef.current + 1;
+                            if (nextStep < steps.length) {
+                                setActiveStep(nextStep);
+                                setStepPhase('heating');
+                            } else {
+                                // All steps done — go to boiling
+                                setAllDone(true);
+                                setIsStarted(false);
+                            }
+                            return 0;
+                        }
+                        return next;
+                    });
+                }
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [isStarted, heaterPower]);
+    }, [isStarted, allDone, steps]);
+
+    // Navigate to boiling when all done
+    useEffect(() => {
+        if (allDone) {
+            const timer = setTimeout(() => {
+                navigate(`/brewing/boil/${sessionId || 'new'}`);
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [allDone, navigate, sessionId]);
 
     const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);
@@ -62,9 +177,16 @@ const Mashing = () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    const handleStart = () => {
+        setIsStarted(!isStarted);
+    };
+
+    const currentStep = steps[activeStep];
+    const targetTemp = currentStep?.temp || 65;
+
     return (
         <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     <button
                         onClick={() => navigate('/brewing')}
@@ -73,11 +195,22 @@ const Mashing = () => {
                     >
                         <ArrowLeft size={20} aria-hidden="true" />
                     </button>
-                    <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)' }}>Затирание: <span style={{ color: '#fff' }}>IPA "Orange Sunshine"</span></h1>
+                    <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)' }}>Затирание: <span style={{ color: '#fff' }}>{recipeName}</span></h1>
                 </div>
-                <div className="industrial-panel" style={{ padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderColor: 'var(--primary-color)' }}>
-                    <Timer size={20} color="var(--primary-color)" aria-hidden="true" />
-                    <span className="text-mono" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(elapsedTime)}</span>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    {isStarted && stepPhase === 'holding' && (
+                        <div className="industrial-panel" style={{ padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderColor: 'var(--accent-green)' }}>
+                            <Thermometer size={20} color="var(--accent-green)" aria-hidden="true" />
+                            <div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>ПАУЗА</div>
+                                <span className="text-mono" style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--accent-green)' }}>{formatTime(stepTimeRemaining)}</span>
+                            </div>
+                        </div>
+                    )}
+                    <div className="industrial-panel" style={{ padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderColor: 'var(--primary-color)' }}>
+                        <Timer size={20} color="var(--primary-color)" aria-hidden="true" />
+                        <span className="text-mono" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(elapsedTime)}</span>
+                    </div>
                 </div>
             </header>
 
@@ -89,10 +222,31 @@ const Mashing = () => {
                         {/* Temp Gauge */}
                         <div className="industrial-panel" style={{ padding: '2rem', textAlign: 'center' }}>
                             <div style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>ТЕМПЕРАТУРА</div>
-                            <div className="text-mono" style={{ fontSize: '3.5rem', fontWeight: '700', color: temperature > 70 ? 'var(--accent-red)' : 'var(--accent-green)' }}>
+                            <div className="text-mono" style={{
+                                fontSize: '3.5rem',
+                                fontWeight: '700',
+                                color: temperature > targetTemp ? 'var(--accent-red)' : (
+                                    stepPhase === 'holding' && Math.abs(temperature - targetTemp) < 1 ? 'var(--accent-green)' : 'var(--text-primary)'
+                                )
+                            }}>
                                 {temperature.toFixed(1)}°
                             </div>
                             <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>ЦЕЛЬ: {targetTemp}°C</div>
+                            {isStarted && (
+                                <div style={{
+                                    marginTop: '0.5rem',
+                                    padding: '0.3rem 0.8rem',
+                                    borderRadius: '12px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    display: 'inline-block',
+                                    background: stepPhase === 'heating' ? 'rgba(255, 152, 0, 0.2)' : 'rgba(76, 175, 80, 0.2)',
+                                    color: stepPhase === 'heating' ? 'var(--primary-color)' : 'var(--accent-green)',
+                                    border: `1px solid ${stepPhase === 'heating' ? 'var(--primary-color)' : 'var(--accent-green)'}`
+                                }}>
+                                    {stepPhase === 'heating' ? '🔥 НАГРЕВ' : '⏸ ПАУЗА'}
+                                </div>
+                            )}
                         </div>
 
                         {/* Heater Control */}
@@ -107,10 +261,13 @@ const Mashing = () => {
                                 max="100"
                                 value={heaterPower}
                                 onChange={(e) => setHeaterPower(parseInt(e.target.value))}
-                                disabled={!isStarted || !isHeaterCovered}
+                                disabled={isStarted} // Disabled during auto mode
                                 style={{ width: '100%', accentColor: 'var(--primary-color)' }}
                             />
                             <div className="text-mono" style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '1.5rem' }}>{heaterPower}%</div>
+                            {isStarted && (
+                                <div style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>АВТО</div>
+                            )}
                         </div>
 
                         {/* Pump Control */}
@@ -140,13 +297,79 @@ const Mashing = () => {
                     </div>
 
                     {/* Graph */}
-                    <div className="industrial-panel" style={{ padding: '1.5rem', height: '400px', width: '100%', minWidth: 0 }}>
+                    <div className="industrial-panel" style={{ padding: '1.5rem', height: '400px', width: '100%', minWidth: 0, position: 'relative' }}>
+                        {/* Graph scale controls */}
+                        <div style={{
+                            position: 'absolute',
+                            top: '0.7rem',
+                            right: '0.7rem',
+                            zIndex: 10,
+                            display: 'flex',
+                            gap: '0.3rem',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginRight: '0.3rem' }}>МАСШТАБ</span>
+                            <button
+                                onClick={() => {
+                                    const range = graphYMax - graphYMin;
+                                    if (range > 20) {
+                                        const mid = (graphYMin + graphYMax) / 2;
+                                        const newHalf = range * 0.35;
+                                        setGraphYMin(Math.max(0, Math.round(mid - newHalf)));
+                                        setGraphYMax(Math.min(120, Math.round(mid + newHalf)));
+                                    }
+                                }}
+                                aria-label="Приблизить график"
+                                style={{
+                                    width: '28px', height: '28px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: 'rgba(255,152,0,0.1)', border: '1px solid #444',
+                                    borderRadius: '4px', color: 'var(--primary-color)', cursor: 'pointer'
+                                }}
+                            >
+                                <ZoomIn size={14} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const range = graphYMax - graphYMin;
+                                    if (range < 120) {
+                                        const mid = (graphYMin + graphYMax) / 2;
+                                        const newHalf = range * 0.7;
+                                        setGraphYMin(Math.max(0, Math.round(mid - newHalf)));
+                                        setGraphYMax(Math.min(120, Math.round(mid + newHalf)));
+                                    }
+                                }}
+                                aria-label="Отдалить график"
+                                style={{
+                                    width: '28px', height: '28px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: 'rgba(255,152,0,0.1)', border: '1px solid #444',
+                                    borderRadius: '4px', color: 'var(--primary-color)', cursor: 'pointer'
+                                }}
+                            >
+                                <ZoomOut size={14} />
+                            </button>
+                            <button
+                                onClick={() => { setGraphYMin(20); setGraphYMax(100); }}
+                                aria-label="Сбросить масштаб графика"
+                                style={{
+                                    height: '28px',
+                                    padding: '0 8px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: 'transparent', border: '1px solid #444',
+                                    borderRadius: '4px', color: '#888', cursor: 'pointer',
+                                    fontSize: '0.65rem'
+                                }}
+                            >
+                                СБРОС
+                            </button>
+                        </div>
                         {mounted && (
                             <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <LineChart data={history}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                     <XAxis dataKey="time" stroke="#666" fontSize={12} />
-                                    <YAxis domain={[20, 100]} stroke="#666" fontSize={12} />
+                                    <YAxis domain={[graphYMin, graphYMax]} stroke="#666" fontSize={12} />
                                     <Tooltip
                                         contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', color: '#fff' }}
                                         itemStyle={{ color: 'var(--primary-color)' }}
@@ -158,6 +381,17 @@ const Mashing = () => {
                                         strokeWidth={2}
                                         dot={false}
                                         animationDuration={300}
+                                        name="Температура"
+                                    />
+                                    <Line
+                                        type="stepAfter"
+                                        dataKey="target"
+                                        stroke="var(--accent-green)"
+                                        strokeWidth={1}
+                                        strokeDasharray="5 5"
+                                        dot={false}
+                                        animationDuration={300}
+                                        name="Цель"
                                     />
                                 </LineChart>
                             </ResponsiveContainer>
@@ -170,69 +404,133 @@ const Mashing = () => {
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
                         <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>ПАУЗЫ ЗАТИРАНИЯ</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            {steps.map((step, idx) => (
-                                <div key={idx} style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '1rem',
-                                    padding: '0.8rem',
-                                    background: activeStep === idx ? 'rgba(255,152,0,0.1)' : 'transparent',
-                                    border: activeStep === idx ? '1px solid var(--primary-color)' : '1px solid #333',
-                                    borderRadius: '4px',
-                                    opacity: idx < activeStep ? 0.5 : 1
-                                }}>
-                                    <div style={{
-                                        width: '10px',
-                                        height: '10px',
-                                        borderRadius: '50%',
-                                        background: idx < activeStep ? 'var(--accent-green)' : (idx === activeStep ? 'var(--primary-color)' : '#444')
-                                    }} />
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: '0.9rem', fontWeight: idx === activeStep ? 'bold' : 'normal' }}>{step.name}</div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{step.temp}°C / {step.duration} мин</div>
+                            {steps.map((step, idx) => {
+                                const isActive = activeStep === idx;
+                                const isCompleted = completedSteps.includes(idx);
+                                const isHolding = isActive && stepPhase === 'holding';
+                                return (
+                                    <div key={idx} style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '1rem',
+                                        padding: '0.8rem',
+                                        background: isActive ? 'rgba(255,152,0,0.1)' : (isCompleted ? 'rgba(76,175,80,0.05)' : 'transparent'),
+                                        border: isActive ? '1px solid var(--primary-color)' : (isCompleted ? '1px solid var(--accent-green)' : '1px solid #333'),
+                                        borderRadius: '4px',
+                                        transition: 'all 0.3s ease'
+                                    }}>
+                                        <div style={{
+                                            width: '10px',
+                                            height: '10px',
+                                            borderRadius: '50%',
+                                            background: isCompleted ? 'var(--accent-green)' : (isActive ? 'var(--primary-color)' : '#444'),
+                                            boxShadow: isActive ? '0 0 8px var(--primary-color)' : 'none'
+                                        }} />
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{
+                                                fontSize: '0.9rem',
+                                                fontWeight: isActive ? 'bold' : 'normal',
+                                                color: isCompleted ? 'var(--text-secondary)' : 'inherit'
+                                            }}>
+                                                {step.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                {step.temp}°C / {step.duration} мин
+                                            </div>
+                                            {isHolding && (
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--accent-green)', marginTop: '0.2rem', fontWeight: 'bold' }}>
+                                                    ⏱ Осталось: {formatTime(stepTimeRemaining)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {isCompleted && (
+                                            <CheckCircle size={20} color="var(--accent-green)" style={{ flexShrink: 0 }} />
+                                        )}
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
-                    <div className="industrial-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', padding: '1rem', background: isHeaterCovered ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)', borderRadius: '4px', border: `1px solid ${isHeaterCovered ? 'var(--accent-green)' : 'var(--accent-red)'}` }}>
-                            <input
-                                type="checkbox"
-                                checked={isHeaterCovered}
-                                onChange={(e) => setIsHeaterCovered(e.target.checked)}
-                                style={{ width: '20px', height: '20px' }}
-                            />
-                            <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>ТЭН покрыт водой</div>
-                                <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Блокировка нагрева без воды</div>
-                            </div>
-                            <ShieldCheck color={isHeaterCovered ? 'var(--accent-green)' : 'var(--accent-red)'} />
-                        </label>
+                    {/* All steps done notification */}
+                    <AnimatePresence>
+                        {allDone && (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="industrial-panel"
+                                style={{
+                                    padding: '1.5rem',
+                                    textAlign: 'center',
+                                    borderColor: 'var(--accent-green)',
+                                    background: 'rgba(76, 175, 80, 0.1)'
+                                }}
+                            >
+                                <CheckCircle size={40} color="var(--accent-green)" />
+                                <div style={{ marginTop: '0.5rem', fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--accent-green)' }}>
+                                    Затирание завершено!
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
+                                    Переход к кипячению...
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
-                        <button
-                            disabled={!isHeaterCovered}
-                            onClick={() => setIsStarted(!isStarted)}
-                            style={{
-                                padding: '1.5rem',
-                                borderRadius: '8px',
-                                border: 'none',
-                                background: isStarted ? 'var(--accent-red)' : 'var(--primary-color)',
-                                color: '#000',
-                                fontWeight: 'bold',
-                                fontSize: '1.2rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '1rem',
-                                cursor: isHeaterCovered ? 'pointer' : 'not-allowed',
-                                opacity: isHeaterCovered ? 1 : 0.5
-                            }}
-                        >
-                            {isStarted ? <><Pause size={24} aria-hidden="true" /> СТОП</> : <><Play size={24} aria-hidden="true" /> СТАРТ ЗАТИРАНИЯ</>}
-                        </button>
-                    </div>
+                    {/* Safety & Start — only before/during process */}
+                    {!allDone && (
+                        <div className="industrial-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column' }}>
+                            {/* Button first — stays in place */}
+                            <button
+                                disabled={!isStarted && !isHeaterCovered}
+                                onClick={handleStart}
+                                style={{
+                                    padding: '1.5rem',
+                                    borderRadius: '8px',
+                                    border: 'none',
+                                    background: isStarted ? 'var(--accent-red)' : 'var(--primary-color)',
+                                    color: '#000',
+                                    fontWeight: 'bold',
+                                    fontSize: '1.2rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '1rem',
+                                    cursor: (!isStarted && !isHeaterCovered) ? 'not-allowed' : 'pointer',
+                                    opacity: (!isStarted && !isHeaterCovered) ? 0.5 : 1
+                                }}
+                            >
+                                {isStarted ? <><Pause size={24} aria-hidden="true" /> СТОП</> : <><Play size={24} aria-hidden="true" /> СТАРТ ЗАТИРАНИЯ</>}
+                            </button>
+
+                            {/* Safety checkbox below — hidden after start */}
+                            {!isStarted && (
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '1rem',
+                                    cursor: 'pointer',
+                                    padding: '1rem',
+                                    marginTop: '1.5rem',
+                                    background: isHeaterCovered ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)',
+                                    borderRadius: '4px',
+                                    border: `1px solid ${isHeaterCovered ? 'var(--accent-green)' : 'var(--accent-red)'}`
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={isHeaterCovered}
+                                        onChange={(e) => setIsHeaterCovered(e.target.checked)}
+                                        style={{ width: '20px', height: '20px' }}
+                                    />
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>ТЭН покрыт водой</div>
+                                        <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Блокировка нагрева без воды</div>
+                                    </div>
+                                    <ShieldCheck color={isHeaterCovered ? 'var(--accent-green)' : 'var(--accent-red)'} />
+                                </label>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -6,6 +6,7 @@ import RecipeList from './pages/RecipeList';
 import RecipeConstructor from './pages/RecipeConstructor';
 import Mashing from './pages/Mashing';
 import Boiling from './pages/Boiling';
+import Fermentation from './pages/Fermentation';
 import History from './pages/History';
 
 function App() {
@@ -20,9 +21,9 @@ function App() {
           <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
           <Route path="/brewing/boil/:sessionId" element={<Boiling />} />
           <Route path="/brewing/history" element={<History />} />
+          <Route path="/fermentation" element={<Fermentation />} />
 
           {/* Fallbacks for unfinished sections */}
-          <Route path="/fermentation" element={<Placeholder title="Брожение" />} />
           <Route path="/distillation" element={<Placeholder title="Дистилляция" />} />
           <Route path="/rectification" element={<Placeholder title="Ректификация" />} />
           <Route path="/settings" element={<Placeholder title="Настройки" />} />

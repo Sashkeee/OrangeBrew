@@ -150,6 +150,28 @@ const Boiling = () => {
                         </div>
                     </div>
 
+                    <div className="industrial-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <button
+                            onClick={() => setIsStarted(!isStarted)}
+                            style={{
+                                padding: '1.5rem',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: isStarted ? 'var(--accent-red)' : 'var(--primary-color)',
+                                color: '#000',
+                                fontWeight: 'bold',
+                                fontSize: '1.2rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '1rem',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {isStarted ? <><Pause size={24} aria-hidden="true" /> СТОП</> : <><Play size={24} aria-hidden="true" /> СТАРТ КИПЯЧЕНИЯ</>}
+                        </button>
+                    </div>
+
                     <button
                         onClick={() => navigate('/brewing/history')}
                         style={{

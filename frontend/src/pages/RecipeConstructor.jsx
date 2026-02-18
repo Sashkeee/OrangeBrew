@@ -167,7 +167,10 @@ const RecipeConstructor = () => {
                         <Save size={20} aria-hidden="true" /> Сохранить
                     </button>
                     <button
-                        onClick={() => navigate('/brewing/mash/new')}
+                        onClick={() => {
+                            localStorage.setItem('currentRecipe', JSON.stringify(recipe));
+                            navigate('/brewing/mash/new');
+                        }}
                         style={{ flex: '2 1 200px', padding: '1rem', background: 'var(--primary-color)', border: 'none', color: '#000', fontWeight: 'bold', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
                     >
                         <Play size={20} aria-hidden="true" /> Начать варку

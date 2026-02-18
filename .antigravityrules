@@ -12,3 +12,4 @@
 - **The “Nudge” Prompt**: If I forget, simply type “Follow global rules: use cmd /c” or “Remember cmd /c” in the chat.
 - **Context Reset**: If a command gets stuck, tell me: “Rerun that using cmd /c so it terminates properly.”
 - **Manual Kill**: If a background process lingers, you can ignore it or manually close the terminal tab. The chat will remain interactive as long as I know the command is considered “done.”
+

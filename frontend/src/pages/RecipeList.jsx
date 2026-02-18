@@ -7,13 +7,52 @@ import { ru } from 'date-fns/locale';
 
 // Mock data based on plan
 const mockRecipes = [
-    { id: 1, name: 'IPA "Orange Sunshine"', brewer: 'Александр', date: new Date(), style: 'American IPA' },
-    { id: 2, name: 'Stout "Deep Dark"', brewer: 'Иван', date: new Date('2026-02-10'), style: 'Oatmeal Stout' },
-    { id: 3, name: 'Lager "Crystal Clear"', brewer: 'Александр', date: new Date('2026-02-05'), style: 'German Pilsner' },
+    {
+        id: 1,
+        name: 'IPA "Orange Sunshine"',
+        brewer: 'Александр',
+        date: new Date(),
+        style: 'American IPA',
+        steps: [
+            { id: '1', name: 'Белковая пауза', temp: 52, duration: 15 },
+            { id: '2', name: 'Осахаривание', temp: 67, duration: 60 },
+            { id: '3', name: 'Мэш-аут', temp: 78, duration: 10 },
+        ]
+    },
+    {
+        id: 2,
+        name: 'Stout "Deep Dark"',
+        brewer: 'Иван',
+        date: new Date('2026-02-10'),
+        style: 'Oatmeal Stout',
+        steps: [
+            { id: '1', name: 'Кислотная пауза', temp: 40, duration: 10 },
+            { id: '2', name: 'Белковая пауза', temp: 52, duration: 20 },
+            { id: '3', name: 'Осахаривание 1', temp: 63, duration: 45 },
+            { id: '4', name: 'Осахаривание 2', temp: 72, duration: 15 },
+            { id: '5', name: 'Мэш-аут', temp: 78, duration: 10 },
+        ]
+    },
+    {
+        id: 3,
+        name: 'Lager "Crystal Clear"',
+        brewer: 'Александр',
+        date: new Date('2026-02-05'),
+        style: 'German Pilsner',
+        steps: [
+            { id: '1', name: 'Осахаривание', temp: 65, duration: 60 },
+            { id: '2', name: 'Мэш-аут', temp: 76, duration: 10 },
+        ]
+    },
 ];
 
 const RecipeList = () => {
     const navigate = useNavigate();
+
+    const handleSelectRecipe = (recipe) => {
+        localStorage.setItem('currentRecipe', JSON.stringify(recipe));
+        navigate(`/brewing/mash/${recipe.id}`);
+    };
 
     return (
         <div style={{ padding: '2rem 1rem', maxWidth: '1000px', margin: '0 auto' }}>
@@ -41,7 +80,7 @@ const RecipeList = () => {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        onClick={() => navigate(`/brewing/mash/${recipe.id}`)}
+                        onClick={() => handleSelectRecipe(recipe)}
                         className="industrial-panel"
                         role="button"
                         aria-label={`Выбрать рецепт ${recipe.name}`}
