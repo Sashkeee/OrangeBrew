@@ -11,6 +11,8 @@ import Distillation from './pages/Distillation';
 import Rectification from './pages/Rectification';
 import SettingsPage from './pages/Settings';
 import History from './pages/History';
+import { ConnectionIndicator } from './components/ConnectionIndicator';
+import { MockControls } from './components/MockControls';
 
 function App() {
   return (
@@ -32,6 +34,8 @@ function App() {
 
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
+        <ConnectionIndicator />
+        <MockControls />
       </div>
     </Router>
   );

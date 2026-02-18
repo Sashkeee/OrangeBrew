@@ -11,6 +11,8 @@ import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, ReferenceLine, Legend
 } from 'recharts';
+import { useSensors } from '../hooks/useSensors';
+import { useControl } from '../hooks/useControl';
 
 // Фазы ректификации
 const PHASES = [
@@ -24,25 +26,27 @@ const PHASES = [
 const Rectification = () => {
     const navigate = useNavigate();
 
+    // Hooks
+    const { sensors, connected } = useSensors();
+    const { control, setHeater, setDephleg, setCooler } = useControl();
+
     // Основное состояние
     const [isStarted, setIsStarted] = useState(false);
     const [currentPhase, setCurrentPhase] = useState(0);
-    const [heaterPower, setHeaterPower] = useState(100);
     const [isHeaterCovered, setIsHeaterCovered] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-    // Температуры (4 точки)
-    const [tempBoiler, setTempBoiler] = useState(25.0);       // Куб
-    const [tempColumn, setTempColumn] = useState(25.0);        // Верх колонны (царга)
-    const [tempDephleg, setTempDephleg] = useState(20.0);      // После дефлегматора
-    const [tempOutput, setTempOutput] = useState(18.0);        // Выход продукта
+    // Температуры (from sensors hook)
+    const tempBoiler = sensors.boiler?.value || 0;
+    const tempColumn = sensors.column?.value || 0;
+    const tempDephleg = sensors.dephleg?.value || 0;
+    const tempOutput = sensors.output?.value || 0;
 
-    // Дефлегматор
-    const [dephlegPower, setDephlegPower] = useState(80);      // Мощность охлаждения дефлегматора (%)
-    const [dephlegMode, setDephlegMode] = useState('auto');     // auto / manual
-
-    // Охлаждение продукта
-    const [coolingPower, setCoolingPower] = useState(50);
+    // Управление (from control hook)
+    const heaterPower = control.heater;
+    const dephlegPower = control.dephleg;
+    const coolingPower = control.cooler;
+    const dephlegMode = control.dephlegMode || 'manual';
 
     // Флегмовое число
     const [refluxRatio, setRefluxRatio] = useState(3);         // Авто-расчёт или ручное
@@ -61,92 +65,31 @@ const Rectification = () => {
     const [showAddFraction, setShowAddFraction] = useState(false);
     const [newFraction, setNewFraction] = useState({ volume: '', abv: '', note: '' });
 
-    // Скорость отбора
+    // Скорость отбора (расчетная)
     const [collectSpeed, setCollectSpeed] = useState(0);
 
     useEffect(() => { setMounted(true); }, []);
 
-    // Симуляция
+    // Таймер
     useEffect(() => {
         let interval;
         if (isStarted) {
-            interval = setInterval(() => {
-                setElapsedSeconds(prev => prev + 1);
-
-                // Симуляция температуры куба
-                setTempBoiler(prev => {
-                    const powerEffect = (heaterPower / 100) * 0.4;
-                    const loss = (prev - 20) * 0.003;
-                    return parseFloat(Math.min(prev + powerEffect - loss, 100).toFixed(1));
-                });
-
-                // Верх колонны — стабилизируется за счёт дефлегматора
-                setTempColumn(prev => {
-                    const boilerInfluence = tempBoiler * 0.4;
-                    const dephlegEffect = (dephlegPower / 100) * 15;
-                    const target = boilerInfluence - dephlegEffect + 45;
-                    const diff = target - prev;
-                    return parseFloat(Math.max(20, prev + diff * 0.04).toFixed(1));
-                });
-
-                // После дефлегматора
-                setTempDephleg(prev => {
-                    const incoming = tempColumn * 0.6;
-                    const cooling = (dephlegPower / 100) * 20;
-                    const target = incoming - cooling + 20;
-                    const diff = target - prev;
-                    return parseFloat(Math.max(15, prev + diff * 0.06).toFixed(1));
-                });
-
-                // Выход продукта
-                setTempOutput(prev => {
-                    const incoming = tempDephleg * 0.3;
-                    const cooling = (coolingPower / 100) * 8;
-                    const target = incoming - cooling + 15;
-                    const diff = target - prev;
-                    return parseFloat(Math.max(12, prev + diff * 0.08).toFixed(1));
-                });
-
-                // Автоматический режим дефлегматора
-                if (dephlegMode === 'auto') {
-                    setDephlegPower(prev => {
-                        // Стараемся держать верх колонны ~78.3°C для этанола
-                        const targetColumnTemp = 78.3;
-                        const error = tempColumn - targetColumnTemp;
-                        const adjustment = error * 2;
-                        return Math.max(0, Math.min(100, Math.round(prev + adjustment)));
-                    });
-                }
-
-                // Скорость отбора — зависит от фазы и дефлегматора
-                const phaseId = PHASES[currentPhase].id;
-                if (tempBoiler > 78) {
-                    if (phaseId === 'heads') {
-                        setCollectSpeed(Math.round(1 + Math.random() * 2)); // капельный
-                    } else if (phaseId === 'hearts') {
-                        setCollectSpeed(Math.round((100 - dephlegPower) * 0.4 + Math.random() * 3));
-                    } else if (phaseId === 'stabilize') {
-                        setCollectSpeed(0); // работа на себя
-                    } else {
-                        setCollectSpeed(Math.round((tempBoiler - 78) * 5 + Math.random() * 3));
-                    }
-                } else {
-                    setCollectSpeed(0);
-                }
-
-                // Запись в историю
-                const now = new Date();
-                setHistory(h => [...h.slice(-120), {
-                    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                    boiler: tempBoiler,
-                    column: tempColumn,
-                    dephleg: tempDephleg,
-                    output: tempOutput
-                }]);
-            }, 1000);
+            interval = setInterval(() => setElapsedSeconds(prev => prev + 1), 1000);
         }
         return () => clearInterval(interval);
-    }, [isStarted, heaterPower, tempBoiler, tempColumn, tempDephleg, tempOutput, dephlegPower, dephlegMode, coolingPower, currentPhase]);
+    }, [isStarted]);
+
+    // История для графика
+    useEffect(() => {
+        const now = new Date();
+        setHistory(h => [...h.slice(-120), {
+            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            boiler: tempBoiler,
+            column: tempColumn,
+            dephleg: tempDephleg,
+            output: tempOutput
+        }]);
+    }, [tempBoiler, tempColumn, tempDephleg, tempOutput]); // Update when sensors change
 
     // Форматирование
     const formatTime = (seconds) => {
@@ -244,7 +187,7 @@ const Rectification = () => {
                                 ТЭН <Zap size={11} color="var(--primary-color)" />
                             </div>
                             <input type="range" min={0} max={100} value={heaterPower}
-                                onChange={e => setHeaterPower(parseInt(e.target.value))} disabled={!isStarted}
+                                onChange={e => setHeater(parseInt(e.target.value))} disabled={!isStarted}
                                 style={{ width: '100%', accentColor: 'var(--primary-color)', opacity: isStarted ? 1 : 0.3 }} />
                             <div className="text-mono" style={{ textAlign: 'center', fontSize: '1.1rem' }}>{heaterPower}%</div>
                         </div>
@@ -255,7 +198,7 @@ const Rectification = () => {
                                 <span style={{ fontSize: '0.65rem', letterSpacing: '0.1em', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                                     ДЕФЛЕГМАТОР <Droplets size={11} color="#ce93d8" />
                                 </span>
-                                <button onClick={() => setDephlegMode(m => m === 'auto' ? 'manual' : 'auto')} disabled={!isStarted}
+                                <button onClick={() => setDephleg(dephlegPower, dephlegMode === 'auto' ? 'manual' : 'auto')} disabled={!isStarted}
                                     style={{
                                         fontSize: '0.6rem', padding: '0.15rem 0.5rem', borderRadius: '10px', cursor: isStarted ? 'pointer' : 'default',
                                         background: dephlegMode === 'auto' ? 'rgba(3,169,244,0.2)' : 'rgba(255,255,255,0.05)',
@@ -267,7 +210,7 @@ const Rectification = () => {
                                 </button>
                             </div>
                             <input type="range" min={0} max={100} value={dephlegPower}
-                                onChange={e => { if (dephlegMode === 'manual') setDephlegPower(parseInt(e.target.value)); }}
+                                onChange={e => { if (dephlegMode === 'manual') setDephleg(parseInt(e.target.value)); }}
                                 disabled={!isStarted || dephlegMode === 'auto'}
                                 style={{ width: '100%', accentColor: '#ce93d8', opacity: (isStarted && dephlegMode === 'manual') ? 1 : 0.3 }} />
                             <div className="text-mono" style={{ textAlign: 'center', fontSize: '1.1rem', color: '#ce93d8' }}>{dephlegPower}%</div>
@@ -277,7 +220,7 @@ const Rectification = () => {
                         <div className="industrial-panel" style={{ padding: '1rem' }}>
                             <div style={{ fontSize: '0.65rem', letterSpacing: '0.1em', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>ОХЛАЖДЕНИЕ</div>
                             <input type="range" min={0} max={100} value={coolingPower}
-                                onChange={e => setCoolingPower(parseInt(e.target.value))} disabled={!isStarted}
+                                onChange={e => setCooler(parseInt(e.target.value))} disabled={!isStarted}
                                 style={{ width: '100%', accentColor: 'var(--accent-blue)', opacity: isStarted ? 1 : 0.3 }} />
                             <div className="text-mono" style={{ textAlign: 'center', fontSize: '1.1rem' }}>{coolingPower}%</div>
                         </div>

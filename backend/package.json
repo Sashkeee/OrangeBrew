@@ -1,0 +1,19 @@
+{
+    "name": "orangebrew-backend",
+    "version": "0.1.0",
+    "description": "OrangeBrew — backend server for brewing & distillation automation",
+    "main": "server.js",
+    "type": "module",
+    "scripts": {
+        "dev": "node --watch server.js",
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "sql.js": "^1.12.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.2",
+        "serialport": "^12.0.0",
+        "ws": "^8.18.0"
+    }
+}
