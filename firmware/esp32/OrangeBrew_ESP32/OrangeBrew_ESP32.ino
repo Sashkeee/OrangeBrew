@@ -15,6 +15,18 @@ unsigned long windowStartTime;
 int heaterPowerPercent = 0; // 0 - 100%
 bool isPumpOn = false;
 
+// --- ЗАЩИТА И БЕЗОПАСНОСТЬ ---
+#define WATCHDOG_TIMEOUT_MS 15000 // 15 секунд без связи = отключить всё
+#define MAX_SAFE_TEMP_C 102.0     // Перегрев (датчик на голом ТЭНе или ошибка)
+unsigned long lastCommandTime = 0;
+
+// Thermal Runaway (Защита от сгоревшего ТЭНа / выпавшего датчика)
+#define THERMAL_RUNAWAY_TIMEOUT_MS 180000 // 3 минуты
+#define THERMAL_RUNAWAY_MIN_RISE_C 0.5    // Минимальный рост темп-ры за 3 мин
+unsigned long runawayStartTime = 0;
+float runawayStartTemp = -100.0;
+bool runawayTracking = false;
+
 // --- ДАТЧИКИ ТЕМПЕРАТУРЫ ---
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -43,6 +55,7 @@ void setup() {
   sensors.requestTemperatures();
   
   windowStartTime = millis();
+  lastCommandTime = millis(); // Инициализация вочдога
 
   // Стартовое приветствие
   Serial.println("{\"status\":\"ready\", \"deviceCount\":" + String(deviceCount) + "}");
@@ -78,22 +91,36 @@ void processCommand(String payload) {
     if (val >= 0 && val <= 100) {
       heaterPowerPercent = val;
     }
+    lastCommandTime = millis();
   } 
   else if (strcmp(cmd, "setPump") == 0) {
     bool val = doc["value"];
     isPumpOn = val;
     digitalWrite(PUMP_PIN, isPumpOn ? HIGH : LOW);
+    lastCommandTime = millis();
   }
   else if (strcmp(cmd, "emergencyStop") == 0) {
     heaterPowerPercent = 0;
     isPumpOn = false;
     digitalWrite(PUMP_PIN, LOW);
     digitalWrite(HEATER_PIN, LOW);
+    lastCommandTime = millis();
   }
 }
 
 void loop() {
   unsigned long now = millis();
+
+  // --- БЛОК БЕЗОПАСНОСТИ 1: Watchdog потери связи ---
+  if (now - lastCommandTime > WATCHDOG_TIMEOUT_MS) {
+    if (heaterPowerPercent > 0 || isPumpOn) {
+      heaterPowerPercent = 0;
+      isPumpOn = false;
+      digitalWrite(HEATER_PIN, LOW);
+      digitalWrite(PUMP_PIN, LOW);
+      Serial.println("{\"error\":\"WATCHDOG_TIMEOUT\", \"msg\":\"Связь с ПК потеряна >15с. Аварийное отключение ТЭНа и Насоса!\"}");
+    }
+  }
 
   // 1. Медленный ШИМ (Software PWM) для ТЭНа
   if (now - windowStartTime > PWM_WINDOW_MS) {
@@ -134,15 +161,67 @@ void loop() {
     // Снова запрашиваем количество на всякий случай, если датчики отпадут/появятся
     deviceCount = sensors.getDeviceCount();
 
+    float maxValidTemp = -100.0;
+    int validSensors = 0;
+
     for (int i = 0; i < deviceCount; i++) {
       DeviceAddress tempDeviceAddress;
       if (sensors.getAddress(tempDeviceAddress, i)) {
         float tempC = sensors.getTempC(tempDeviceAddress);
         
+        // --- БЛОК БЕЗОПАСНОСТИ 2: Защита "Сухого старта" / обрыва ---
+        // Игнорируем сырые показания -127.0 (обрыв) и ровно 85.00 (ошибка старта)
+        if (tempC != DEVICE_DISCONNECTED_C && tempC != 85.00) {
+           validSensors++;
+           if (tempC > maxValidTemp) {
+             maxValidTemp = tempC;
+           }
+        }
+
         JsonObject sObj = dataArray.createNestedObject();
         sObj["address"] = getAddressString(tempDeviceAddress);
         sObj["temp"] = tempC;
       }
+    }
+
+    // Если нет валидных датчиков (все отвалились), отключаем ТЭН
+    if (validSensors == 0 && heaterPowerPercent > 0) {
+       heaterPowerPercent = 0;
+       digitalWrite(HEATER_PIN, LOW);
+       Serial.println("{\"error\":\"SENSOR_FAILURE\", \"msg\":\"Нет работающих датчиков. ТЭН отключен!\"}");
+    }
+
+    // --- БЛОК БЕЗОПАСНОСТИ 3: Жесткий лимит перегрева (голый ТЭН/сбой) ---
+    if (maxValidTemp > MAX_SAFE_TEMP_C && heaterPowerPercent > 0) {
+       heaterPowerPercent = 0;
+       digitalWrite(HEATER_PIN, LOW);
+       Serial.println("{\"error\":\"OVERHEAT\", \"msg\":\"КРИТИЧЕСКАЯ ТЕМПЕРАТУРА > 102C. ТЭН ОТКЛЮЧЕН!\"}");
+    }
+
+    // --- БЛОК БЕЗОПАСНОСТИ 4: ТЭН включен, но температура не растет (Thermal Runaway) ---
+    // Проверяем только если греем мощно (>=50%) и вода не кипит (< 95C)
+    if (heaterPowerPercent >= 50 && maxValidTemp > -100.0 && maxValidTemp < 95.0) {
+       if (!runawayTracking) {
+          runawayTracking = true;
+          runawayStartTime = now;
+          runawayStartTemp = maxValidTemp;
+       } else {
+          // Если температура выросла на нужную дельту, сбрасываем таймер
+          if (maxValidTemp >= runawayStartTemp + THERMAL_RUNAWAY_MIN_RISE_C) {
+             runawayStartTime = now;
+             runawayStartTemp = maxValidTemp;
+          } 
+          // Если прошло 3 минуты, а температура так и не выросла - авария!
+          else if (now - runawayStartTime > THERMAL_RUNAWAY_TIMEOUT_MS) {
+             heaterPowerPercent = 0;
+             digitalWrite(HEATER_PIN, LOW);
+             Serial.println("{\"error\":\"THERMAL_RUNAWAY\", \"msg\":\"ТЭН работает, но температура не растет! Аварийное отключение!\"}");
+             runawayTracking = false; // Чтобы не спамить (если ТЭН снова включат, трекинг начнется заново)
+          }
+       }
+    } else {
+       // Если ТЭН выключен, работает слабо (пауза) или мы кипятим (temp > 95) — отключаем трекинг
+       runawayTracking = false;
     }
     
     // Запрашиваем следующую конвертацию для следующего цикла

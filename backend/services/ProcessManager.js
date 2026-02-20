@@ -153,8 +153,18 @@ class ProcessManager extends EventEmitter {
     }
 
     stop() {
+        const oldSessionId = this.state.sessionId;
+
         this.reset();
         telegram.sendMessage('🛑 Процесс остановлен вручную');
+
+        if (oldSessionId) {
+            try {
+                sessionQueries.cancel(oldSessionId);
+            } catch (err) {
+                console.error('[ProcessManager] Failed to cancel session in DB', err);
+            }
+        }
     }
 
     pause() {
@@ -323,6 +333,14 @@ class ProcessManager extends EventEmitter {
         }
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.timerInterval = null;
+
+        if (this.state.mode === 'boil' && this.state.sessionId) {
+            try {
+                sessionQueries.complete(this.state.sessionId);
+            } catch (err) {
+                console.error('[ProcessManager] Failed to complete session in DB', err);
+            }
+        }
 
         const nextAction = prevMode === 'mash' ? 'Можно переходить к кипячению' : 'Варка завершена! Охлаждайте сусло.';
         telegram.notifyComplete(prevMode, { notes: nextAction });

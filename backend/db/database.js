@@ -149,10 +149,14 @@ export const recipeQueries = {
 
 export const sessionQueries = {
     getAll: (type) => {
-        if (type) {
-            return queryAll('SELECT * FROM brew_sessions WHERE type = ? ORDER BY started_at DESC', [type]);
-        }
-        return queryAll('SELECT * FROM brew_sessions ORDER BY started_at DESC');
+        const query = `
+            SELECT s.*, r.name as recipe_name 
+            FROM brew_sessions s 
+            LEFT JOIN recipes r ON s.recipe_id = r.id 
+            ${type ? 'WHERE s.type = ? ' : ''}
+            ORDER BY s.started_at DESC
+        `;
+        return type ? queryAll(query, [type]) : queryAll(query);
     },
 
     getById: (id) => queryOne('SELECT * FROM brew_sessions WHERE id = ?', [id]),
@@ -184,6 +188,11 @@ export const sessionQueries = {
 
     complete: (id) => {
         runSql(`UPDATE brew_sessions SET status = 'completed', finished_at = datetime('now') WHERE id = ?`, [id]);
+        return sessionQueries.getById(id);
+    },
+
+    cancel: (id) => {
+        runSql(`UPDATE brew_sessions SET status = 'cancelled', finished_at = datetime('now') WHERE id = ?`, [id]);
         return sessionQueries.getById(id);
     },
 };

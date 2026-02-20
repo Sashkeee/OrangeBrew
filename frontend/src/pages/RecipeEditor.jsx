@@ -132,7 +132,7 @@ const RecipeEditor = () => {
             // Create a brew session
             const session = await sessionsApi.create({
                 recipe_id: updated.id,
-                type: 'mash',
+                type: 'brewing',
                 status: 'active'
             });
             localStorage.setItem('currentRecipe', JSON.stringify({

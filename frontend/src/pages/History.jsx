@@ -4,9 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, Beer, Loader, AlertTriangle, Trash2, Filter, Eye } from 'lucide-react';
 import { sessionsApi } from '../api/client.js';
 
+import { ProcessChart } from '../components/ProcessChart.jsx';
+
 const TYPE_LABELS = {
-    mash: { label: 'Затирание', color: '#ff9800', emoji: '🌡' },
-    boil: { label: 'Кипячение', color: '#f44336', emoji: '🔥' },
+    brewing: { label: 'Пивоварение', color: '#ff9800', emoji: '🍻' },
+    mash: { label: 'Затирание (устар.)', color: '#ff9800', emoji: '🌡' },
+    boil: { label: 'Кипячение (устар.)', color: '#f44336', emoji: '🔥' },
     fermentation: { label: 'Брожение', color: '#4caf50', emoji: '🫧' },
     distillation: { label: 'Дистилляция', color: '#03a9f4', emoji: '💧' },
     rectification: { label: 'Ректификация', color: '#7c4dff', emoji: '⚗️' },
@@ -25,6 +28,10 @@ const History = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [filter, setFilter] = useState('');  // '' = all
+
+    const [expandedId, setExpandedId] = useState(null);
+    const [chartData, setChartData] = useState({});
+    const [loadingGraph, setLoadingGraph] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -71,12 +78,40 @@ const History = () => {
 
     const filterButtons = [
         { value: '', label: 'Все' },
-        { value: 'mash', label: '🌡 Затирание' },
-        { value: 'boil', label: '🔥 Кипячение' },
+        { value: 'brewing', label: '🍻 Пивоварение' },
         { value: 'fermentation', label: '🫧 Брожение' },
         { value: 'distillation', label: '💧 Дистилляция' },
         { value: 'rectification', label: '⚗️ Ректификация' },
     ];
+
+    const toggleExpand = async (id) => {
+        if (expandedId === id) {
+            setExpandedId(null);
+            return;
+        }
+        setExpandedId(id);
+        if (!chartData[id]) {
+            setLoadingGraph(true);
+            try {
+                // Fetch up to 5000 points
+                const temps = await sessionsApi.getTemperatures(id, 5000);
+                if (temps && temps.length > 0) {
+                    const formatted = temps.map(row => ({
+                        time: new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                        temp: row.value,
+                        unix: new Date(row.timestamp).getTime()
+                    }));
+                    setChartData(prev => ({ ...prev, [id]: formatted.reverse() }));
+                } else {
+                    setChartData(prev => ({ ...prev, [id]: [] }));
+                }
+            } catch (err) {
+                console.error('[History] Failed to load chart:', err);
+            } finally {
+                setLoadingGraph(false);
+            }
+        }
+    };
 
     return (
         <div style={{ padding: '2rem 1rem', maxWidth: '1000px', margin: '0 auto' }}>
@@ -147,67 +182,105 @@ const History = () => {
                             transition={{ delay: index * 0.05 }}
                             className="industrial-panel"
                             style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                borderLeft: `4px solid ${typeInfo.color}`,
+                                cursor: 'pointer',
+                                overflow: 'hidden'
+                            }}
+                            onClick={() => toggleExpand(session.id)}
+                        >
+                            <div style={{
                                 padding: '1.5rem',
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 flexWrap: 'wrap',
                                 gap: '1rem',
-                                borderLeft: `4px solid ${typeInfo.color}`
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flex: '1 1 300px' }}>
-                                <div style={{
-                                    background: `${typeInfo.color}15`,
-                                    padding: '0.8rem',
-                                    borderRadius: '8px',
-                                    fontSize: '1.5rem',
-                                    minWidth: '52px',
-                                    textAlign: 'center'
-                                }}>
-                                    {typeInfo.emoji}
-                                </div>
-                                <div>
-                                    <h3 style={{ margin: '0 0 0.4rem 0', fontSize: '1.1rem' }}>
-                                        {typeInfo.label}
-                                        {session.recipe_id && (
-                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 'normal', marginLeft: '0.5rem' }}>
-                                                (Рецепт #{session.recipe_id})
-                                            </span>
-                                        )}
-                                    </h3>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem 1.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                            <Calendar size={14} aria-hidden="true" /> {formatDate(session.started_at)}
-                                        </span>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                            <Clock size={14} aria-hidden="true" /> {formatDuration(session.started_at, session.finished_at)}
-                                        </span>
-                                        <span style={{
-                                            padding: '0.1rem 0.5rem', borderRadius: '10px', fontSize: '0.7rem',
-                                            background: `${statusInfo.color}20`, color: statusInfo.color,
-                                            border: `1px solid ${statusInfo.color}40`,
-                                        }}>
-                                            {statusInfo.label}
-                                        </span>
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flex: '1 1 300px' }}>
+                                    <div style={{
+                                        background: `${typeInfo.color}15`,
+                                        padding: '0.8rem',
+                                        borderRadius: '8px',
+                                        fontSize: '1.5rem',
+                                        minWidth: '52px',
+                                        textAlign: 'center'
+                                    }}>
+                                        {typeInfo.emoji}
                                     </div>
-                                    {session.notes && (
-                                        <div style={{ marginTop: '0.3rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic' }}>
-                                            {session.notes.substring(0, 100)}{session.notes.length > 100 ? '...' : ''}
+                                    <div>
+                                        <h3 style={{ margin: '0 0 0.4rem 0', fontSize: '1.1rem' }}>
+                                            {session.recipe_name || typeInfo.label}
+                                        </h3>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem 1.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                <Calendar size={14} aria-hidden="true" /> {formatDate(session.started_at)}
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                <Clock size={14} aria-hidden="true" /> {formatDuration(session.started_at, session.finished_at)}
+                                            </span>
+                                            <span style={{
+                                                padding: '0.1rem 0.5rem', borderRadius: '10px', fontSize: '0.7rem',
+                                                background: `${statusInfo.color}20`, color: statusInfo.color,
+                                                border: `1px solid ${statusInfo.color}40`,
+                                            }}>
+                                                {statusInfo.label}
+                                            </span>
                                         </div>
-                                    )}
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <button
+                                        onClick={(e) => handleDelete(e, session.id)}
+                                        aria-label="Удалить сессию"
+                                        style={{ background: 'none', border: '1px solid #444', color: '#f44336', padding: '0.3rem 0.5rem', borderRadius: '4px' }}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <button
-                                    onClick={(e) => handleDelete(e, session.id)}
-                                    aria-label="Удалить сессию"
-                                    style={{ background: 'none', border: '1px solid #444', color: '#f44336', padding: '0.3rem 0.5rem', borderRadius: '4px' }}
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
+                            {/* ─── Expanded Area ─── */}
+                            {expandedId === session.id && (
+                                <div style={{
+                                    padding: '1.5rem',
+                                    borderTop: '1px solid rgba(255,255,255,0.05)',
+                                    background: 'rgba(0,0,0,0.2)'
+                                }} onClick={e => e.stopPropagation()}>
+                                    <div style={{ marginBottom: '1rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                        <strong>Тип процесса:</strong> {typeInfo.label} <br />
+                                        <strong>Начало:</strong> {new Date(session.started_at).toLocaleString('ru-RU')} <br />
+                                        <strong>Окончание:</strong> {session.finished_at ? new Date(session.finished_at).toLocaleString('ru-RU') : '—'} <br />
+                                        {session.recipe_id && (
+                                            <><strong>ID Рецепта:</strong> #{session.recipe_id} <br /></>
+                                        )}
+                                        {session.notes && (
+                                            <><strong>Заметки:</strong> {session.notes}<br /></>
+                                        )}
+                                    </div>
+
+                                    {loadingGraph ? (
+                                        <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+                                            <Loader className="spin" size={24} /> <span style={{ marginLeft: '1rem' }}>Загрузка температур...</span>
+                                        </div>
+                                    ) : (
+                                        chartData[session.id] && chartData[session.id].length > 0 ? (
+                                            <div style={{ height: '300px', width: '100%', marginTop: '1rem' }}>
+                                                <ProcessChart
+                                                    data={chartData[session.id]}
+                                                    lines={[{ dataKey: 'temp', color: typeInfo.color, name: 'Температура' }]}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
+                                                График сохраненных температур недоступен.
+                                            </div>
+                                        )
+                                    )}
+                                </div>
+                            )}
                         </motion.div>
                     );
                 })}

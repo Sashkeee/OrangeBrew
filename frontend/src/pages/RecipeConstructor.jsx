@@ -48,10 +48,28 @@ const RecipeConstructor = () => {
     };
 
     /**
+     * Common Validation
+     */
+    const validateRecipe = () => {
+        if (!recipe.name.trim()) {
+            alert('Введите название рецепта');
+            return false;
+        }
+
+        for (let i = 0; i < recipe.mash_steps.length - 1; i++) {
+            if (parseFloat(recipe.mash_steps[i].temp) >= parseFloat(recipe.mash_steps[i + 1].temp)) {
+                alert(`Ошибка: Температура паузы #${i + 2} (${recipe.mash_steps[i + 1].temp}°C) должна быть выше температуры паузы #${i + 1} (${recipe.mash_steps[i].temp}°C). Паузы должны идти по возрастанию температуры.`);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    /**
      * Save recipe to the backend via REST API.
      */
     const handleSave = async () => {
-        if (!recipe.name.trim()) return;
+        if (!validateRecipe()) return;
         try {
             setSaving(true);
             const created = await recipesApi.create(recipe);
@@ -73,17 +91,14 @@ const RecipeConstructor = () => {
      * Save + navigate directly to mashing.
      */
     const handleStartBrew = async () => {
-        if (!recipe.name.trim()) {
-            alert('Введите название рецепта');
-            return;
-        }
+        if (!validateRecipe()) return;
         try {
             setSaving(true);
             const created = await recipesApi.create(recipe);
             // Create a brew session
             const session = await sessionsApi.create({
                 recipe_id: created.id,
-                type: 'mash',
+                type: 'brewing',
                 status: 'active'
             });
             localStorage.setItem('currentRecipe', JSON.stringify({
