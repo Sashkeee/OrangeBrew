@@ -112,6 +112,13 @@ const Boiling = () => {
         }
     };
 
+    useEffect(() => {
+        // Sync URL with actual session ID from backend to ensure data persistence
+        if (processState?.sessionId && sessionId === 'new') {
+            navigate(`/brewing/boil/${processState.sessionId}`, { replace: true });
+        }
+    }, [processState?.sessionId, sessionId, navigate]);
+
     return (
         <div className="page-container" style={{ maxWidth: '1200px' }}>
             <PageHeader title="Кипячение" color="var(--accent-red)" backTo="/brewing" elapsed={elapsedTime}>
@@ -234,10 +241,12 @@ const Boiling = () => {
                     {/* Start / Stop */}
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
                         <StartButton
-                            isStarted={isStarted}
+                            isStarted={isStarted && !isPaused}
                             onClick={handleStartStop}
                             startLabel={isPaused ? "ПРОДОЛЖИТЬ" : "СТАРТ КИПЯЧЕНИЯ"}
-                            startColor="var(--accent-red)"
+                            stopLabel="ПАУЗА"
+                            startColor={isPaused ? "var(--accent-green)" : "var(--accent-red)"}
+                            stopColor="var(--accent-yellow)"
                         />
                         {isStarted && (
                             <button

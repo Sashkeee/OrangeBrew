@@ -9,13 +9,17 @@ import '../pages/pages.css';
  */
 export function StartButton({
     isStarted, onClick, disabled = false,
-    startLabel = 'СТАРТ', stopLabel = 'СТОП',
+    startLabel = 'СТАРТ', stopLabel = 'ПАУЗА',
     startColor = 'var(--accent-green)',
+    stopColor = 'var(--accent-yellow)',
 }) {
     return (
         <button
-            className={`btn-start ${isStarted ? 'btn-start--stop' : ''}`}
-            style={isStarted ? undefined : { background: startColor, color: '#000' }}
+            className={`btn-start`}
+            style={{
+                background: isStarted ? stopColor : startColor,
+                color: '#000'
+            }}
             onClick={onClick}
             disabled={disabled}
         >

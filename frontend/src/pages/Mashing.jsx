@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Play, Pause, Droplets, Zap, Thermometer, CheckCircle, ZoomIn, ZoomOut, SkipForward } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
 import { useProcess } from '../hooks/useProcess';
@@ -69,8 +69,8 @@ const Mashing = () => {
     const allDone = status === 'COMPLETED' && processState?.mode === 'mash';
 
     // Target depends on backend state usually, but for visualization we use currentStep from known stairs
-    // If backend doesn't send "currentStep" object fully, we find it by index
-    const targetTemp = currentStep?.temp || steps[activeStepIndex]?.temp || 65;
+    // If backend doesn't send "currentStep" object fully, we find it by index. Before start, use index 0.
+    const targetTemp = currentStep?.temp || steps[Math.max(0, activeStepIndex)]?.temp || 65;
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -122,6 +122,11 @@ const Mashing = () => {
         } else {
             // Start new process
             if (recipeData) {
+                const firstStep = recipeData.mash_steps?.[0] || recipeData.steps?.[0];
+                if (firstStep && temperature > firstStep.temp + 3) {
+                    alert(`Ошибка запуска!\n\nТекущая температура сусла (${temperature.toFixed(1)}°C) выше температуры первой паузы (${firstStep.temp}°C) более чем на 3 градуса.\nПожалуйста, остудите затор перед началом процесса.`);
+                    return;
+                }
                 start(recipeData, sessionId, 'mash');
             } else {
                 alert("Ошибка: рецепт не загружен");
@@ -135,13 +140,21 @@ const Mashing = () => {
         }
     };
 
+    useEffect(() => {
+        // Sync URL with actual session ID from backend to ensure data persistence
+        if (processState?.sessionId && sessionId === 'new') {
+            navigate(`/brewing/mash/${processState.sessionId}`, { replace: true });
+        }
+    }, [processState?.sessionId, sessionId, navigate]);
+
     // Navigate to boiling when done
     useEffect(() => {
         if (allDone) {
-            const t = setTimeout(() => navigate(`/brewing/boil/${sessionId || 'new'}`), 3000);
+            const nextSessionId = processState?.sessionId || sessionId || 'new';
+            const t = setTimeout(() => navigate(`/brewing/boil/${nextSessionId}`), 3000);
             return () => clearTimeout(t);
         }
-    }, [allDone, navigate, sessionId]);
+    }, [allDone, navigate, sessionId, processState?.sessionId]);
 
     // Pump toggle
     const handlePumpToggle = () => {
@@ -275,14 +288,38 @@ const Mashing = () => {
                         </div>
                         {mounted && (
                             <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                                <LineChart data={history}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                                    <XAxis dataKey="time" stroke="#666" fontSize={12} />
-                                    <YAxis domain={[graphYMin, graphYMax]} stroke="#666" fontSize={12} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', color: '#fff' }} />
-                                    <Line type="monotone" dataKey="temp" stroke="var(--primary-color)" strokeWidth={2} dot={false} name="Температура" />
-                                    <Line type="stepAfter" dataKey="target" stroke="var(--accent-green)" strokeWidth={1} strokeDasharray="5 5" dot={false} name="Цель" />
-                                </LineChart>
+                                <AreaChart data={history}>
+                                    <defs>
+                                        <linearGradient id="color-temp" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="var(--primary-color)" stopOpacity={0.4} />
+                                            <stop offset="95%" stopColor="var(--primary-color)" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="time" stroke="#666" fontSize={10} interval="preserveStartEnd" minTickGap={30} tickMargin={5} />
+                                    <YAxis domain={[graphYMin, graphYMax]} stroke="#888" fontSize={11} tickMargin={5} width={30} />
+                                    <Tooltip
+                                        contentStyle={{
+                                            background: 'rgba(20, 20, 20, 0.85)', border: '1px solid #444',
+                                            borderRadius: '4px', backdropFilter: 'blur(4px)',
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)', color: '#fff', fontSize: '0.85rem'
+                                        }}
+                                        itemStyle={{ fontWeight: 'bold' }}
+                                        labelStyle={{ color: '#aaa', marginBottom: '0.3rem' }}
+                                    />
+                                    <Area
+                                        type="monotone" dataKey="temp" stroke="var(--primary-color)" strokeWidth={2}
+                                        fillOpacity={1} fill="url(#color-temp)" dot={false}
+                                        activeDot={{ r: 4, fill: "var(--primary-color)", stroke: '#1e1e1e', strokeWidth: 2 }}
+                                        name="Температура" isAnimationActive={false}
+                                    />
+                                    {/* Using Area with a transparent fill or just a Line for 'target' so it's a dashed line */}
+                                    <Line
+                                        type="stepAfter" dataKey="target" stroke="var(--accent-green)"
+                                        strokeWidth={1.5} strokeDasharray="5 5" dot={false}
+                                        name="Цель" isAnimationActive={false}
+                                    />
+                                </AreaChart>
                             </ResponsiveContainer>
                         )}
                     </div>

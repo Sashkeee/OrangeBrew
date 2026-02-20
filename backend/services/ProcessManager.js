@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import telegram from './telegram.js';
-import { temperatureQueries } from '../db/database.js';
+import { temperatureQueries, sessionQueries } from '../db/database.js';
 
 // Status constants
 export const PROCESS_STATUS = {
@@ -51,8 +51,16 @@ class ProcessManager extends EventEmitter {
     }
 
     start(recipe, sessionId = null, mode = 'mash') {
-        if (this.state.status !== PROCESS_STATUS.IDLE) {
+        if (this.state.status !== PROCESS_STATUS.IDLE && this.state.status !== PROCESS_STATUS.COMPLETED) {
             throw new Error('Process is already running');
+        }
+
+        let savedElapsed = 0;
+        let savedStartTime = Date.now();
+        if (this.state.status === PROCESS_STATUS.COMPLETED) {
+            savedElapsed = this.state.elapsedTime;
+            savedStartTime = this.state.startTime || Date.now();
+            this.reset();
         }
 
         let steps = [];
@@ -72,6 +80,46 @@ class ProcessManager extends EventEmitter {
             throw new Error(`Unknown mode: ${mode}`);
         }
 
+        let finalSessionId = sessionId;
+        let needsNewSession = false;
+
+        if (!finalSessionId || finalSessionId === 'new') {
+            needsNewSession = true;
+        } else {
+            try {
+                const existing = sessionQueries.getById(finalSessionId);
+                if (!existing) needsNewSession = true;
+            } catch (err) {
+                needsNewSession = true;
+            }
+        }
+
+        if (needsNewSession) {
+            try {
+                const newSession = sessionQueries.create({
+                    recipe_id: recipe.id || null,
+                    type: mode,
+                    status: 'active',
+                    notes: 'Auto-created by ProcessManager'
+                });
+                finalSessionId = newSession.id;
+            } catch (err) {
+                console.warn('[ProcessManager] Failed to create session with recipe_id (likely FK missing). Retrying without recipe_id...');
+                try {
+                    const fallbackSession = sessionQueries.create({
+                        recipe_id: null,
+                        type: mode,
+                        status: 'active',
+                        notes: 'Auto-created fallback'
+                    });
+                    finalSessionId = fallbackSession.id;
+                } catch (e2) {
+                    console.error('[ProcessManager] Fatal: Could not create session in DB', e2);
+                    finalSessionId = Date.now().toString(); // Fallback, though it might fail FK constraint later
+                }
+            }
+        }
+
         this.state = {
             status: PROCESS_STATUS.HEATING,
             mode: mode,
@@ -80,10 +128,10 @@ class ProcessManager extends EventEmitter {
             currentStepIndex: 0, // Always start at 0
             stepPhase: 'heating',
             remainingTime: steps[0].duration * 60,
-            startTime: Date.now(),
-            elapsedTime: 0,
+            startTime: savedStartTime,
+            elapsedTime: savedElapsed,
             recipeId: recipe.id,
-            sessionId: sessionId || Date.now().toString(),
+            sessionId: finalSessionId,
             notifiedEvents: []
         };
 
@@ -138,9 +186,17 @@ class ProcessManager extends EventEmitter {
     }
 
     updateLoop() {
-        if (this.state.status === PROCESS_STATUS.PAUSED || this.state.status === PROCESS_STATUS.IDLE) return;
+        if (this.state.status === PROCESS_STATUS.IDLE) return;
 
+        // General brew timer ticks unconditionally (except IDLE)
         this.state.elapsedTime++;
+
+        // Stop remainingTime tick and updates if paused
+        if (this.state.status === PROCESS_STATUS.PAUSED) {
+            this.emit('update', this.state);
+            return;
+        }
+
         this.tickTimer();
 
         this.emit('update', this.state);
