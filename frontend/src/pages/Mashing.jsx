@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Play, Pause, Droplets, Zap, Thermometer, CheckCircle, ZoomIn, ZoomOut } from 'lucide-react';
+import { Play, Pause, Droplets, Zap, Thermometer, CheckCircle, ZoomIn, ZoomOut, SkipForward } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
+import { useProcess } from '../hooks/useProcess';
 
 import { PageHeader } from '../components/PageHeader';
 import { SafetyCheck } from '../components/SafetyCheck';
@@ -21,17 +22,14 @@ const Mashing = () => {
     const { sessionId } = useParams();
 
     const { sensors } = useSensors();
-    const { control, setHeater, setPump, setPidMode, setPidTarget } = useControl();
+    const { control, setHeater, setPump } = useControl();
 
-    const sendTelegramNotify = async (type, payload = {}) => {
-        try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/telegram/${type}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-        } catch (e) { console.error('[Telegram] Notify failed:', e); }
-    };
+    // New backend process hook
+    const {
+        processState, status, currentStep, activeStepIndex,
+        stepPhase, remainingTime, elapsedTime,
+        start, stop, pause, resume, skip, isLoading
+    } = useProcess();
 
     // Recipe
     const [recipeData, setRecipeData] = useState(null);
@@ -45,9 +43,6 @@ const Mashing = () => {
                 if (recipeSteps.length > 0) setRecipeData({ ...parsed, steps: recipeSteps });
             }
         } catch (e) { console.warn('Could not load recipe', e); }
-
-        // Set process type for TG reports
-        sendTelegramNotify('set-process-type', { type: 'mash' });
     }, []);
 
     const steps = useMemo(() => recipeData?.steps?.map(s => ({
@@ -58,8 +53,6 @@ const Mashing = () => {
 
     // Core state
     const [isHeaterCovered, setIsHeaterCovered] = useState(false);
-    const [isStarted, setIsStarted] = useState(false);
-    const [elapsedTime, setElapsedTime] = useState(0);
     const [history, setHistory] = useState([]);
 
     // Graph scale
@@ -67,115 +60,75 @@ const Mashing = () => {
     const [graphYMax, setGraphYMax] = useState(100);
     const [mounted, setMounted] = useState(false);
 
-    // Step automation
-    const [activeStep, setActiveStep] = useState(0);
-    const [stepPhase, setStepPhase] = useState('heating');
-    const [stepTimeRemaining, setStepTimeRemaining] = useState(0);
-    const [completedSteps, setCompletedSteps] = useState([]);
-    const [allDone, setAllDone] = useState(false);
-
     // Derived
     const temperature = sensors.boiler?.value || 20;
     const heaterPower = control.heater;
     const pumpOn = control.pump;
-    const currentStep = steps[activeStep];
-    const targetTemp = currentStep?.temp || 65;
+    const isStarted = status !== 'IDLE' && status !== 'COMPLETED';
+    const isPaused = status === 'PAUSED';
+    const allDone = status === 'COMPLETED';
 
-    // Refs for interval access
-    const temperatureRef = useRef(temperature);
-    const activeStepRef = useRef(activeStep);
-    const stepPhaseRef = useRef(stepPhase);
-    useEffect(() => { temperatureRef.current = temperature; }, [temperature]);
-    useEffect(() => { activeStepRef.current = activeStep; }, [activeStep]);
-    useEffect(() => { stepPhaseRef.current = stepPhase; }, [stepPhase]);
+    // Target depends on backend state usually, but for visualization we use currentStep from known stairs
+    // If backend doesn't send "currentStep" object fully, we find it by index
+    const targetTemp = currentStep?.temp || steps[activeStepIndex]?.temp || 65;
 
     useEffect(() => { setMounted(true); }, []);
-
-    // Set hold timer when entering holding phase
-    useEffect(() => {
-        if (steps.length > 0 && activeStep < steps.length && stepPhase === 'holding') {
-            setStepTimeRemaining(steps[activeStep].duration * 60);
-        }
-    }, [activeStep, stepPhase, steps]);
 
     // Chart history
     useEffect(() => {
         setHistory(h => [...h.slice(-50), {
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             temp: temperature,
-            target: currentStep ? currentStep.temp : 0,
+            target: targetTemp,
         }]);
-    }, [temperature, activeStep, steps]);
+    }, [temperature, targetTemp]);
 
-    // ─── Automation Loop ───
-    useEffect(() => {
-        if (!isStarted || allDone) return;
-        const interval = setInterval(() => {
-            setElapsedTime(p => p + 1);
-            const step = steps[activeStepRef.current];
-            if (!step) return;
-
-            if (stepPhaseRef.current === 'heating') {
-                if (temperatureRef.current >= step.temp) {
-                    setStepPhase('holding');
-                    setStepTimeRemaining(step.duration * 60);
-                    sendTelegramNotify('notify-mash-step', { type: 'reached', step });
-                }
+    // Handle Start / Stop / Pause
+    const handleStartStop = () => {
+        if (isStarted) {
+            if (isPaused) {
+                resume();
             } else {
-                setStepTimeRemaining(prev => {
-                    if (prev - 1 <= 0) {
-                        setCompletedSteps(cs => [...cs, activeStepRef.current]);
-                        const next = activeStepRef.current + 1;
-                        if (next < steps.length) {
-                            setActiveStep(next);
-                            setStepPhase('heating');
-                            sendTelegramNotify('notify-mash-step', { type: 'completed', step });
-                        } else {
-                            sendTelegramNotify('notify-mash-step', { type: 'completed', step });
-                            sendTelegramNotify('notify-boil', { type: 'complete', details: 'Все температурные паузы завершены. Приступаем к кипячению.' });
-                            setAllDone(true);
-                            setIsStarted(false);
-                        }
-                        return 0;
-                    }
-                    return prev - 1;
-                });
+                if (confirm("Вы уверены, что хотите поставить затирание на паузу?")) {
+                    pause();
+                }
             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [isStarted, allDone, steps]);
+        } else {
+            // Start new process
+            if (recipeData) {
+                start(recipeData, sessionId, 'mash');
+            } else {
+                alert("Ошибка: рецепт не загружен");
+            }
+        }
+    };
+
+    const handleStopAbrupt = () => {
+        if (confirm("Вы уверены, что хотите остановить процесс затирания? Это действие нельзя отменить.")) {
+            stop();
+        }
+    };
 
     // Navigate to boiling when done
     useEffect(() => {
-        if (!allDone) return;
-        const t = setTimeout(() => navigate(`/brewing/boil/${sessionId || 'new'}`), 2000);
-        return () => clearTimeout(t);
+        if (allDone) {
+            const t = setTimeout(() => navigate(`/brewing/boil/${sessionId || 'new'}`), 3000);
+            return () => clearTimeout(t);
+        }
     }, [allDone, navigate, sessionId]);
 
     // Pump toggle
     const handlePumpToggle = () => {
         const next = !pumpOn;
         setPump(next);
-        sendTelegramNotify('notify-pump', { value: next });
+        // Telegram notify handled by backend for process, but manual pump toggle might not be?
+        // Let's assume backend observes pump state or we just toggle it.
     };
 
-    // Auto toggle
-    const toggleAuto = () => {
-        const next = !isStarted;
-        setIsStarted(next);
-        setPidMode(next);
-        if (next && currentStep) {
-            setPidTarget(currentStep.temp);
-            sendTelegramNotify('notify-boil', { type: 'start', details: `Начало варки рецепта: *${recipeName}*` });
-        } else {
-            setHeater(0);
-        }
+    // Manual Heater (disabled if auto)
+    const handleHeaterChange = (val) => {
+        setHeater(val);
     };
-
-    // Update PID target on step change
-    useEffect(() => {
-        if (isStarted && steps[activeStep]) setPidTarget(steps[activeStep].temp);
-    }, [activeStep, isStarted, steps, setPidTarget]);
 
     // Zoom helpers
     const zoomIn = () => {
@@ -199,12 +152,19 @@ const Mashing = () => {
                 backTo="/brewing"
                 elapsed={elapsedTime}
             >
-                {isStarted && stepPhase === 'holding' && (
+                {/* Status Indicator in Header */}
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    {isPaused && <span className="status-badge" style={{ background: 'orange', color: 'black' }}>ПАУЗА</span>}
+                    {stepPhase === 'holding' && <span className="status-badge" style={{ background: 'green', color: 'white' }}>УДЕРЖАНИЕ</span>}
+                    {stepPhase === 'heating' && isStarted && !isPaused && <span className="status-badge" style={{ background: 'red', color: 'white' }}>НАГРЕВ</span>}
+                </div>
+
+                {stepPhase === 'holding' && (
                     <div className="industrial-panel" style={{ padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderColor: 'var(--accent-green)' }}>
                         <Thermometer size={20} color="var(--accent-green)" />
                         <div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>ПАУЗА</div>
-                            <span className="text-mono" style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--accent-green)' }}>{formatTime(stepTimeRemaining)}</span>
+                            <span className="text-mono" style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--accent-green)' }}>{formatTime(remainingTime)}</span>
                         </div>
                     </div>
                 )}
@@ -219,7 +179,7 @@ const Mashing = () => {
                             <div className="sensor-card__label" style={{ fontSize: '0.9rem' }}>ТЕМПЕРАТУРА</div>
                             <div className="sensor-card__value sensor-card__value--lg text-mono" style={{
                                 color: temperature > targetTemp ? 'var(--accent-red)' :
-                                    (stepPhase === 'holding' && Math.abs(temperature - targetTemp) < 1 ? 'var(--accent-green)' : 'var(--text-primary)')
+                                    (Math.abs(temperature - targetTemp) < 1 ? 'var(--accent-green)' : 'var(--text-primary)')
                             }}>
                                 {temperature.toFixed(1)}°
                             </div>
@@ -229,8 +189,9 @@ const Mashing = () => {
                                     background: stepPhase === 'heating' ? 'rgba(255,152,0,0.2)' : 'rgba(76,175,80,0.2)',
                                     color: stepPhase === 'heating' ? 'var(--primary-color)' : 'var(--accent-green)',
                                     borderColor: stepPhase === 'heating' ? 'var(--primary-color)' : 'var(--accent-green)',
+                                    marginTop: '1rem'
                                 }}>
-                                    {stepPhase === 'heating' ? '🔥 НАГРЕВ' : '⏸ ПАУЗА'}
+                                    {stepPhase === 'heating' ? '🔥 НАГРЕВ' : '⏸ УДЕРЖАНИЕ'}
                                 </div>
                             )}
                         </div>
@@ -238,13 +199,9 @@ const Mashing = () => {
                         {/* Heater */}
                         <div className="industrial-panel control-panel" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                             <div style={{ position: 'absolute', top: '10px', right: '10px' }}>
-                                <button
-                                    className={`btn-mode ${isStarted ? 'btn-mode--active' : ''}`}
-                                    onClick={toggleAuto}
-                                    style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem', borderRadius: '4px' }}
-                                >
-                                    AUTO
-                                </button>
+                                <span style={{ fontSize: '0.7rem', color: isStarted ? 'var(--accent-green)' : '#666' }}>
+                                    {isStarted ? 'AUTO (PID)' : 'MANUAL'}
+                                </span>
                             </div>
                             <motion.div
                                 animate={{ height: `${heaterPower}%` }}
@@ -259,14 +216,9 @@ const Mashing = () => {
                             <input type="range" min="0" max="100" value={heaterPower || 0}
                                 className="control-slider"
                                 style={{ accentColor: 'var(--primary-color)', zIndex: 1 }}
-                                onChange={e => setHeater(parseInt(e.target.value))}
+                                onChange={e => handleHeaterChange(parseInt(e.target.value))}
                                 disabled={isStarted} />
                             <div className="control-value text-mono" style={{ zIndex: 1, fontSize: '1.5rem' }}>{heaterPower}%</div>
-                            {isStarted && (
-                                <div style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--accent-green)', marginTop: '0.3rem', zIndex: 1 }}>
-                                    PID: {steps[activeStep]?.temp}°C
-                                </div>
-                            )}
                         </div>
 
                         {/* Pump */}
@@ -314,11 +266,19 @@ const Mashing = () => {
                 <div className="col-side">
                     {/* Steps */}
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
-                        <h3 className="phase-list__title">ПАУЗЫ ЗАТИРАНИЯ</h3>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3 className="phase-list__title" style={{ margin: 0 }}>ПАУЗЫ</h3>
+                            {isStarted && (
+                                <button onClick={skip} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.8rem' }}>
+                                    <SkipForward size={14} style={{ marginRight: 4 }} /> ПРОПУСТИТЬ
+                                </button>
+                            )}
+                        </div>
+
                         <div className="phase-list">
                             {steps.map((step, idx) => {
-                                const isActive = activeStep === idx;
-                                const isCompleted = completedSteps.includes(idx);
+                                const isActive = activeStepIndex === idx;
+                                const isCompleted = idx < activeStepIndex;
                                 const isHolding = isActive && stepPhase === 'holding';
                                 return (
                                     <div key={idx} className={`phase-item ${isActive ? 'phase-item--active' : ''} ${isCompleted ? 'phase-item--complete' : ''}`}
@@ -332,7 +292,7 @@ const Mashing = () => {
                                             <div className="phase-item__desc">{step.temp}°C / {step.duration} мин</div>
                                             {isHolding && (
                                                 <div style={{ fontSize: '0.75rem', color: 'var(--accent-green)', marginTop: '0.2rem', fontWeight: 'bold' }}>
-                                                    ⏱ Осталось: {formatTime(stepTimeRemaining)}
+                                                    ⏱ Осталось: {formatTime(remainingTime)}
                                                 </div>
                                             )}
                                         </div>
@@ -365,14 +325,47 @@ const Mashing = () => {
 
                     {/* Start / Stop */}
                     {!allDone && (
-                        <div className="industrial-panel" style={{ padding: '1.5rem' }}>
-                            <StartButton
-                                isStarted={isStarted}
-                                onClick={toggleAuto}
+                        <div className="industrial-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <button
+                                className={`btn-start ${isStarted && !isPaused ? 'btn-start--active' : ''}`}
+                                onClick={handleStartStop}
                                 disabled={!isStarted && !isHeaterCovered}
-                                startLabel="СТАРТ ЗАТИРАНИЯ"
-                                startColor="var(--primary-color)"
-                            />
+                                style={{
+                                    width: '100%',
+                                    padding: '1.2rem',
+                                    fontSize: '1.2rem',
+                                    fontWeight: 'bold',
+                                    borderRadius: '8px',
+                                    border: 'none',
+                                    background: isStarted
+                                        ? (isPaused ? 'var(--accent-green)' : 'var(--accent-orange)') // Resume vs Pause
+                                        : 'var(--primary-color)',
+                                    color: '#000',
+                                    cursor: (!isStarted && !isHeaterCovered) ? 'not-allowed' : 'pointer',
+                                    opacity: (!isStarted && !isHeaterCovered) ? 0.5 : 1,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
+                                }}
+                            >
+                                {isStarted ? (isPaused ? <><Play size={24} /> ПРОДОЛЖИТЬ</> : <><Pause size={24} /> ПАУЗА</>) : <><Play size={24} /> СТАРТ ЗАТИРАНИЯ</>}
+                            </button>
+
+                            {isStarted && (
+                                <button
+                                    onClick={handleStopAbrupt}
+                                    style={{
+                                        background: 'transparent',
+                                        border: '1px solid var(--accent-red)',
+                                        color: 'var(--accent-red)',
+                                        padding: '0.8rem',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    ОСТАНОВИТЬ
+                                </button>
+                            )}
+
                             {!isStarted && (
                                 <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
                             )}

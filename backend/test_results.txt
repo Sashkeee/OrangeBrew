@@ -1,0 +1,16 @@
+Test Results for ProcessManager (2026-02-20)
+----------------------------------------
+✓ tests/ProcessManager.test.js (7 tests)
+   ✓ ProcessManager (7)    
+     ✓ should start in IDLE state
+     ✓ should start a process with recipe
+     ✓ should transition to HOLDING when temperature reached
+     ✓ should countdown timer in HOLDING state
+     ✓ should advance to next step automatically
+     ✓ should pause and resume correctly
+     ✓ should handle sensor data format variations
+
+Backend Server Status:
+- ProcessManager initialized correctly inside server.js main loop.
+- API routes mounted at /api/process.
+- Database migrated to better-sqlite3 (WAL mode active).

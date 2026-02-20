@@ -1,5 +1,5 @@
-import initSqlJs from 'sql.js';
-import { readFileSync, writeFileSync } from 'fs';
+import Database from 'better-sqlite3';
+import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, existsSync } from 'fs';
@@ -8,11 +8,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
 let dbPath = null;
-let saveTimer = null;
 
 /**
- * Initialize the database connection and create tables if needed.
- * sql.js is a pure-JS WASM SQLite — no native compilation required.
+ * Initialize the database connection.
+ * Uses better-sqlite3 for robust file-based storage.
  * @param {string} path - Path to the SQLite database file
  */
 export async function initDatabase(path) {
@@ -24,41 +23,35 @@ export async function initDatabase(path) {
         mkdirSync(dir, { recursive: true });
     }
 
-    const SQL = await initSqlJs();
+    try {
+        console.log(`[DB] Opening database: ${path}`);
+        db = new Database(path, { verbose: null }); // Set verbose: console.log for debugging query
 
-    // Load existing DB file or create new
-    if (existsSync(path)) {
-        const fileBuffer = readFileSync(path);
-        db = new SQL.Database(fileBuffer);
-        console.log(`[DB] Loaded existing database: ${path}`);
-    } else {
-        db = new SQL.Database();
-        console.log(`[DB] Created new database: ${path}`);
+        // Performance settings
+        db.pragma('journal_mode = WAL');
+        db.pragma('foreign_keys = ON');
+        db.pragma('synchronous = NORMAL'); // Faster, still safe in WAL mode
+
+        // Run schema if new or to ensure tables exist
+        // better-sqlite3 doesn't have a simple "is new" check, but we can just run "CREATE TABLE IF NOT EXISTS"
+        const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
+        db.exec(schema);
+
+        console.log('[DB] Database initialized successfully.');
+    } catch (err) {
+        console.error('[DB] Failed to initialize database:', err);
+        throw err;
     }
-
-    // Performance settings
-    db.run('PRAGMA journal_mode = WAL');
-    db.run('PRAGMA foreign_keys = ON');
-
-    // Run schema
-    const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
-    db.run(schema);
-
-    // Auto-save every 30 seconds
-    saveTimer = setInterval(() => saveDatabase(), 30000);
 
     return db;
 }
 
 /**
- * Save the in-memory database to disk.
+ * Save is no longer needed with better-sqlite3 (auto-commit), 
+ * but kept for compatibility if called elsewhere.
  */
 export function saveDatabase() {
-    if (db && dbPath) {
-        const data = db.export();
-        const buffer = Buffer.from(data);
-        writeFileSync(dbPath, buffer);
-    }
+    // No-op
 }
 
 /**
@@ -73,12 +66,7 @@ export function getDb() {
  * Close the database connection gracefully.
  */
 export function closeDatabase() {
-    if (saveTimer) {
-        clearInterval(saveTimer);
-        saveTimer = null;
-    }
     if (db) {
-        saveDatabase(); // Final save
         db.close();
         db = null;
         console.log('[DB] Database connection closed.');
@@ -87,43 +75,17 @@ export function closeDatabase() {
 
 // ─── Helpers ──────────────────────────────────────────────
 
-/**
- * Run a SELECT query and return all rows as objects.
- */
 function queryAll(sql, params = []) {
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    const rows = [];
-    while (stmt.step()) {
-        rows.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return rows;
+    return db.prepare(sql).all(params);
 }
 
-/**
- * Run a SELECT query and return the first row.
- */
 function queryOne(sql, params = []) {
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    let row = null;
-    if (stmt.step()) {
-        row = stmt.getAsObject();
-    }
-    stmt.free();
-    return row;
+    return db.prepare(sql).get(params) || null;
 }
 
-/**
- * Run an INSERT/UPDATE/DELETE and return { changes, lastId }.
- */
 function runSql(sql, params = []) {
-    db.run(sql, params);
-    const changes = db.getRowsModified();
-    const lastId = queryOne('SELECT last_insert_rowid() as id');
-    saveDatabase();
-    return { changes, lastId: lastId?.id };
+    const info = db.prepare(sql).run(params);
+    return { changes: info.changes, lastId: info.lastInsertRowid };
 }
 
 // ─── Recipes ──────────────────────────────────────────────
@@ -159,6 +121,9 @@ export const recipeQueries = {
         const fields = [];
         const values = [];
         for (const [key, value] of Object.entries(recipe)) {
+            // Filter fields that are actually in the DB (basic check)
+            if (['id', 'created_at', 'updated_at'].includes(key)) continue;
+
             if (['ingredients', 'mash_steps', 'hop_additions'].includes(key)) {
                 fields.push(`${key} = ?`);
                 values.push(JSON.stringify(value));
@@ -167,8 +132,12 @@ export const recipeQueries = {
                 values.push(value);
             }
         }
+
+        if (fields.length === 0) return recipeQueries.getById(id);
+
         fields.push("updated_at = datetime('now')");
         values.push(id);
+
         runSql(`UPDATE recipes SET ${fields.join(', ')} WHERE id = ?`, values);
         return recipeQueries.getById(id);
     },
@@ -200,6 +169,7 @@ export const sessionQueries = {
         const fields = [];
         const values = [];
         for (const [key, value] of Object.entries(data)) {
+            if (['id', 'started_at', 'finished_at'].includes(key)) continue;
             fields.push(`${key} = ?`);
             values.push(value);
         }
@@ -237,10 +207,11 @@ export const temperatureQueries = {
     },
 
     insertBatch: (rows) => {
-        for (const r of rows) {
-            db.run('INSERT INTO temperature_log (session_id, sensor, value) VALUES (?, ?, ?)', [r.session_id, r.sensor, r.value]);
-        }
-        saveDatabase();
+        const insert = db.prepare('INSERT INTO temperature_log (session_id, sensor, value) VALUES (@session_id, @sensor, @value)');
+        const insertMany = db.transaction((logs) => {
+            for (const log of logs) insert.run(log);
+        });
+        insertMany(rows);
     },
 };
 
@@ -304,8 +275,16 @@ export const settingsQueries = {
     },
 
     setBulk: (settings) => {
-        for (const [key, value] of Object.entries(settings)) {
-            settingsQueries.set(key, value);
-        }
+        const insert = db.prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES (@key, @value, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+        `);
+        const insertMany = db.transaction((settingsObj) => {
+            for (const [key, value] of Object.entries(settingsObj)) {
+                const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+                insert.run({ key, value: serialized });
+            }
+        });
+        insertMany(settings);
     },
 };

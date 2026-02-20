@@ -137,6 +137,23 @@ export function broadcastAlert(level, message) {
 }
 
 /**
+ * Broadcast process state update.
+ */
+export function broadcastProcessState(state) {
+    global._latestProcessState = state; // Save for periodic reports
+    const msg = JSON.stringify({
+        type: 'process',
+        data: state,
+        timestamp: Date.now(),
+    });
+    for (const ws of clients) {
+        if (ws.readyState === 1) {
+            ws.send(msg);
+        }
+    }
+}
+
+/**
  * Get the count of connected clients.
  */
 export function getClientCount() {

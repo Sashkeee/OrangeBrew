@@ -4,12 +4,13 @@ import cors from 'cors';
 import { createServer } from 'http';
 
 import { initDatabase, closeDatabase } from './db/database.js';
-import { initWebSocket, broadcastSensors } from './ws/liveServer.js';
+import { initWebSocket, broadcastSensors, broadcastProcessState } from './ws/liveServer.js';
 import { updateSensorReadings } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
 import PidManager from './pid/PidManager.js';
 import telegram from './services/telegram.js';
+import ProcessManager from './services/ProcessManager.js';
 
 import recipesRouter from './routes/recipes.js';
 import sessionsRouter from './routes/sessions.js';
@@ -17,6 +18,7 @@ import sensorsRouter from './routes/sensors.js';
 import controlRouter from './routes/control.js';
 import settingsRouter from './routes/settings.js';
 import telegramRouter from './routes/telegram.js';
+import createProcessRouter from './routes/process.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
 const DB_PATH = process.env.DB_PATH || './data/orangebrew.db';
@@ -112,12 +114,6 @@ async function main() {
         });
 
         // Listen for sensor data from mock
-        serial.on('data', (data) => {
-            updateSensorReadings(data);
-            broadcastSensors(data);
-            telegram.updateSensorData(data);
-            telegram.updateControlState(getControlState());
-        });
 
         serial.on('ack', (ack) => {
             console.log(`[Mock] ACK: ${ack.cmd} → ${ack.ok ? 'OK' : 'FAIL'}`);
@@ -131,14 +127,32 @@ async function main() {
         console.log(`[Server] Serial mode: ${CONNECTION_TYPE} (not implemented yet — falling back to mock)`);
         serial = new MockSerial();
         setCommandSender((cmd) => serial.write(JSON.stringify(cmd)));
-        serial.on('data', (data) => {
-            updateSensorReadings(data);
-            broadcastSensors(data);
-            telegram.updateSensorData(data);
-            telegram.updateControlState(getControlState());
-        });
         pidManager = new PidManager(serial); // Also init PID for "real" serial
     }
+
+    // ─── Process Manager ──────────────────────────────────────
+
+    const processManager = new ProcessManager(pidManager);
+
+    // Broadcast updates
+    processManager.on('update', (state) => {
+        broadcastProcessState(state);
+    });
+
+    // Pass sensor data to Process Manager and Clients
+    serial.on('data', (data) => {
+        // Core updates
+        updateSensorReadings(data);
+        broadcastSensors(data);
+        telegram.updateSensorData(data);
+        telegram.updateControlState(getControlState());
+
+        // Process Logic
+        processManager.handleSensorData(data);
+    });
+
+    // Mount Process API
+    app.use('/api/process', createProcessRouter(processManager));
 
     // Broadcast PID status occasionally? 
     // Or hooks into PidManager to emit WebSocket events?

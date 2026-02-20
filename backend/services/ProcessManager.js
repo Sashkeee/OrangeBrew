@@ -1,0 +1,268 @@
+import { EventEmitter } from 'events';
+import telegram from './telegram.js';
+
+// Status constants
+export const PROCESS_STATUS = {
+    IDLE: 'IDLE',
+    HEATING: 'HEATING',
+    HOLDING: 'HOLDING',
+    PAUSED: 'PAUSED',
+    COMPLETED: 'COMPLETED'
+};
+
+class ProcessManager extends EventEmitter {
+    constructor(pidManager) {
+        super();
+        this.pidManager = pidManager;
+        this.reset();
+
+        // Bind methods
+        this.updateLoop = this.updateLoop.bind(this);
+    }
+
+    reset() {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+
+        this.state = {
+            status: PROCESS_STATUS.IDLE,
+            mode: 'mash', // 'mash' | 'boil'
+            recipeName: '',
+            steps: [],
+            currentStepIndex: -1,
+            stepPhase: 'heating', // 'heating' or 'holding'
+            remainingTime: 0,
+            startTime: null,
+            elapsedTime: 0,
+            recipeId: null,
+            sessionId: null,
+            notifiedEvents: [] // To track one-time notifications (like hop additions)
+        };
+
+        // Reset PID
+        if (this.pidManager && this.pidManager.setEnabled) {
+            this.pidManager.setTarget(0);
+            this.pidManager.setEnabled(false);
+        }
+
+        this.emit('update', this.state);
+    }
+
+    start(recipe, sessionId = null, mode = 'mash') {
+        if (this.state.status !== PROCESS_STATUS.IDLE) {
+            throw new Error('Process is already running');
+        }
+
+        let steps = [];
+        if (mode === 'mash') {
+            steps = recipe.mash_steps || recipe.steps || [];
+            if (steps.length === 0) throw new Error('No mash steps in recipe');
+        } else if (mode === 'boil') {
+            if (!recipe.boil_time) throw new Error('No boil time in recipe');
+            // Boiling is treated as a single step
+            steps = [{
+                name: 'Boiling',
+                temp: 100, // Boiling point
+                duration: parseInt(recipe.boil_time),
+                hop_additions: recipe.hop_additions || []
+            }];
+        } else {
+            throw new Error(`Unknown mode: ${mode}`);
+        }
+
+        this.state = {
+            status: PROCESS_STATUS.HEATING,
+            mode: mode,
+            recipeName: recipe.name,
+            steps: steps,
+            currentStepIndex: 0, // Always start at 0
+            stepPhase: 'heating',
+            remainingTime: steps[0].duration * 60,
+            startTime: Date.now(),
+            elapsedTime: 0,
+            recipeId: recipe.id,
+            sessionId: sessionId || Date.now().toString(),
+            notifiedEvents: []
+        };
+
+        // Initialize hardware
+        const initialTemp = this.state.steps[0].temp;
+        if (this.pidManager && this.pidManager.setEnabled) {
+            this.pidManager.setTarget(initialTemp);
+            this.pidManager.setEnabled(true);
+        }
+
+        // Start loop
+        this.startLoop();
+
+        // Notify
+        telegram.setCurrentProcessType(mode);
+        const startMsg = mode === 'mash' ? 'Начало затирания' : 'Начало кипячения';
+        telegram.notifyPhaseChange(mode, startMsg, `Рецепт: ${recipe.name}`);
+        this.emit('update', this.state);
+    }
+
+    stop() {
+        this.reset();
+        telegram.sendMessage('🛑 Процесс остановлен вручную');
+    }
+
+    pause() {
+        if (this.state.status === PROCESS_STATUS.IDLE || this.state.status === PROCESS_STATUS.COMPLETED) return;
+
+        this.state.status = PROCESS_STATUS.PAUSED;
+        if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(false);
+        this.emit('update', this.state);
+        telegram.sendMessage('⏸ Процесс поставлен на паузу');
+    }
+
+    resume() {
+        if (this.state.status !== PROCESS_STATUS.PAUSED) return;
+
+        this.state.status = this.state.stepPhase === 'heating' ? PROCESS_STATUS.HEATING : PROCESS_STATUS.HOLDING;
+        if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(true);
+        this.emit('update', this.state);
+        telegram.sendMessage('▶️ Процесс возобновлен');
+    }
+
+    skip() {
+        if (this.state.status === PROCESS_STATUS.IDLE) return;
+        this.advanceStep();
+    }
+
+    startLoop() {
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = setInterval(this.updateLoop, 1000);
+    }
+
+    updateLoop() {
+        if (this.state.status === PROCESS_STATUS.PAUSED || this.state.status === PROCESS_STATUS.IDLE) return;
+
+        this.state.elapsedTime++;
+        this.tickTimer();
+
+        this.emit('update', this.state);
+    }
+
+    handleSensorData(data) {
+        if (this.state.status !== PROCESS_STATUS.HEATING && this.state.status !== PROCESS_STATUS.HOLDING) return;
+        if (this.state.status === PROCESS_STATUS.PAUSED) return;
+
+        // Extract boiler temp. Handle both { boiler: 20 } and { boiler: { value: 20 } }
+        let currentTemp = data.boiler;
+        if (typeof currentTemp === 'object' && currentTemp !== null) currentTemp = currentTemp.value;
+
+        if (currentTemp === undefined) return;
+
+        const currentStep = this.state.steps[this.state.currentStepIndex];
+        if (!currentStep) return;
+
+        // Logic: if heating and temp reached -> switch to holding
+        // For boil, we consider 99C as reaching boil
+        const targetReached = currentTemp >= (this.state.mode === 'boil' ? 99 : currentStep.temp);
+
+        if (this.state.stepPhase === 'heating' && targetReached) {
+            this.state.stepPhase = 'holding';
+            this.state.status = PROCESS_STATUS.HOLDING;
+            this.state.remainingTime = currentStep.duration * 60;
+
+            if (this.state.mode === 'mash') {
+                telegram.notifyMashStep('reached', currentStep);
+            } else {
+                telegram.notifyPhaseChange('boil', 'Кипячение достигнуто', 'Начинаем обратный отсчет');
+            }
+            this.emit('update', this.state);
+        }
+    }
+
+    // Called every second by loop
+    tickTimer() {
+        if (this.state.status !== PROCESS_STATUS.HOLDING) return;
+
+        this.state.remainingTime--;
+
+        const currentStep = this.state.steps[this.state.currentStepIndex];
+
+        // Check for Boil Hop Additions
+        if (this.state.mode === 'boil' && currentStep.hop_additions) {
+            const timeLeftMins = Math.floor(this.state.remainingTime / 60);
+            const timeLeftSecs = this.state.remainingTime % 60;
+
+            // Check specifically at exact minute mark
+            if (timeLeftSecs === 0) {
+                // Hops
+                currentStep.hop_additions.forEach(hop => {
+                    if (hop.time === timeLeftMins) {
+                        const key = `hop_${hop.name}_${hop.time}`;
+                        if (!this.state.notifiedEvents.includes(key)) {
+                            telegram.sendMessage(`📥 *ВОМЯ ВНЕСЕНИЯ ХМЕЛЯ!*\nХмель: ${hop.name}\nКол-во: ${hop.amount}г\nВремя: ${hop.time} мин`);
+                            this.state.notifiedEvents.push(key);
+                        }
+                    }
+                });
+
+                // Reminders (10, 5 mins)
+                if ([10, 5].includes(timeLeftMins)) {
+                    const key = `rem_${timeLeftMins}`;
+                    if (!this.state.notifiedEvents.includes(key)) {
+                        telegram.sendMessage(`⏳ До конца кипячения: ${timeLeftMins} мин`);
+                        this.state.notifiedEvents.push(key);
+                    }
+                }
+            }
+        }
+
+        // Check if step completed
+        if (this.state.remainingTime <= 0) {
+            if (this.state.mode === 'mash') {
+                telegram.notifyMashStep('completed', currentStep);
+            }
+            this.advanceStep();
+        }
+    }
+
+    advanceStep() {
+        const nextIndex = this.state.currentStepIndex + 1;
+        if (nextIndex >= this.state.steps.length) {
+            this.complete();
+        } else {
+            this.state.currentStepIndex = nextIndex;
+            this.state.stepPhase = 'heating';
+            this.state.status = PROCESS_STATUS.HEATING;
+            const nextStep = this.state.steps[nextIndex];
+
+            // Set new target
+            if (this.pidManager && this.pidManager.setEnabled) {
+                this.pidManager.setTarget(nextStep.temp);
+            }
+
+            this.state.remainingTime = nextStep.duration * 60; // Pre-set for display
+
+            if (this.state.mode === 'mash') {
+                telegram.notifyPhaseChange('mash', `Шаг ${nextIndex + 1}: ${nextStep.name}`, `${nextStep.temp}°C / ${nextStep.duration} мин`);
+            }
+            this.emit('update', this.state);
+        }
+    }
+
+    complete() {
+        const prevMode = this.state.mode;
+        this.state.status = PROCESS_STATUS.COMPLETED;
+        this.state.remainingTime = 0;
+        if (this.pidManager && this.pidManager.setEnabled) {
+            this.pidManager.setEnabled(false); // Stop heating after process
+        }
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+
+        const nextAction = prevMode === 'mash' ? 'Можно переходить к кипячению' : 'Варка завершена! Охлаждайте сусло.';
+        telegram.notifyComplete(prevMode, { notes: nextAction });
+        this.emit('update', this.state);
+    }
+
+    getState() {
+        return this.state;
+    }
+}
+
+export default ProcessManager;

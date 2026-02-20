@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Droplets, Zap, Timer } from 'lucide-react';
 import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
+import { useProcess } from '../hooks/useProcess';
 
 import { PageHeader } from '../components/PageHeader';
 import { ProcessChart } from '../components/ProcessChart';
@@ -22,38 +23,35 @@ const Boiling = () => {
     const { sensors } = useSensors();
     const { control, setHeater, setPump } = useControl();
 
-    const [isStarted, setIsStarted] = useState(false);
+    // Backend Process Hook
+    const {
+        processState, status, currentStep, activeStepIndex,
+        stepPhase, remainingTime, elapsedTime,
+        start, stop, pause, resume, isLoading
+    } = useProcess();
+
     const [recipeData, setRecipeData] = useState(null);
-    const [notifiedTimes, setNotifiedTimes] = useState(new Set()); // To avoid duplicate notifies
 
-    const sendTelegramNotify = async (type, payload = {}) => {
-        try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/telegram/${type}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-        } catch (e) { console.error('[Telegram] Notify failed:', e); }
-    };
-
+    // Initial load
     useEffect(() => {
         try {
             const saved = localStorage.getItem('currentRecipe');
             if (saved) {
-                const parsed = JSON.parse(saved);
-                setRecipeData(parsed);
-                if (parsed.boil_time) setBoilTimer(parsed.boil_time * 60);
+                setRecipeData(JSON.parse(saved));
             }
         } catch (e) { console.warn('Could not load recipe', e); }
-
-        sendTelegramNotify('set-process-type', { type: 'boil' });
     }, []);
+
     const temperature = sensors.boiler?.value || 20;
     const heaterPower = control.heater;
     const pumpOn = control.pump;
 
-    const [elapsedTime, setElapsedTime] = useState(0);
-    const [boilTimer, setBoilTimer] = useState(60 * 60);
+    // Derived State
+    const isStarted = status !== 'IDLE' && status !== 'COMPLETED';
+    const isPaused = status === 'PAUSED';
+    const isBoiling = status === 'HOLDING' || stepPhase === 'holding'; // Backend uses HOLDING for boiling phase
+    const allDone = status === 'COMPLETED';
+
     const [history, setHistory] = useState([]);
 
     // Chart history
@@ -64,61 +62,39 @@ const Boiling = () => {
         }]);
     }, [temperature]);
 
-    // Timer
-    useEffect(() => {
-        if (!isStarted) return;
-        const interval = setInterval(() => {
-            setElapsedTime(p => p + 1);
-
-            if (temperature >= 99 && boilTimer > 0) {
-                // If just started boiling
-                if (!notifiedTimes.has('boil_start')) {
-                    sendTelegramNotify('notify-boil', { type: 'start', details: `Кипение достигнуто (${temperature.toFixed(1)}°C). Начинаем отсчёт времени.` });
-                    setNotifiedTimes(prev => new Set(prev).add('boil_start'));
-                }
-
-                const nextTimer = boilTimer - 1;
-                setBoilTimer(nextTimer);
-
-                // Hop additions reminders
-                const boilTimeMins = Math.floor(nextTimer / 60);
-                const boilTimeSecs = nextTimer % 60;
-
-                if (recipeData?.hop_additions) {
-                    recipeData.hop_additions.forEach(hop => {
-                        const hopKey = `hop_${hop.name}_${hop.time}`;
-                        if (boilTimeMins === hop.time && boilTimeSecs === 0 && !notifiedTimes.has(hopKey)) {
-                            sendTelegramNotify('notify-boil', { type: 'hop', details: `📥 *Время внесения хмеля!*\n\nХмель: *${hop.name}*\nКоличество: *${hop.amount}г*\nВремя: *${hop.time} мин*` });
-                            setNotifiedTimes(prev => new Set(prev).add(hopKey));
-                        }
-                    });
-                }
-
-                // Time reminders: 10, 5, 3 minutes
-                [10, 5, 3].forEach(min => {
-                    const remKey = `rem_${min}`;
-                    if (boilTimeMins === min && boilTimeSecs === 0 && !notifiedTimes.has(remKey)) {
-                        sendTelegramNotify('notify-boil', { type: 'reminder', details: `⏳ До конца кипячения осталось *${min} минут*` });
-                        setNotifiedTimes(prev => new Set(prev).add(remKey));
-                    }
-                });
-
-                // Complete
-                if (nextTimer === 0 && !notifiedTimes.has('boil_complete')) {
-                    sendTelegramNotify('notify-boil', { type: 'complete', details: 'Кипячение завершено! 🍻' });
-                    setNotifiedTimes(prev => new Set(prev).add('boil_complete'));
+    const handleStartStop = () => {
+        if (isStarted) {
+            if (isPaused) {
+                resume();
+            }
+            else {
+                if (confirm("Вы уверены, что хотите поставить процесс на паузу?")) {
+                    pause();
                 }
             }
-        }, 1000);
-        return () => clearInterval(interval);
-    }, [isStarted, temperature, boilTimer, recipeData, notifiedTimes]);
+        } else {
+            if (recipeData) {
+                start(recipeData, sessionId, 'boil');
+            } else {
+                alert("Ошибка: рецепт не загружен");
+            }
+        }
+    };
+
+    const handleStopAbrupt = () => {
+        if (confirm("Вы уверены, что хотите остановить варку? Это действие нельзя отменить.")) {
+            stop();
+        }
+    };
 
     return (
         <div className="page-container" style={{ maxWidth: '1200px' }}>
             <PageHeader title="Кипячение" color="var(--accent-red)" backTo="/brewing" elapsed={elapsedTime}>
                 <div className="industrial-panel" style={{ padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderColor: 'var(--accent-red)' }}>
                     <Timer size={20} color="var(--accent-red)" />
-                    <span className="text-mono" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{formatTime(boilTimer)}</span>
+                    <span className="text-mono" style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                        {isStarted ? formatTime(remainingTime) : (recipeData?.boil_time ? `${recipeData.boil_time}:00` : '60:00')}
+                    </span>
                 </div>
             </PageHeader>
 
@@ -133,7 +109,9 @@ const Boiling = () => {
                                 style={{ color: temperature >= 95 ? 'var(--accent-red)' : 'var(--text-primary)' }}>
                                 {temperature.toFixed(1)}°
                             </div>
-                            <div className="sensor-card__sub">{temperature >= 99 ? 'КИПЕНИЕ' : 'НАГРЕВ...'}</div>
+                            <div className="sensor-card__sub">
+                                {isBoiling ? 'КИПЕНИЕ' : (isStarted ? 'НАГРЕВ...' : 'ОЖИДАНИЕ')}
+                            </div>
                         </div>
 
                         {/* Heater */}
@@ -144,7 +122,9 @@ const Boiling = () => {
                             </div>
                             <input type="range" min="0" max="100" value={heaterPower}
                                 className="control-slider" style={{ accentColor: 'var(--accent-red)' }}
-                                onChange={e => setHeater(parseInt(e.target.value))} />
+                                onChange={e => setHeater(parseInt(e.target.value))}
+                                disabled={isStarted && !isPaused} // Disable manual control if auto logic is running (ProcessManager controls heater in boil mode? Backend says it sets target, but boiling usually requires manual PWM or 100%. ProcessManager currently sets PID target to 100C. )
+                            />
                             <div className="control-value text-mono" style={{ fontSize: '1.5rem' }}>{heaterPower}%</div>
                         </div>
 
@@ -160,7 +140,6 @@ const Boiling = () => {
                             <button className={`btn-pump ${pumpOn ? 'btn-pump--on' : ''}`} onClick={() => {
                                 const next = !pumpOn;
                                 setPump(next);
-                                sendTelegramNotify('notify-pump', { value: next });
                             }}>
                                 НАСОС {pumpOn ? 'ВКЛ' : 'ВЫКЛ'}
                             </button>
@@ -182,9 +161,19 @@ const Boiling = () => {
                         <div className="phase-list">
                             {recipeData?.hop_additions?.length > 0 ? (
                                 recipeData.hop_additions.sort((a, b) => b.time - a.time).map((hop, i) => {
-                                    const boilTimeMins = Math.floor(boilTimer / 60);
-                                    const isAdded = boilTimeMins < hop.time;
-                                    const isPending = !isAdded && isStarted;
+                                    // Use hook remainingTime to calculate status
+                                    const boilDuration = recipeData.boil_time * 60;
+                                    const currentBoilTime = boilDuration - remainingTime;
+                                    const currentBoilMins = Math.floor(currentBoilTime / 60);
+
+                                    // Backend counts DOWN remainingTime
+                                    // Hop time is "mins from end" usually? 
+                                    // "60 min" hop means boil for 60 mins. "10 min" hop means add when 10 mins LEFT.
+                                    // ProcessManager implementation: if (hop.time === timeLeftMins)
+                                    // So hop.time represents "Minutes Remaining"
+
+                                    const timeLeftMins = Math.floor(remainingTime / 60);
+                                    const isAdded = timeLeftMins < hop.time;
 
                                     return (
                                         <div key={i} className="phase-item" style={{
@@ -203,7 +192,7 @@ const Boiling = () => {
                                                     </span>
                                                 </div>
                                                 <div className="phase-item__desc">
-                                                    {hop.amount}г {isAdded ? '· Внесено' : `· Ожидание: ${formatTime(Math.max(0, (boilTimeMins - hop.time) * 60 + (boilTimer % 60)))}`}
+                                                    {hop.amount}г {isAdded ? '· Внесено' : (isStarted ? `· Через ${Math.max(0, timeLeftMins - hop.time)} мин` : '')}
                                                 </div>
                                             </div>
                                         </div>
@@ -221,16 +210,34 @@ const Boiling = () => {
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
                         <StartButton
                             isStarted={isStarted}
-                            onClick={() => setIsStarted(!isStarted)}
-                            startLabel="СТАРТ КИПЯЧЕНИЯ"
-                            startColor="var(--primary-color)"
+                            onClick={handleStartStop}
+                            startLabel={isPaused ? "ПРОДОЛЖИТЬ" : "СТАРТ КИПЯЧЕНИЯ"}
+                            startColor="var(--accent-red)"
                         />
+                        {isStarted && (
+                            <button
+                                onClick={handleStopAbrupt}
+                                style={{
+                                    marginTop: '1rem',
+                                    width: '100%',
+                                    background: 'transparent',
+                                    border: '1px solid var(--accent-red)',
+                                    color: 'var(--accent-red)',
+                                    padding: '0.8rem',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                ОСТАНОВИТЬ
+                            </button>
+                        )}
                     </div>
 
                     <button
                         onClick={() => navigate('/brewing/history')}
                         className="btn-start"
-                        style={{ background: '#333', color: '#fff' }}
+                        style={{ background: '#333', color: '#fff', marginTop: '1rem' }}
                     >
                         ЗАВЕРШИТЬ ВАРКУ
                     </button>

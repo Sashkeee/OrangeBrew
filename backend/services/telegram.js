@@ -155,6 +155,21 @@ export function sendStatusReport() {
 
     if (!isBrewing) {
         msg.push(`❄️ Охлаждение: *${c.cooler ?? 0}%*`);
+    } else if (global._latestProcessState) {
+        // Brew process active info
+        const ps = global._latestProcessState;
+        if (ps.status === 'HOLDING' || ps.status === 'HEATING') {
+            const phaseStr = ps.stepPhase === 'holding' ? 'Удержание' : 'Нагрев';
+            const stepName = ps.currentStep?.name || '—';
+            const timeStr = ps.remainingTime ? `${Math.floor(ps.remainingTime / 60)}:${String(ps.remainingTime % 60).padStart(2, '0')}` : '—';
+
+            msg.push(`⏳ Этап: *${stepName}* (${phaseStr})`);
+            if (ps.stepPhase === 'holding') {
+                msg.push(`Осталось: *${timeStr}*`);
+            }
+        } else if (ps.status !== 'IDLE' && ps.status !== 'COMPLETED') {
+            msg.push(`ℹ️ Статус: *${ps.status}*`);
+        }
     }
 
     msg.push(`💧 Насос: *${c.pump ? 'ВКЛ' : 'ВЫКЛ'}*`);

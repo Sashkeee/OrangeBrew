@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import telegram from '../services/telegram.js';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ router.post('/pump', (req, res) => {
         const value = !!req.body.value;
         controlState.pump = value;
         if (sendCommand) sendCommand({ cmd: 'setPump', value });
+        telegram.notifyPumpChange(value); // Notify telegram when pump state changes
         res.json({ ok: true, pump: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
