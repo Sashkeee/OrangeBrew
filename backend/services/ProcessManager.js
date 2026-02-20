@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import telegram from './telegram.js';
+import { temperatureQueries } from '../db/database.js';
 
 // Status constants
 export const PROCESS_STATUS = {
@@ -45,6 +46,7 @@ class ProcessManager extends EventEmitter {
             this.pidManager.setEnabled(false);
         }
 
+        this.lastTempLogTime = 0;
         this.emit('update', this.state);
     }
 
@@ -172,6 +174,17 @@ class ProcessManager extends EventEmitter {
                 telegram.notifyPhaseChange('boil', 'Кипячение достигнуто', 'Начинаем обратный отсчет');
             }
             this.emit('update', this.state);
+        }
+
+        // Log temperature every 10 seconds (10000ms)
+        const now = Date.now();
+        if (now - this.lastTempLogTime > 10000 && this.state.sessionId) {
+            try {
+                temperatureQueries.insert(this.state.sessionId, 'boiler', currentTemp);
+                this.lastTempLogTime = now;
+            } catch (err) {
+                console.error('[ProcessManager] Failed to log temperature:', err);
+            }
         }
     }
 

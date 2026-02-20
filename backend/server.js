@@ -8,6 +8,7 @@ import { initWebSocket, broadcastSensors, broadcastProcessState } from './ws/liv
 import { updateSensorReadings } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
+import { RealSerial } from './serial/realSerial.js';
 import PidManager from './pid/PidManager.js';
 import telegram from './services/telegram.js';
 import ProcessManager from './services/ProcessManager.js';
@@ -124,10 +125,14 @@ async function main() {
 
         // serial.start(); // Not needed for MockSerial (auto-starts)
     } else {
-        console.log(`[Server] Serial mode: ${CONNECTION_TYPE} (not implemented yet — falling back to mock)`);
-        serial = new MockSerial();
+        const portName = process.env.SERIAL_PORT || 'COM3';
+        const baudRate = parseInt(process.env.BAUD_RATE) || 115200;
+        console.log(`[Server] Serial mode starting on ${portName} at ${baudRate} baud`);
+
+        serial = new RealSerial(portName, baudRate);
         setCommandSender((cmd) => serial.write(JSON.stringify(cmd)));
-        pidManager = new PidManager(serial); // Also init PID for "real" serial
+        pidManager = new PidManager(serial);
+        serial.start();
     }
 
     // ─── Process Manager ──────────────────────────────────────

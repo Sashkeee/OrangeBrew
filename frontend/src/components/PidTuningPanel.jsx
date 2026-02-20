@@ -1,0 +1,171 @@
+import React, { useState, useEffect } from 'react';
+import { Play, Square, Settings as SettingsIcon, AlertCircle, LineChart as ChartIcon } from 'lucide-react';
+import { API_BASE } from '../utils/constants';
+
+export default function PidTuningPanel() {
+    const [status, setStatus] = useState(null);
+    const [targetTemp, setTargetTemp] = useState(65);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    // Poll tuner status every 1 second
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_BASE}/process/tune-status`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setStatus(data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch tuning status:", err);
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const handleStartTuning = async () => {
+        if (!window.confirm(`Вы уверены, что хотите запустить автокалибровку ПИД-регулятора на целевой температуре ${targetTemp}°C?\n\nВнимание: ТЭН будет периодически включаться на 100%! Убедитесь, что в кубе есть жидкость!`)) {
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetch(`${API_BASE}/process/tune-start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target: targetTemp }),
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to start tuning');
+            }
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleStopTuning = async () => {
+        setLoading(true);
+        try {
+            await fetch(`${API_BASE}/process/tune-stop`, { method: 'POST' });
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const isTuning = status?.tuning;
+
+    // Map state constants to user-friendly text
+    const stateMap = {
+        'IDLE': 'Ожидание',
+        'HEATING_INITIAL': 'Первоначальный нагрев',
+        'COOLING': 'Охлаждение (Выбег температуры)',
+        'HEATING': 'Нагрев (Измерение амплитуды)',
+        'DONE': 'Завершено'
+    };
+
+    const stateDesc = stateMap[status?.state] || status?.state || 'Неизвестно';
+    const progressPercent = isTuning ? Math.min(100, (status.cycle / status.maxCycles) * 100) : 0;
+
+    return (
+        <div style={{
+            padding: '1.5rem',
+            background: 'rgba(255,152,0,0.05)',
+            border: '1px solid rgba(255,152,0,0.3)',
+            borderRadius: '8px',
+            marginTop: '1.5rem',
+            fontFamily: 'var(--font-primary)'
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
+                <SettingsIcon size={24} color="#ff9800" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#ff9800' }}>Автоматическая Калибровка ПИД (Auto-Tuning)</h3>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                Метод релейного тюнинга позволяет системе самой рассчитать идеальные коэффициенты <b>Kp, Ki, Kd</b> для вашего куба.
+                После запуска система нагреет жидкость, а затем произведет несколько циклов включения/выключения ТЭНа для изучения инерции.
+            </p>
+
+            {error && (
+                <div style={{ padding: '0.8rem', background: 'rgba(244,67,54,0.1)', color: '#f44336', borderRadius: '4px', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                    <AlertCircle size={16} style={{ verticalAlign: 'middle', marginRight: '0.5rem' }} />
+                    {error}
+                </div>
+            )}
+
+            {!isTuning ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Целевая Температура (°C)</label>
+                        <input
+                            type="number"
+                            value={targetTemp}
+                            onChange={(e) => setTargetTemp(parseFloat(e.target.value) || 0)}
+                            style={{
+                                width: '120px', padding: '0.6rem', border: '1px solid #444',
+                                background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '4px', textAlign: 'center'
+                            }}
+                        />
+                    </div>
+
+                    <button
+                        onClick={handleStartTuning}
+                        disabled={loading}
+                        style={{
+                            marginTop: '1.2rem', padding: '0.6rem 1.2rem', background: '#ff9800',
+                            color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '4px',
+                            cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'
+                        }}
+                    >
+                        <Play size={18} /> Начать Калибровку
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: '#999', marginTop: '1.2rem' }}>
+                        *Займет около 15-20 минут
+                    </span>
+                </div>
+            ) : (
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '8px', border: '1px solid #444' }}>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <div>
+                            <div style={{ fontSize: '0.85rem', color: '#ff9800', fontWeight: 'bold' }}>ИДЕТ РАСЧЕТ ИНЕРЦИИ КУБА</div>
+                            <div style={{ fontSize: '1.2rem', marginTop: '0.3rem' }}>{stateDesc}</div>
+                        </div>
+                        <button
+                            onClick={handleStopTuning}
+                            disabled={loading}
+                            style={{
+                                padding: '0.6rem 1rem', background: 'rgba(244,67,54,0.1)', color: '#f44336',
+                                border: '1px solid rgba(244,67,54,0.3)', borderRadius: '4px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold'
+                            }}
+                        >
+                            <Square size={16} /> Прервать
+                        </button>
+                    </div>
+
+                    <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#aaa', marginBottom: '0.5rem' }}>
+                            <span>Цикл {status.cycle} из {status.maxCycles}</span>
+                            <span>{Math.round(progressPercent)}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: '8px', background: '#333', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${progressPercent}%`, background: '#ff9800', transition: 'width 0.5s ease-out' }} />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(3,169,244,0.1)', border: '1px solid rgba(3,169,244,0.3)', padding: '0.8rem', borderRadius: '4px' }}>
+                        <ChartIcon size={16} color="#03a9f4" />
+                        Новые настройки автоматически применятся после завершения тюнинга. Следите за графиком на главном экране.
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

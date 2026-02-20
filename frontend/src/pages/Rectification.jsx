@@ -75,10 +75,16 @@ const Rectification = () => {
 
     // Chart history
     useEffect(() => {
-        setHistory(h => [...h.slice(-120), {
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            boiler: tempBoiler, column: tempColumn, dephleg: tempDephleg, output: tempOutput,
-        }]);
+        setHistory(h => {
+            const now = Date.now();
+            const last = h[h.length - 1];
+            if (last && now - (last.unix || 0) < 5000) return h;
+            return [...h, {
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                unix: now,
+                boiler: tempBoiler, column: tempColumn, dephleg: tempDephleg, output: tempOutput,
+            }];
+        });
     }, [tempBoiler, tempColumn, tempDephleg, tempOutput]);
 
     // Fraction CRUD

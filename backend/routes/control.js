@@ -29,6 +29,15 @@ export function getControlState() {
     return { ...controlState };
 }
 
+/**
+ * Force set heater power internally
+ */
+export function setHeaterState(value) {
+    const safeValue = Math.min(100, Math.max(0, parseInt(value) || 0));
+    controlState.heater = safeValue;
+    if (sendCommand) sendCommand({ cmd: 'setHeater', value: safeValue });
+}
+
 // POST /api/control/heater — set heater power
 router.post('/heater', (req, res) => {
     try {

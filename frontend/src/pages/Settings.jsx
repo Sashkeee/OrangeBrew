@@ -9,6 +9,7 @@ import {
     Zap, Droplets, Timer, Database, Download, Upload, Trash2
 } from 'lucide-react';
 import { settingsApi } from '../api/client.js';
+import PidTuningPanel from '../components/PidTuningPanel';
 
 // Дефолтные настройки
 const DEFAULT_SETTINGS = {
@@ -401,6 +402,8 @@ const SettingsPage = () => {
                                 <option value="manual">Ручной</option>
                             </select>
                         </SettingRow>
+
+                        <PidTuningPanel />
                     </div>
                 );
 

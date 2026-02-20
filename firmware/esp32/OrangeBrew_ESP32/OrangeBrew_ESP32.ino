@@ -3,9 +3,9 @@
 #include <ArduinoJson.h>
 
 // --- ПИНЫ (Сможете изменить позже) ---
-#define ONE_WIRE_BUS 4 // Пин GPIO4 для датчиков DS18B20
-#define HEATER_PIN 25  // Пин GPIO25 для ТЭНа (Лампочка 1)
-#define PUMP_PIN 26    // Пин GPIO26 для Насоса (Лампочка 2)
+#define ONE_WIRE_BUS 13// Пин GPIO13 (D7) для датчиков DS18B20
+#define HEATER_PIN 14  // Пин GPIO14 (D5) для ТЭНа (Лампочка 1)
+#define PUMP_PIN 12    // Пин GPIO12 (D6) для Насоса (Лампочка 2)
 
 // --- НАСТРОЙКИ PWM (SLOW PWM для ТЭНа) ---
 // SSR-25 DA имеет Zero-Cross, поэтому обычный частый ШИМ работать не будет.

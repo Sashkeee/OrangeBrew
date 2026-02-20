@@ -47,20 +47,45 @@ const Boiling = () => {
     const pumpOn = control.pump;
 
     // Derived State
-    const isStarted = status !== 'IDLE' && status !== 'COMPLETED';
-    const isPaused = status === 'PAUSED';
-    const isBoiling = status === 'HOLDING' || stepPhase === 'holding'; // Backend uses HOLDING for boiling phase
-    const allDone = status === 'COMPLETED';
+    const isStarted = status !== 'IDLE' && status !== 'COMPLETED' && processState?.mode === 'boil';
+    const isPaused = status === 'PAUSED' && processState?.mode === 'boil';
+    const isBoiling = (status === 'HOLDING' || stepPhase === 'holding') && processState?.mode === 'boil';
+    const allDone = status === 'COMPLETED' && processState?.mode === 'boil';
 
     const [history, setHistory] = useState([]);
 
-    // Chart history
+    // Load history from DB
     useEffect(() => {
-        setHistory(h => [...h.slice(-50), {
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            temp: temperature,
-        }]);
-    }, [temperature]);
+        if (!sessionId || sessionId === 'new') return;
+        import('../api/client.js').then(({ sessionsApi }) => {
+            sessionsApi.getTemperatures(sessionId, 5000).then(res => {
+                if (res && res.length > 0) {
+                    const formatted = res.map(row => ({
+                        time: new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                        temp: row.value,
+                        unix: new Date(row.timestamp).getTime()
+                    }));
+                    setHistory(formatted.reverse());
+                }
+            }).catch(console.error);
+        });
+    }, [sessionId]);
+
+    // Live Chart append
+    useEffect(() => {
+        if (!isStarted) return;
+        setHistory(h => {
+            const now = Date.now();
+            const last = h[h.length - 1];
+            if (last && now - last.unix < 9500) return h;
+
+            return [...h, {
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                temp: temperature,
+                unix: now
+            }];
+        });
+    }, [temperature, isStarted]);
 
     const handleStartStop = () => {
         if (isStarted) {
@@ -235,7 +260,10 @@ const Boiling = () => {
                     </div>
 
                     <button
-                        onClick={() => navigate('/brewing/history')}
+                        onClick={() => {
+                            stop();
+                            navigate('/brewing');
+                        }}
                         className="btn-start"
                         style={{ background: '#333', color: '#fff', marginTop: '1rem' }}
                     >

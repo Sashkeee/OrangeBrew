@@ -46,5 +46,33 @@ export default function createProcessRouter(processManager) {
         res.json({ ok: true, state: processManager.getState() });
     });
 
+    // --- Auto-Tuner API ---
+    router.post('/tune-start', (req, res) => {
+        try {
+            const target = req.body.target || 65;
+            processManager.pidManager.startTuning(target);
+            res.json({ ok: true, message: 'Autotune started' });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    router.post('/tune-stop', (req, res) => {
+        try {
+            processManager.pidManager.stopTuning();
+            res.json({ ok: true, message: 'Autotune stopped' });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    router.get('/tune-status', (req, res) => {
+        try {
+            res.json(processManager.pidManager.getTunerStatus());
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     return router;
 }

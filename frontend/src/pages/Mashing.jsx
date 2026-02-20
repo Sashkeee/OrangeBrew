@@ -64,9 +64,9 @@ const Mashing = () => {
     const temperature = sensors.boiler?.value || 20;
     const heaterPower = control.heater;
     const pumpOn = control.pump;
-    const isStarted = status !== 'IDLE' && status !== 'COMPLETED';
-    const isPaused = status === 'PAUSED';
-    const allDone = status === 'COMPLETED';
+    const isStarted = status !== 'IDLE' && status !== 'COMPLETED' && processState?.mode === 'mash';
+    const isPaused = status === 'PAUSED' && processState?.mode === 'mash';
+    const allDone = status === 'COMPLETED' && processState?.mode === 'mash';
 
     // Target depends on backend state usually, but for visualization we use currentStep from known stairs
     // If backend doesn't send "currentStep" object fully, we find it by index
@@ -74,14 +74,40 @@ const Mashing = () => {
 
     useEffect(() => { setMounted(true); }, []);
 
-    // Chart history
+    // Load history from DB
     useEffect(() => {
-        setHistory(h => [...h.slice(-50), {
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            temp: temperature,
-            target: targetTemp,
-        }]);
-    }, [temperature, targetTemp]);
+        if (!sessionId || sessionId === 'new') return;
+        import('../api/client.js').then(({ sessionsApi }) => {
+            sessionsApi.getTemperatures(sessionId, 5000).then(res => {
+                if (res && res.length > 0) {
+                    const formatted = res.map(row => ({
+                        time: new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                        temp: row.value,
+                        target: targetTemp,
+                        unix: new Date(row.timestamp).getTime()
+                    }));
+                    setHistory(formatted.reverse());
+                }
+            }).catch(console.error);
+        });
+    }, [sessionId, targetTemp]);
+
+    // Live Chart append
+    useEffect(() => {
+        if (!isStarted) return;
+        setHistory(h => {
+            const now = Date.now();
+            const last = h[h.length - 1];
+            if (last && now - last.unix < 9500) return h;
+
+            return [...h, {
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                temp: temperature,
+                target: targetTemp,
+                unix: now
+            }];
+        });
+    }, [temperature, targetTemp, isStarted]);
 
     // Handle Start / Stop / Pause
     const handleStartStop = () => {
