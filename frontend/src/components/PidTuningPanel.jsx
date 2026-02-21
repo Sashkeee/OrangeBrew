@@ -1,12 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Square, Settings as SettingsIcon, AlertCircle, LineChart as ChartIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Square, Settings as SettingsIcon, AlertCircle, LineChart as ChartIcon, CheckCircle } from 'lucide-react';
 import { API_BASE } from '../utils/constants';
+import { useSensors } from '../hooks/useSensors';
+import { ProcessChart } from './ProcessChart';
 
-export default function PidTuningPanel() {
+export default function PidTuningPanel({ onTuningComplete }) {
     const [status, setStatus] = useState(null);
     const [targetTemp, setTargetTemp] = useState(65);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [successMsg, setSuccessMsg] = useState('');
+
+    // Live sensor data for graphing
+    const sensors = useSensors();
+    const [chartData, setChartData] = useState([]);
+    const chartDataRef = useRef([]);
+
+    // Poll tuner status every 1 second
+    // Update local chart data when brewing
+    useEffect(() => {
+        if (!status?.tuning || !sensors.boiler) return;
+
+        const nowMs = Date.now();
+        const newPoint = {
+            unix: nowMs,
+            time: new Date(nowMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            temp: sensors.boiler
+        };
+
+        const prevData = chartDataRef.current;
+        // Keep last 600 points (~10 mins if polled every sec, though sensors update every ~1.5s)
+        const updated = [...prevData.slice(-599), newPoint];
+        chartDataRef.current = updated;
+        setChartData(updated);
+    }, [sensors.boiler, status?.tuning]);
 
     // Poll tuner status every 1 second
     useEffect(() => {
@@ -15,14 +42,22 @@ export default function PidTuningPanel() {
                 const res = await fetch(`${API_BASE}/process/tune-status`);
                 if (res.ok) {
                     const data = await res.json();
-                    setStatus(data);
+
+                    setStatus(prev => {
+                        // If it just finished (was tuning, now not tuning)
+                        if (prev?.tuning && !data.tuning && data.state === 'DONE') {
+                            setSuccessMsg('Калибровка успешно завершена! Настройки применены.');
+                            if (onTuningComplete) onTuningComplete(); // Tell parent to reload settings
+                        }
+                        return data;
+                    });
                 }
             } catch (err) {
                 console.error("Failed to fetch tuning status:", err);
             }
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [onTuningComplete]);
 
     const handleStartTuning = async () => {
         if (!window.confirm(`Вы уверены, что хотите запустить автокалибровку ПИД-регулятора на целевой температуре ${targetTemp}°C?\n\nВнимание: ТЭН будет периодически включаться на 100%! Убедитесь, что в кубе есть жидкость!`)) {
@@ -31,6 +66,10 @@ export default function PidTuningPanel() {
 
         setLoading(true);
         setError(null);
+        setSuccessMsg('');
+        setChartData([]);
+        chartDataRef.current = [];
+
         try {
             const res = await fetch(`${API_BASE}/process/tune-start`, {
                 method: 'POST',
@@ -93,9 +132,16 @@ export default function PidTuningPanel() {
             </p>
 
             {error && (
-                <div style={{ padding: '0.8rem', background: 'rgba(244,67,54,0.1)', color: '#f44336', borderRadius: '4px', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                    <AlertCircle size={16} style={{ verticalAlign: 'middle', marginRight: '0.5rem' }} />
+                <div style={{ padding: '0.8rem', background: 'rgba(244,67,54,0.1)', color: '#f44336', borderRadius: '4px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center' }}>
+                    <AlertCircle size={16} style={{ marginRight: '0.5rem' }} />
                     {error}
+                </div>
+            )}
+
+            {successMsg && !isTuning && (
+                <div style={{ padding: '0.8rem', background: 'rgba(76,175,80,0.1)', color: '#4caf50', borderRadius: '4px', marginBottom: '1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center' }}>
+                    <CheckCircle size={16} style={{ marginRight: '0.5rem' }} />
+                    {successMsg}
                 </div>
             )}
 
@@ -160,9 +206,18 @@ export default function PidTuningPanel() {
                         </div>
                     </div>
 
+                    <div style={{ height: '220px', marginBottom: '1rem', borderRadius: '4px', overflow: 'hidden', background: '#111' }}>
+                        <ProcessChart
+                            data={chartData}
+                            lines={[
+                                { dataKey: 'temp', color: '#ff9800', name: 'Температура куба (°C)' }
+                            ]}
+                        />
+                    </div>
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(3,169,244,0.1)', border: '1px solid rgba(3,169,244,0.3)', padding: '0.8rem', borderRadius: '4px' }}>
                         <ChartIcon size={16} color="#03a9f4" />
-                        Новые настройки автоматически применятся после завершения тюнинга. Следите за графиком на главном экране.
+                        Новые настройки автоматически применятся после завершения тюнинга. Следите за процессом.
                     </div>
                 </div>
             )}

@@ -98,33 +98,34 @@ const SettingsPage = () => {
     const [saved, setSaved] = useState(false);
     const [expandedSensors, setExpandedSensors] = useState({});
 
+    const fetchSettings = useCallback(async () => {
+        try {
+            const apiSettings = await settingsApi.getAll();
+            if (apiSettings && Object.keys(apiSettings).length > 0) {
+                const merged = { ...DEFAULT_SETTINGS };
+                for (const [key, value] of Object.entries(apiSettings)) {
+                    if (typeof value === 'object' && value !== null && merged[key]) {
+                        merged[key] = { ...merged[key], ...value };
+                    } else {
+                        merged[key] = value;
+                    }
+                }
+                setSettings(merged);
+                return;
+            }
+        } catch { /* API unavailable, fallback to localStorage */ }
+        const stored = localStorage.getItem('orangebrew_settings');
+        if (stored) {
+            try {
+                setSettings(prev => ({ ...prev, ...JSON.parse(stored) }));
+            } catch { /* ignore */ }
+        }
+    }, []);
+
     // Загрузка из API (с фоллбэком на localStorage)
     useEffect(() => {
-        (async () => {
-            try {
-                const apiSettings = await settingsApi.getAll();
-                if (apiSettings && Object.keys(apiSettings).length > 0) {
-                    // API returns flat key-value; each key is a section name with nested object
-                    const merged = { ...DEFAULT_SETTINGS };
-                    for (const [key, value] of Object.entries(apiSettings)) {
-                        if (typeof value === 'object' && value !== null && merged[key]) {
-                            merged[key] = { ...merged[key], ...value };
-                        } else {
-                            merged[key] = value;
-                        }
-                    }
-                    setSettings(merged);
-                    return;
-                }
-            } catch { /* API unavailable, fallback to localStorage */ }
-            const stored = localStorage.getItem('orangebrew_settings');
-            if (stored) {
-                try {
-                    setSettings(prev => ({ ...prev, ...JSON.parse(stored) }));
-                } catch { /* ignore */ }
-            }
-        })();
-    }, []);
+        fetchSettings();
+    }, [fetchSettings]);
 
     const updateSetting = (section, key, value) => {
         setSettings(prev => ({
@@ -403,7 +404,7 @@ const SettingsPage = () => {
                             </select>
                         </SettingRow>
 
-                        <PidTuningPanel />
+                        <PidTuningPanel onTuningComplete={fetchSettings} />
                     </div>
                 );
 

@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS recipes (
 CREATE TABLE IF NOT EXISTS brew_sessions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     recipe_id   INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
-    type        TEXT    NOT NULL CHECK(type IN ('mash','boil','fermentation','distillation','rectification')),
+    type        TEXT    NOT NULL CHECK(type IN ('brewing','mash','boil','fermentation','distillation','rectification')),
     status      TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','completed','cancelled')),
     started_at  TEXT    DEFAULT (datetime('now')),
     finished_at TEXT,

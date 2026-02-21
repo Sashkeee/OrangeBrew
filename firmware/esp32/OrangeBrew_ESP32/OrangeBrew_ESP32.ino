@@ -27,6 +27,9 @@ unsigned long runawayStartTime = 0;
 float runawayStartTemp = -100.0;
 bool runawayTracking = false;
 
+// --- СЕРИАЛ БУФЕР (Non-blocking) ---
+String serialBuffer = "";
+
 // --- ДАТЧИКИ ТЕМПЕРАТУРЫ ---
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -143,10 +146,15 @@ void loop() {
     }
   }
 
-  // 2. Чтение Serial команд
-  if (Serial.available() > 0) {
-    String payload = Serial.readStringUntil('\n');
-    processCommand(payload);
+  // 2. Чтение Serial команд (Non-blocking)
+  while (Serial.available() > 0) {
+    char inChar = Serial.read();
+    if (inChar == '\n') {
+      processCommand(serialBuffer);
+      serialBuffer = "";
+    } else if (inChar != '\r') {
+      serialBuffer += inChar;
+    }
   }
 
   // 3. Отправка температуры раз в TEMP_UPDATE_INTERVAL

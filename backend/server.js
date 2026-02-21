@@ -144,6 +144,12 @@ async function main() {
         broadcastProcessState(state);
     });
 
+    // Global Serial error handler to prevent Node.js crashes if USB disconnects
+    serial.on('error', (err) => {
+        console.error('[Global Serial Error] Connection issue:', err.message);
+        // Optional: Implement reconnect logic here in the future
+    });
+
     // Pass sensor data to Process Manager and Clients
     serial.on('data', (data) => {
         // Core updates
