@@ -150,7 +150,7 @@ export const recipeQueries = {
 export const sessionQueries = {
     getAll: (type) => {
         const query = `
-            SELECT s.*, r.name as recipe_name 
+            SELECT s.*, r.name as recipe_name, r.ingredients as recipe_ingredients, r.hop_additions as recipe_hop_additions 
             FROM brew_sessions s 
             LEFT JOIN recipes r ON s.recipe_id = r.id 
             ${type ? 'WHERE s.type = ? ' : ''}

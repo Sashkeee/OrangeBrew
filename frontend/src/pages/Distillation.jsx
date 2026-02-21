@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FlaskConical, Zap, Droplets, AlertTriangle } from 'lucide-react';
+import { FlaskConical, Zap, Droplets, AlertTriangle, Calculator } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
 
@@ -29,6 +30,7 @@ const CHART_LINES = [
 ];
 
 const Distillation = () => {
+    const navigate = useNavigate();
     const { sensors } = useSensors();
     const { control, setHeater, setCooler } = useControl();
 
@@ -186,6 +188,16 @@ const Distillation = () => {
                         {!isStarted && (
                             <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
                         )}
+                    </div>
+
+                    {/* Handy Tools */}
+                    <div className="industrial-panel" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>
+                        <h3 className="phase-list__title">ИНСТРУМЕНТЫ</h3>
+                        <button
+                            onClick={() => navigate('/calculators')}
+                            style={{ width: '100%', background: 'rgba(3,169,244,0.1)', border: '1px solid #03a9f4', color: '#03a9f4', padding: '0.8rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
+                            <Calculator size={18} /> Калькуляторы винокура
+                        </button>
                     </div>
 
                     {/* Active info */}

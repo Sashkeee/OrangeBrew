@@ -12,7 +12,10 @@ import Distillation from './pages/Distillation';
 import Rectification from './pages/Rectification';
 import SettingsPage from './pages/Settings';
 import History from './pages/History';
+import IngredientsReference from './pages/IngredientsReference';
+import Calculators from './pages/Calculators';
 import { ConnectionIndicator } from './components/ConnectionIndicator';
+import { ActiveProcessIndicator } from './components/ActiveProcessIndicator';
 import { MockControls } from './components/MockControls';
 
 function App() {
@@ -28,6 +31,8 @@ function App() {
           <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
           <Route path="/brewing/boil/:sessionId" element={<Boiling />} />
           <Route path="/brewing/history" element={<History />} />
+          <Route path="/brewing/ingredients" element={<IngredientsReference />} />
+          <Route path="/calculators" element={<Calculators />} />
           <Route path="/fermentation" element={<Fermentation />} />
 
           <Route path="/distillation" element={<Distillation />} />
@@ -37,6 +42,7 @@ function App() {
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
         <ConnectionIndicator />
+        <ActiveProcessIndicator />
         <MockControls />
       </div>
     </Router>

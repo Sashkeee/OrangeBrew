@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { ScrollText, Plus, BookOpen, ArrowLeft } from 'lucide-react';
+import { ScrollText, Plus, BookOpen, ArrowLeft, Leaf, Calculator } from 'lucide-react';
 
 const Brewing = () => {
     const navigate = useNavigate();
@@ -9,6 +9,8 @@ const Brewing = () => {
         { title: 'Выбрать рецепт', icon: <ScrollText size={40} />, path: '/brewing/recipes', description: 'Выбрать из существующих' },
         { title: 'Добавить рецепт', icon: <Plus size={40} />, path: '/brewing/recipes/new', description: 'Создать новый рецепт' },
         { title: 'История варок', icon: <BookOpen size={40} />, path: '/brewing/history', description: 'Просмотр прошлых сессий' },
+        { title: 'Справочник', icon: <Leaf size={40} color="#4caf50" />, path: '/brewing/ingredients', description: 'Таблица солода, хмеля и дрожжей' },
+        { title: 'Калькуляторы', icon: <Calculator size={40} color="#03a9f4" />, path: '/calculators', description: 'Крепость, дилюция, ареометр...' },
     ];
 
     return (

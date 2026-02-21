@@ -101,7 +101,7 @@ const History = () => {
                         temp: row.value,
                         unix: new Date(row.timestamp).getTime()
                     }));
-                    setChartData(prev => ({ ...prev, [id]: formatted.reverse() }));
+                    setChartData(prev => ({ ...prev, [id]: formatted.sort((a, b) => a.unix - b.unix) }));
                 } else {
                     setChartData(prev => ({ ...prev, [id]: [] }));
                 }
@@ -256,8 +256,34 @@ const History = () => {
                                         {session.recipe_id && (
                                             <><strong>ID Рецепта:</strong> #{session.recipe_id} <br /></>
                                         )}
+                                        {(() => {
+                                            try {
+                                                const ing = session.recipe_ingredients ? JSON.parse(session.recipe_ingredients) : [];
+                                                const hop = session.recipe_hop_additions ? JSON.parse(session.recipe_hop_additions) : [];
+                                                return (
+                                                    <>
+                                                        {(ing.length > 0) && (
+                                                            <div style={{ marginTop: '0.8rem', padding: '0.8rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                                                                <strong style={{ color: '#4caf50' }}>Ингредиенты:</strong>
+                                                                <ul style={{ margin: '0.4rem 0 0 0', paddingLeft: '1.5rem', color: '#ccc', fontSize: '0.85rem' }}>
+                                                                    {ing.map((i, idx) => <li key={idx}>[{i.type}] {i.name} — {i.amount} {i.unit}</li>)}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                        {(hop.length > 0) && (
+                                                            <div style={{ marginTop: '0.5rem', padding: '0.8rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                                                                <strong style={{ color: '#e040fb' }}>Внесение хмеля:</strong>
+                                                                <ul style={{ margin: '0.4rem 0 0 0', paddingLeft: '1.5rem', color: '#ccc', fontSize: '0.85rem' }}>
+                                                                    {hop.map((h, idx) => <li key={idx}>{h.name} — {h.amount}г (за {h.time} мин до конца)</li>)}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )
+                                            } catch (e) { return null; }
+                                        })()}
                                         {session.notes && (
-                                            <><strong>Заметки:</strong> {session.notes}<br /></>
+                                            <><div style={{ marginTop: '0.8rem' }}><strong>Заметки:</strong> {session.notes}</div></>
                                         )}
                                     </div>
 

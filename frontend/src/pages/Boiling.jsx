@@ -53,6 +53,7 @@ const Boiling = () => {
     const allDone = status === 'COMPLETED' && processState?.mode === 'boil';
 
     const [history, setHistory] = useState([]);
+    const [alertedHops, setAlertedHops] = useState(new Set());
 
     // Load history from DB
     useEffect(() => {
@@ -86,6 +87,21 @@ const Boiling = () => {
             }];
         });
     }, [temperature, isStarted]);
+
+    // Hop Additions Alerts
+    useEffect(() => {
+        if (!isBoiling || !recipeData?.hop_additions) return;
+
+        const timeLeftMins = Math.floor(remainingTime / 60);
+
+        recipeData.hop_additions.forEach(hop => {
+            const hopTime = parseInt(hop.time);
+            if (timeLeftMins === hopTime && !alertedHops.has(hop.id)) {
+                alert(`🔔 ВРЕМЯ ВНОСИТЬ ХМЕЛЬ!\n\nСорт: ${hop.name}\nКоличество: ${hop.amount} г.`);
+                setAlertedHops(prev => new Set(prev).add(hop.id));
+            }
+        });
+    }, [remainingTime, recipeData, isBoiling, alertedHops]);
 
     const handleStartStop = () => {
         if (isStarted) {

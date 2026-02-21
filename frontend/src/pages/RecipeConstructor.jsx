@@ -47,6 +47,28 @@ const RecipeConstructor = () => {
         });
     };
 
+    const addIngredient = () => {
+        setRecipe({
+            ...recipe,
+            ingredients: [...recipe.ingredients, { id: Date.now().toString(), name: '', amount: '', unit: 'кг', type: 'Солод' }]
+        });
+    };
+    const removeIngredient = (id) => setRecipe({ ...recipe, ingredients: recipe.ingredients.filter(i => i.id !== id) });
+    const updateIngredient = (id, field, value) => {
+        setRecipe({ ...recipe, ingredients: recipe.ingredients.map(i => i.id === id ? { ...i, [field]: value } : i) });
+    };
+
+    const addHop = () => {
+        setRecipe({
+            ...recipe,
+            hop_additions: [...recipe.hop_additions, { id: Date.now().toString(), name: 'Cascade', amount: 10, time: 10 }]
+        });
+    };
+    const removeHop = (id) => setRecipe({ ...recipe, hop_additions: recipe.hop_additions.filter(i => i.id !== id) });
+    const updateHop = (id, field, value) => {
+        setRecipe({ ...recipe, hop_additions: recipe.hop_additions.map(i => i.id === id ? { ...i, [field]: value } : i) });
+    };
+
     /**
      * Common Validation
      */
@@ -59,6 +81,12 @@ const RecipeConstructor = () => {
         for (let i = 0; i < recipe.mash_steps.length - 1; i++) {
             if (parseFloat(recipe.mash_steps[i].temp) >= parseFloat(recipe.mash_steps[i + 1].temp)) {
                 alert(`Ошибка: Температура паузы #${i + 2} (${recipe.mash_steps[i + 1].temp}°C) должна быть выше температуры паузы #${i + 1} (${recipe.mash_steps[i].temp}°C). Паузы должны идти по возрастанию температуры.`);
+                return false;
+            }
+        }
+        for (let hop of recipe.hop_additions) {
+            if (parseInt(hop.time) > recipe.boil_time) {
+                alert(`Ошибка: Время кипячения хмеля "${hop.name}" (${hop.time} мин) не может превышать общее время кипячения (${recipe.boil_time} мин).`);
                 return false;
             }
         }
@@ -253,31 +281,147 @@ const RecipeConstructor = () => {
                         ))}
                     </div>
                 </div>
+            </div>
 
-                {/* ─── Action Buttons ──────────────────── */}
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
+            {/* ─── Ingredients ───────────────────────── */}
+            <div style={{ marginTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                    <h3 style={{ margin: 0 }}>Ингредиенты</h3>
                     <button
-                        onClick={() => navigate('/brewing')}
-                        style={{ flex: '1 1 100px', padding: '1rem', background: 'transparent', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+                        onClick={addIngredient}
+                        aria-label="Добавить ингредиент"
+                        style={{ background: 'rgba(76, 175, 80, 0.1)', border: '1px dashed #4caf50', color: '#4caf50', padding: '0.4rem 1rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                     >
-                        Отмена
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving || !recipe.name.trim()}
-                        aria-label="Сохранить рецепт"
-                        style={{ flex: '1 1 150px', padding: '1rem', background: 'rgba(255,152,0,0.1)', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.5 : 1 }}
-                    >
-                        <Save size={20} aria-hidden="true" /> {saving ? 'Сохранение...' : 'Сохранить'}
-                    </button>
-                    <button
-                        onClick={handleStartBrew}
-                        disabled={saving || !recipe.name.trim()}
-                        style={{ flex: '2 1 200px', padding: '1rem', background: 'var(--primary-color)', border: 'none', color: '#000', fontWeight: 'bold', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.5 : 1 }}
-                    >
-                        <Play size={20} aria-hidden="true" /> {saving ? 'Сохранение...' : 'Начать варку'}
+                        <Plus size={16} aria-hidden="true" /> Добавить
                     </button>
                 </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                    {recipe.ingredients.length === 0 && <div style={{ color: '#666', fontStyle: 'italic', fontSize: '0.9rem' }}>Нет ингредиентов. Добавьте солод, дрожжи и т.д.</div>}
+                    {recipe.ingredients.map((ing) => (
+                        <div key={ing.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 1.5fr) minmax(150px, 2fr) minmax(80px, 1fr) minmax(60px, 0.5fr) 40px', gap: '0.8rem', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '0.8rem', borderRadius: '4px', border: '1px solid #333' }}>
+                            <select
+                                value={ing.type}
+                                onChange={(e) => updateIngredient(ing.id, 'type', e.target.value)}
+                                style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '0.4rem', borderRadius: '4px' }}
+                            >
+                                <option>Солод</option>
+                                <option>Дрожжи</option>
+                                <option>Вода</option>
+                                <option>Хмель</option>
+                                <option>Добавка</option>
+                            </select>
+                            <input
+                                type="text"
+                                value={ing.name}
+                                onChange={(e) => updateIngredient(ing.id, 'name', e.target.value)}
+                                placeholder="Название (напр. Pale Ale)"
+                                style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #444', color: '#fff', padding: '0.3rem' }}
+                            />
+                            <input
+                                type="number"
+                                value={ing.amount}
+                                onChange={(e) => updateIngredient(ing.id, 'amount', parseFloat(e.target.value) || '')}
+                                placeholder="Кол-во"
+                                style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #444', color: '#fff', padding: '0.3rem', width: '100%' }}
+                            />
+                            <input
+                                type="text"
+                                value={ing.unit}
+                                onChange={(e) => updateIngredient(ing.id, 'unit', e.target.value)}
+                                placeholder="ед."
+                                style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #444', color: '#fff', padding: '0.3rem', width: '100%' }}
+                            />
+                            <button
+                                onClick={() => removeIngredient(ing.id)}
+                                style={{ background: 'none', border: 'none', color: '#f44336', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ─── Hop Additions ─────────────────────── */}
+            <div style={{ marginTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                    <h3 style={{ margin: 0 }}>Внесение хмеля (на варке)</h3>
+                    <button
+                        onClick={addHop}
+                        aria-label="Добавить хмель"
+                        style={{ background: 'rgba(156, 39, 176, 0.1)', border: '1px dashed #9c27b0', color: '#e040fb', padding: '0.4rem 1rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        <Plus size={16} aria-hidden="true" /> Внести хмель
+                    </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                    {recipe.hop_additions.length === 0 && <div style={{ color: '#666', fontStyle: 'italic', fontSize: '0.9rem' }}>Нет хмеля. Добавьте задачу для таймера кипячения.</div>}
+                    {recipe.hop_additions.map((hop) => (
+                        <div key={hop.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 2fr) minmax(80px, 1fr) minmax(130px, 1.5fr) 40px', gap: '0.8rem', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '0.8rem', borderRadius: '4px', border: '1px solid #333' }}>
+                            <select
+                                value={hop.name}
+                                onChange={(e) => updateHop(hop.id, 'name', e.target.value)}
+                                style={{ background: '#000', border: '1px solid #444', color: '#fff', padding: '0.4rem', borderRadius: '4px' }}
+                            >
+                                <option value="Custom">Выбрать...</option>
+                                <optgroup label="Популярные (Топ)">
+                                    {['Cascade', 'Magnum', 'Citra', 'Saaz / Жатецкий', 'Perle', 'Centennial', 'Mosaic', 'Simcoe', 'Columbus (CTZ)', 'Hallertauer Mittelfrüh', 'Fuggles', 'East Kent Goldings', 'Московский Ранний', 'Подвязный', 'Nelson Sauvin'].map(h => <option key={h} value={h}>{h}</option>)}
+                                </optgroup>
+                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type="number"
+                                    value={hop.amount}
+                                    onChange={(e) => updateHop(hop.id, 'amount', parseFloat(e.target.value) || 0)}
+                                    style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #444', color: '#fff', padding: '0.3rem', width: '100%' }}
+                                />
+                                <span style={{ position: 'absolute', right: 0, color: '#666', fontSize: '0.8rem' }}>г.</span>
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type="number"
+                                    value={hop.time}
+                                    onChange={(e) => updateHop(hop.id, 'time', parseInt(e.target.value) || 0)}
+                                    style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #444', color: '#fff', padding: '0.3rem', width: '100%' }}
+                                />
+                                <span style={{ position: 'absolute', right: 0, color: '#666', fontSize: '0.8rem', top: '50%', transform: 'translateY(-50%)' }}>м. до конца</span>
+                            </div>
+                            <button
+                                onClick={() => removeHop(hop.id)}
+                                style={{ background: 'none', border: 'none', color: '#f44336', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* ─── Action Buttons ──────────────────── */}
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
+                <button
+                    onClick={() => navigate('/brewing')}
+                    style={{ flex: '1 1 100px', padding: '1rem', background: 'transparent', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+                >
+                    Отмена
+                </button>
+                <button
+                    onClick={handleSave}
+                    disabled={saving || !recipe.name.trim()}
+                    aria-label="Сохранить рецепт"
+                    style={{ flex: '1 1 150px', padding: '1rem', background: 'rgba(255,152,0,0.1)', border: '1px solid var(--primary-color)', color: 'var(--primary-color)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.5 : 1 }}
+                >
+                    <Save size={20} aria-hidden="true" /> {saving ? 'Сохранение...' : 'Сохранить'}
+                </button>
+                <button
+                    onClick={handleStartBrew}
+                    disabled={saving || !recipe.name.trim()}
+                    style={{ flex: '2 1 200px', padding: '1rem', background: 'var(--primary-color)', border: 'none', color: '#000', fontWeight: 'bold', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: saving ? 0.5 : 1 }}
+                >
+                    <Play size={20} aria-hidden="true" /> {saving ? 'Сохранение...' : 'Начать варку'}
+                </button>
             </div>
         </div>
     );
