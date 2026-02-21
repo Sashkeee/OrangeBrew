@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS brew_sessions (
     notes       TEXT    DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    role          TEXT    DEFAULT 'admin',
+    created_at    TEXT    DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS temperature_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  INTEGER NOT NULL REFERENCES brew_sessions(id) ON DELETE CASCADE,

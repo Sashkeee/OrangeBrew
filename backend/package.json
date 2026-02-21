@@ -10,10 +10,12 @@
         "test": "vitest run"
     },
     "dependencies": {
+        "bcrypt": "^6.0.0",
         "better-sqlite3": "^12.6.2",
         "cors": "^2.8.5",
         "dotenv": "^16.4.7",
         "express": "^4.21.2",
+        "jsonwebtoken": "^9.0.3",
         "serialport": "^12.0.0",
         "sql.js": "^1.12.0",
         "ws": "^8.18.0"

@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { initDatabase, closeDatabase } from './db/database.js';
 import { initWebSocket, broadcastSensors, broadcastProcessState } from './ws/liveServer.js';
@@ -20,6 +22,10 @@ import controlRouter from './routes/control.js';
 import settingsRouter from './routes/settings.js';
 import telegramRouter from './routes/telegram.js';
 import createProcessRouter from './routes/process.js';
+import usersRouter from './routes/users.js';
+import authRouter from './routes/auth.js';
+import { authenticate } from './middleware/auth.js';
+import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
 const DB_PATH = process.env.DB_PATH || './data/orangebrew.db';
@@ -31,6 +37,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({
@@ -41,13 +50,17 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// API routes
-app.use('/api/recipes', recipesRouter);
-app.use('/api/sessions', sessionsRouter);
-app.use('/api/sensors', sensorsRouter);
-app.use('/api/control', controlRouter);
-app.use('/api/settings', settingsRouter);
-app.use('/api/telegram', telegramRouter);
+// Auth route (public)
+app.use('/api/auth', authRouter);
+
+// Protected API routes
+app.use('/api/recipes', authenticate, recipesRouter);
+app.use('/api/sessions', authenticate, sessionsRouter);
+app.use('/api/sensors', authenticate, sensorsRouter);
+app.use('/api/control', authenticate, controlRouter);
+app.use('/api/settings', authenticate, settingsRouter);
+app.use('/api/telegram', authenticate, telegramRouter);
+app.use('/api/users', authenticate, usersRouter);
 
 // Debug routes for Mock
 app.post('/api/debug/mock/temps', (req, res) => {
@@ -83,6 +96,15 @@ app.post('/api/debug/pid/tunings', (req, res) => {
 });
 
 
+// ─── Serve Frontend ───────────────────────────────────────
+
+const frontendDist = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDist));
+app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+});
+
+
 // ─── Initialize ───────────────────────────────────────────
 
 let serial = null;
@@ -91,6 +113,7 @@ let pidManager = null; // Global PID Manager
 async function main() {
     // Database (async — sql.js loads WASM)
     await initDatabase(DB_PATH);
+    await addDefaultAdminIfNoneExists();
 
     // HTTP + WebSocket server
     const server = createServer(app);

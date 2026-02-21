@@ -6,10 +6,11 @@ import {
     Wifi, Bell, Shield, Palette, Info, Save, RotateCcw,
     ChevronDown, ChevronRight, CheckCircle, AlertTriangle,
     Usb, Radio, Bot, Eye, Moon, Sun, Globe, Gauge,
-    Zap, Droplets, Timer, Database, Download, Upload, Trash2
+    Zap, Droplets, Timer, Database, Download, Upload, Trash2, Users
 } from 'lucide-react';
 import { settingsApi } from '../api/client.js';
 import PidTuningPanel from '../components/PidTuningPanel';
+import UsersSettings from '../components/UsersSettings';
 
 // Дефолтные настройки
 const DEFAULT_SETTINGS = {
@@ -85,6 +86,7 @@ const SECTIONS = [
     { id: 'telegram', label: 'Telegram бот', icon: Bot, color: '#29b6f6' },
     { id: 'tailscale', label: 'Удалённый доступ', icon: Globe, color: '#7c4dff' },
     { id: 'safety', label: 'Безопасность', icon: Shield, color: '#f44336' },
+    { id: 'users', label: 'Пользователи', icon: Users, color: '#03a9f4' },
     { id: 'ui', label: 'Интерфейс', icon: Palette, color: '#ce93d8' },
     { id: 'data', label: 'Данные', icon: Database, color: '#78909c' },
     { id: 'about', label: 'О системе', icon: Info, color: '#455a64' },
@@ -246,6 +248,8 @@ const SettingsPage = () => {
     // Рендер секций
     const renderSection = () => {
         switch (activeSection) {
+            case 'users':
+                return <UsersSettings />;
             case 'hardware':
                 return (
                     <div>

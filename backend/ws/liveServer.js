@@ -1,6 +1,11 @@
 import { WebSocketServer } from 'ws';
+import jwt from 'jsonwebtoken';
+import url from 'url';
 import { getSensorReadings } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
+const HARDWARE_API_KEY = process.env.HARDWARE_API_KEY || 'default_hardware_key_123';
 
 /** @type {Set<import('ws').WebSocket>} */
 const clients = new Set();
@@ -14,38 +19,83 @@ let wss = null;
 export function initWebSocket(server) {
     wss = new WebSocketServer({ server, path: '/ws' });
 
-    wss.on('connection', (ws) => {
-        clients.add(ws);
-        console.log(`[WS] Client connected. Total: ${clients.size}`);
+    wss.on('connection', (ws, req) => {
+        const query = url.parse(req.url, true).query;
+        let isAuth = false;
 
-        // Send initial state
-        ws.send(JSON.stringify({
-            type: 'init',
-            sensors: getSensorReadings(),
-            control: getControlState(),
-        }));
-
-        ws.on('message', (raw) => {
+        // Check if token query is present for web UI
+        if (query.token) {
             try {
-                const msg = JSON.parse(raw.toString());
-                handleClientMessage(ws, msg);
-            } catch (e) {
-                ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+                jwt.verify(query.token, JWT_SECRET);
+                isAuth = true;
+            } catch (err) {
+                // Invalid token
             }
-        });
+        }
 
-        ws.on('close', () => {
-            clients.delete(ws);
-            console.log(`[WS] Client disconnected. Total: ${clients.size}`);
-        });
+        // Wait for first message from Hardware to provide hardware key, or if token was valid from UI then we are good
+        if (isAuth) {
+            setupAuthenticatedClient(ws);
+        } else {
+            // Hardware doesn't support query token easily right now, wait for a message with auth_key.
+            // Allow 5 seconds to auth
+            const authTimeout = setTimeout(() => {
+                ws.close(4001, 'Unauthorized');
+            }, 5000);
 
-        ws.on('error', (err) => {
-            console.error('[WS] Client error:', err.message);
-            clients.delete(ws);
-        });
+            ws.once('message', (raw) => {
+                try {
+                    const msg = JSON.parse(raw.toString());
+                    if (msg.auth_key === HARDWARE_API_KEY) {
+                        clearTimeout(authTimeout);
+                        setupAuthenticatedClient(ws);
+                        // Forward if it contains other commands too
+                        if (msg.type || msg.cmd) {
+                            handleClientMessage(ws, msg);
+                        }
+                    } else {
+                        ws.close(4001, 'Unauthorized hardware key');
+                    }
+                } catch (e) {
+                    ws.close(4000, 'Invalid auth payload');
+                }
+            });
+        }
     });
 
-    console.log('[WS] WebSocket server initialized on /ws');
+    console.log('[WS] WebSocket server initialized on /ws (Secured)');
+}
+
+function setupAuthenticatedClient(ws) {
+    clients.add(ws);
+    console.log(`[WS] Client authenticated and connected. Total: ${clients.size}`);
+
+    // Send initial state
+    ws.send(JSON.stringify({
+        type: 'init',
+        sensors: getSensorReadings(),
+        control: getControlState(),
+    }));
+
+
+    ws.on('message', (raw) => {
+        try {
+            const msg = JSON.parse(raw.toString());
+            handleClientMessage(ws, msg);
+        } catch (e) {
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+        }
+    });
+
+    ws.on('close', () => {
+        clients.delete(ws);
+        console.log(`[WS] Client disconnected. Total: ${clients.size}`);
+    });
+
+    ws.on('error', (err) => {
+        console.error('[WS] Client error:', err.message);
+        clients.delete(ws);
+    });
 }
 
 /**

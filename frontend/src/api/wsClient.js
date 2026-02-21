@@ -25,7 +25,9 @@ class WsClient {
         }
 
         try {
-            this.ws = new WebSocket(WS_URL);
+            const token = localStorage.getItem('orangebrew_token');
+            const wsUrlWithAuth = token ? `${WS_URL}?token=${token}` : WS_URL;
+            this.ws = new WebSocket(wsUrlWithAuth);
 
             this.ws.onopen = () => {
                 console.log('[WS] Connected');

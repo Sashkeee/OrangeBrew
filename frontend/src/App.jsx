@@ -17,33 +17,49 @@ import Calculators from './pages/Calculators';
 import { ConnectionIndicator } from './components/ConnectionIndicator';
 import { ActiveProcessIndicator } from './components/ActiveProcessIndicator';
 import { MockControls } from './components/MockControls';
+import Login from './pages/Login';
+
+const PrivateRoute = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] = React.useState(!!localStorage.getItem('orangebrew_token'));
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return children;
+};
 
 function App() {
   return (
     <Router>
       <div className="app-container">
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/brewing" element={<Brewing />} />
-          <Route path="/brewing/recipes" element={<RecipeList />} />
-          <Route path="/brewing/recipes/new" element={<RecipeConstructor />} />
-          <Route path="/brewing/recipes/:id/edit" element={<RecipeEditor />} />
-          <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
-          <Route path="/brewing/boil/:sessionId" element={<Boiling />} />
-          <Route path="/brewing/history" element={<History />} />
-          <Route path="/brewing/ingredients" element={<IngredientsReference />} />
-          <Route path="/calculators" element={<Calculators />} />
-          <Route path="/fermentation" element={<Fermentation />} />
-
-          <Route path="/distillation" element={<Distillation />} />
-
-          <Route path="/rectification" element={<Rectification />} />
-
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={
+            <PrivateRoute>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/brewing" element={<Brewing />} />
+                <Route path="/brewing/recipes" element={<RecipeList />} />
+                <Route path="/brewing/recipes/new" element={<RecipeConstructor />} />
+                <Route path="/brewing/recipes/:id/edit" element={<RecipeEditor />} />
+                <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
+                <Route path="/brewing/boil/:sessionId" element={<Boiling />} />
+                <Route path="/brewing/history" element={<History />} />
+                <Route path="/brewing/ingredients" element={<IngredientsReference />} />
+                <Route path="/calculators" element={<Calculators />} />
+                <Route path="/fermentation" element={<Fermentation />} />
+                <Route path="/distillation" element={<Distillation />} />
+                <Route path="/rectification" element={<Rectification />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Routes>
+              {/* Common overlays that need to be authenticated too */}
+              <ConnectionIndicator />
+              <ActiveProcessIndicator />
+              <MockControls />
+            </PrivateRoute>
+          } />
         </Routes>
-        <ConnectionIndicator />
-        <ActiveProcessIndicator />
-        <MockControls />
       </div>
     </Router>
   );

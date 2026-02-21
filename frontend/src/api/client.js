@@ -7,8 +7,13 @@ import { API_BASE } from '../utils/constants';
 
 async function request(path, options = {}) {
     const url = `${API_BASE}${path}`;
+    const token = localStorage.getItem('orangebrew_token');
+
     const config = {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         ...options,
     };
 
@@ -19,6 +24,11 @@ async function request(path, options = {}) {
     const res = await fetch(url, config);
 
     if (!res.ok) {
+        if (res.status === 401) {
+            // Unauthenticated! Clear token and force reload to show login
+            localStorage.removeItem('orangebrew_token');
+            window.location.href = '/login';
+        }
         const error = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(error.error || `HTTP ${res.status}`);
     }
@@ -57,6 +67,16 @@ export const sessionsApi = {
     // Fermentation entries
     getFermentation: (id) => request(`/sessions/${id}/fermentation`),
     logFermentation: (id, data) => request(`/sessions/${id}/fermentation`, { method: 'POST', body: data }),
+};
+
+// ─── Users ─────────────────────────────────────────────
+
+export const usersApi = {
+    getMe: () => request('/users/me'),
+    updateProfile: (data) => request('/users/profile', { method: 'PUT', body: data }),
+    getAll: () => request('/users'),
+    create: (data) => request('/users', { method: 'POST', body: data }),
+    delete: (id) => request(`/users/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Sensors ──────────────────────────────────────────────
