@@ -2,6 +2,16 @@
 #include <DallasTemperature.h>
 #include <ArduinoJson.h>
 
+// --- OTA И WIFI ---
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+const char* ssid = "YOUR_WIFI_SSID";     // ЗАМЕНИТЕ на ваше имя Wi-Fi
+const char* password = "YOUR_WIFI_PASS"; // ЗАМЕНИТЕ на ваш пароль Wi-Fi
+
+
 // --- ПИНЫ (Сможете изменить позже) ---
 #define ONE_WIRE_BUS 13// Пин GPIO13 (D7) для датчиков DS18B20
 #define HEATER_PIN 14  // Пин GPIO14 (D5) для ТЭНа (Лампочка 1)
@@ -60,6 +70,45 @@ void setup() {
   windowStartTime = millis();
   lastCommandTime = millis(); // Инициализация вочдога
 
+  // --- ПОДКЛЮЧЕНИЕ К WIFI ДЛЯ OTA ---
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  // Ждем подключения без блокировки (чтобы Serial всё равно работал, если WiFi нет)
+  Serial.println("{\"status\":\"wifi_connecting\"}");
+  
+  // --- НАСТРОЙКА OTA (Обновление по воздуху) ---
+  ArduinoOTA.setHostname("OrangeBrew-ESP32");
+  // Раскомментируйте строку ниже, чтобы поставить пароль на прошивку:
+  // ArduinoOTA.setPassword("brewAdmin123");
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_SPIFFS
+      type = "filesystem";
+    }
+    // Если требуется остановить процессы
+    digitalWrite(HEATER_PIN, LOW);
+    digitalWrite(PUMP_PIN, LOW);
+    Serial.println("{\"status\":\"ota_start\", \"msg\":\"Начато обновление прошивки...\"}");
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\n{\"status\":\"ota_end\", \"msg\":\"Успешно! Перезагрузка...\"}");
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    // Можно раскомментировать для отладки, но мешает JSON-общению
+    // Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("{\"error\":\"OTA_ERROR_%u\"}\n", error);
+  });
+  
+  ArduinoOTA.begin();
+
   // Стартовое приветствие
   Serial.println("{\"status\":\"ready\", \"deviceCount\":" + String(deviceCount) + "}");
 }
@@ -113,6 +162,9 @@ void processCommand(String payload) {
 
 void loop() {
   unsigned long now = millis();
+
+  // Обслуживаем OTA-соединение
+  ArduinoOTA.handle();
 
   // --- БЛОК БЕЗОПАСНОСТИ 1: Watchdog потери связи ---
   if (now - lastCommandTime > WATCHDOG_TIMEOUT_MS) {
