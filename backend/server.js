@@ -55,7 +55,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
     res.json({
         status: 'ok',
         uptime: process.uptime(),
@@ -65,20 +65,20 @@ app.get('/api/health', (req, res) => {
 });
 
 // Auth route (public)
-app.use('/api/auth', authRouter);
+app.use(['/api/auth', '/auth'], authRouter);
 
 // Protected API routes
-app.use('/api/recipes', authenticate, recipesRouter);
-app.use('/api/sessions', authenticate, sessionsRouter);
-app.use('/api/sensors', authenticate, sensorsRouter);
-app.use('/api/control', authenticate, controlRouter);
-app.use('/api/settings', authenticate, settingsRouter);
-app.use('/api/telegram', authenticate, telegramRouter);
-app.use('/api/users', authenticate, usersRouter);
-app.use('/api/devices', authenticate, devicesRouter);
+app.use(['/api/recipes', '/recipes'], authenticate, recipesRouter);
+app.use(['/api/sessions', '/sessions'], authenticate, sessionsRouter);
+app.use(['/api/sensors', '/sensors'], authenticate, sensorsRouter);
+app.use(['/api/control', '/control'], authenticate, controlRouter);
+app.use(['/api/settings', '/settings'], authenticate, settingsRouter);
+app.use(['/api/telegram', '/telegram'], authenticate, telegramRouter);
+app.use(['/api/users', '/users'], authenticate, usersRouter);
+app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
 
 let processManager = null; // Defined here so we can mount the router early
-app.use('/api/process', (req, res, next) => {
+app.use(['/api/process', '/process'], (req, res, next) => {
     if (!processManager) return res.status(503).json({ error: 'Process Manager not ready' });
     createProcessRouter(processManager)(req, res, next);
 });
