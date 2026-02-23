@@ -11,7 +11,7 @@ describe('PIDController', () => {
 
     // Перед каждым тестом создаем новый экземпляр контроллера с типичными коэффициентами
     beforeEach(() => {
-        pid = new PidController(1.0, 0.1, 0.5, 1.0);
+        pid = new PIDController(1.0, 0.1, 0.5, 1.0);
     });
 
     // ─── Инициализация (Initialization) ───────────────────────────────────────
@@ -41,7 +41,7 @@ describe('PIDController', () => {
 
         it('should use default tunings when none supplied', () => {
             // Проверяем работу конструктора без аргументов
-            const defaultPid = new PidController();
+            const defaultPid = new PIDController();
             expect(defaultPid.kp).toBe(1.0);
             expect(defaultPid.ki).toBe(0.0);
             expect(defaultPid.kd).toBe(0.0);
@@ -93,7 +93,7 @@ describe('PIDController', () => {
         it('should return positive output when below target (P-only)', () => {
             // П-компонента: мощность пропорциональна ошибке (разнице температур)
             // Kp=2.0, Ошибка = 70 - 60 = 10. Мощность = 2.0 * 10 = 20
-            const pPid = new PidController(2.0, 0, 0, 1.0);
+            const pPid = new PIDController(2.0, 0, 0, 1.0);
             pPid.setEnabled(true);
             pPid.setTarget(70);
             const output = pPid.compute(60);
@@ -102,7 +102,7 @@ describe('PIDController', () => {
 
         it('should return 0 when at target (P-only)', () => {
             // Если температура достигнута, П-компонента зануляется
-            const pPid = new PidController(2.0, 0, 0, 1.0);
+            const pPid = new PIDController(2.0, 0, 0, 1.0);
             pPid.setEnabled(true);
             pPid.setTarget(50);
             const output = pPid.compute(50);
@@ -111,7 +111,7 @@ describe('PIDController', () => {
 
         it('should accumulate integral over multiple calls', () => {
             // И-компонента: накапливает ошибку со временем для борьбы со статической погрешностью
-            const iPid = new PidController(0, 1.0, 0, 1.0);
+            const iPid = new PIDController(0, 1.0, 0, 1.0);
             iPid.setEnabled(true);
             iPid.setTarget(50);
 
