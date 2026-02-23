@@ -1,7 +1,6 @@
 services:
   backend-prod:
-    build:
-      context: ./backend
+    image: ghcr.io/sashkeee/anti-orangebrew/backend-prod:latest
     container_name: orangebrew-backend-prod
     ports:
       - "3000:3000"
@@ -20,8 +19,7 @@ services:
           memory: 2G
 
   frontend-prod:
-    build:
-      context: ./frontend
+    image: ghcr.io/sashkeee/anti-orangebrew/frontend-prod:latest
     container_name: orangebrew-frontend-prod
     ports:
       - "8080:80"
