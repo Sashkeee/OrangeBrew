@@ -1,13 +1,29 @@
-orangebrew.ru {
-    reverse_proxy localhost:8080
-}
-
 test.orangebrew.ru {
+    # Frontend Test
     reverse_proxy localhost:8081
+
+    # Backend API Test
+    handle_path /api/* {
+        reverse_proxy localhost:3001
+    }
+
+    # Socket.io Test
+    handle_path /socket.io/* {
+        reverse_proxy localhost:3001
+    }
 }
 
-# Backend API mapping (optional if frontend handles it via same domain)
-# But good to have if we want direct API access
-api.orangebrew.ru {
-    reverse_proxy localhost:3000
+orangebrew.ru {
+    # Frontend Prod
+    reverse_proxy localhost:8080
+
+    # Backend API Prod
+    handle_path /api/* {
+        reverse_proxy localhost:3000
+    }
+
+    # Socket.io Prod
+    handle_path /socket.io/* {
+        reverse_proxy localhost:3000
+    }
 }
