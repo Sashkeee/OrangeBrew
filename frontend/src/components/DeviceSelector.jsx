@@ -11,8 +11,8 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
             const onlineOnes = data.filter(d => d.status === 'online');
             // Always include local_serial as an option
             const options = [
-                { id: 'local_serial', name: 'Локальный порт (USB)' },
-                ...onlineOnes
+                ...onlineOnes,
+                { id: 'local_serial', name: 'Локальный порт (USB)' }
             ];
             setDevices(options);
 

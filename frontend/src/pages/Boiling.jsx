@@ -56,7 +56,7 @@ const Boiling = () => {
 
     const [history, setHistory] = useState([]);
     const [alertedHops, setAlertedHops] = useState(new Set());
-    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+    const [selectedDeviceId, setSelectedDeviceId] = useState('');
 
 
     // Load history from DB

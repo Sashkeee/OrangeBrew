@@ -4,14 +4,10 @@ services:
     container_name: orangebrew-backend-prod
     ports:
       - "3000:3000"
-    devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
     environment:
       - PORT=3000
       - DB_PATH=/app/data/orangebrew.db
-      - CONNECTION_TYPE=serial
-      - SERIAL_PORT=/dev/ttyUSB0
-      - BAUD_RATE=115200
+      - CONNECTION_TYPE=mock
       - NODE_ENV=production
     volumes:
       - orangebrew-data-prod:/app/data

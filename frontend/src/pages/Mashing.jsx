@@ -61,7 +61,7 @@ const Mashing = () => {
     const [graphYMin, setGraphYMin] = useState(20);
     const [graphYMax, setGraphYMax] = useState(100);
     const [mounted, setMounted] = useState(false);
-    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+    const [selectedDeviceId, setSelectedDeviceId] = useState('');
 
 
     // Derived

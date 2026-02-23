@@ -140,36 +140,35 @@ async function main() {
 
     // ─── Serial / Mock Connection ─────────────────────────────
 
+    const sendCommand = (cmd) => {
+        // Route command to the correct device
+        const targetDeviceId = processManager?.state?.deviceId;
+
+        if (targetDeviceId && targetDeviceId !== 'local_serial') {
+            // Send to WebSocket hardware
+            const sent = sendToHardware(targetDeviceId, cmd);
+            if (!sent) console.warn(`[Server] Failed to send command to device ${targetDeviceId} (disconnected?)`);
+        } else if (serial) {
+            // Send to local Serial (USB)
+            serial.write(JSON.stringify(cmd));
+        }
+    };
+
     if (CONNECTION_TYPE === 'mock') {
         console.log('[Server] Starting in MOCK mode (no physical hardware)');
         serial = new MockSerial();
-
-        // Forward commands from control routes to mock
-        setCommandSender((cmd) => {
-            // If manual heater command, disable PID
-            if (cmd.cmd === 'setHeater' && pidManager && pidManager.enabled) {
-                // pidManager.setEnabled(false); // Optional: auto-disable PID on manual override
-            }
-            serial.write(JSON.stringify(cmd));
-        });
-
-        // Listen for sensor data from mock
-
+        setCommandSender(sendCommand);
         serial.on('ack', (ack) => {
             console.log(`[Mock] ACK: ${ack.cmd} → ${ack.ok ? 'OK' : 'FAIL'}`);
         });
-
-        // Initialize PID Manager
         pidManager = new PidManager(serial);
-
-        // serial.start(); // Not needed for MockSerial (auto-starts)
     } else {
         const portName = process.env.SERIAL_PORT || 'COM3';
         const baudRate = parseInt(process.env.BAUD_RATE) || 115200;
         console.log(`[Server] Serial mode starting on ${portName} at ${baudRate} baud`);
 
         serial = new RealSerial(portName, baudRate);
-        setCommandSender((cmd) => serial.write(JSON.stringify(cmd)));
+        setCommandSender(sendCommand);
         pidManager = new PidManager(serial);
         serial.start();
     }
@@ -177,6 +176,44 @@ async function main() {
     // ─── Process Manager ──────────────────────────────────────
 
     processManager = new ProcessManager(pidManager);
+
+    /**
+     * Maps raw sensor addresses to roles (boiler, column, etc.) based on settings.
+     */
+    function mapSensors(deviceId, rawData) {
+        if (!rawData || !rawData.sensors) return rawData;
+
+        let sensorSettings = settingsQueries.get('sensors');
+        if (typeof sensorSettings === 'string') {
+            try { sensorSettings = JSON.parse(sensorSettings); } catch (e) { sensorSettings = {}; }
+        }
+        sensorSettings = sensorSettings || {};
+
+        const mapped = {
+            type: 'sensors',
+            deviceId,
+            sensors: rawData.sensors,
+            boiler: undefined,
+            column: undefined
+        };
+
+        // 1. Try to find by specific address in settings
+        for (const [role, config] of Object.entries(sensorSettings)) {
+            if (config && config.enabled && config.address) {
+                const found = rawData.sensors.find(s => s.address === config.address);
+                if (found) {
+                    mapped[role] = found.value + (config.offset || 0);
+                }
+            }
+        }
+
+        // 2. Fallback: If boiler is still undefined, take the first available sensor
+        if (mapped.boiler === undefined && rawData.sensors.length > 0) {
+            mapped.boiler = rawData.sensors[0].value;
+        }
+
+        return mapped;
+    }
 
     // Broadcast updates
     processManager.on('update', (state) => {
@@ -203,9 +240,17 @@ async function main() {
     onHardwareData((deviceId, data) => {
         // If data is sensors_raw, we route it
         if (data.type === 'sensors_raw') {
-            // We could update a global state for this device too
-            broadcastSensors({ deviceId, sensors: data.sensors });
-            processManager.handleSensorData(deviceId, data);
+            const mappedData = mapSensors(deviceId, data);
+
+            // Update global latest readings for REST API
+            updateSensorReadings(mappedData);
+
+            // Broadcast sensors (both raw for debugging and mapped for UI)
+            broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
+
+            // Pass to process and pid managers
+            processManager.handleSensorData(deviceId, mappedData);
+            if (pidManager) pidManager.update(mappedData);
         }
     });
 
