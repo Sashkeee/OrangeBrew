@@ -11,7 +11,9 @@ import { PhaseList } from '../components/PhaseList';
 import { FractionLog } from '../components/FractionLog';
 import { SafetyCheck } from '../components/SafetyCheck';
 import { StartButton } from '../components/StartButton';
+import DeviceSelector from '../components/DeviceSelector';
 import './pages.css';
+
 
 const ACCENT = '#ce93d8';
 
@@ -51,6 +53,8 @@ const Rectification = () => {
     const [collectSpeed, setCollectSpeed] = useState(0);
     const [refluxRatio, setRefluxRatio] = useState(3);
     const [targetAbv, setTargetAbv] = useState(96.0);
+    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+
 
     // Derived
     const tempBoiler = sensors.boiler?.value || 0;
@@ -236,6 +240,7 @@ const Rectification = () => {
 
                     {/* Start / Stop */}
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
+                        {!isStarted && <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />}
                         <StartButton
                             isStarted={isStarted}
                             onClick={() => setIsStarted(!isStarted)}
@@ -247,6 +252,7 @@ const Rectification = () => {
                             <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
                         )}
                     </div>
+
 
                     {/* Status info */}
                     {isStarted && (

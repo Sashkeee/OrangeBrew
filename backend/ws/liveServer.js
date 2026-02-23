@@ -3,12 +3,16 @@ import jwt from 'jsonwebtoken';
 import url from 'url';
 import { getSensorReadings } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
+import { deviceQueries } from '../db/database.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
 const HARDWARE_API_KEY = process.env.HARDWARE_API_KEY || 'default_hardware_key_123';
 
 /** @type {Set<import('ws').WebSocket>} */
-const clients = new Set();
+const uiClients = new Set();
+
+/** @type {Map<string, import('ws').WebSocket>} */
+const hardwareClients = new Map();
 
 let wss = null;
 
@@ -46,12 +50,17 @@ export function initWebSocket(server) {
             ws.once('message', (raw) => {
                 try {
                     const msg = JSON.parse(raw.toString());
-                    if (msg.auth_key === HARDWARE_API_KEY) {
+                    // Support old auth_key or new auth object
+                    const key = msg.auth_key || (msg.type === 'auth' ? msg.apiKey : null);
+
+                    if (key === HARDWARE_API_KEY) {
                         clearTimeout(authTimeout);
-                        setupAuthenticatedClient(ws);
-                        // Forward if it contains other commands too
-                        if (msg.type || msg.cmd) {
-                            handleClientMessage(ws, msg);
+                        const deviceId = msg.deviceId || `esp32_${Math.random().toString(36).substr(2, 9)}`;
+                        setupHardwareClient(ws, deviceId, msg.name, msg.role);
+
+                        // Forward if it contains other data too
+                        if (msg.type === 'sensors_raw') {
+                            handleHardwareMessage(ws, deviceId, msg);
                         }
                     } else {
                         ws.close(4001, 'Unauthorized hardware key');
@@ -67,56 +76,88 @@ export function initWebSocket(server) {
 }
 
 function setupAuthenticatedClient(ws) {
-    clients.add(ws);
-    console.log(`[WS] Client authenticated and connected. Total: ${clients.size}`);
+    uiClients.add(ws);
+    console.log(`[WS] UI Client connected. Total UI: ${uiClients.size}`);
 
-    // Send initial state
     ws.send(JSON.stringify({
         type: 'init',
         sensors: getSensorReadings(),
         control: getControlState(),
     }));
 
-
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw.toString());
-            handleClientMessage(ws, msg);
+            handleUiMessage(ws, msg);
         } catch (e) {
             ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
         }
     });
 
     ws.on('close', () => {
-        clients.delete(ws);
-        console.log(`[WS] Client disconnected. Total: ${clients.size}`);
+        uiClients.delete(ws);
+        console.log(`[WS] UI Client disconnected. Total UI: ${uiClients.size}`);
     });
 
     ws.on('error', (err) => {
-        console.error('[WS] Client error:', err.message);
-        clients.delete(ws);
+        uiClients.delete(ws);
     });
 }
 
-/**
- * Handle incoming message from a WebSocket client.
- */
-function handleClientMessage(ws, msg) {
-    // Forward control commands via the onCommand handler
-    if (onCommandHandler && msg.type) {
+function setupHardwareClient(ws, deviceId, name = 'OrangeBrew ESP32', role = 'unassigned') {
+    // Upsert to DB
+    deviceQueries.upsert(deviceId, name, role);
+
+    // Store in Map
+    hardwareClients.set(deviceId, ws);
+    ws.deviceId = deviceId;
+
+    console.log(`[WS] Hardware connected: ${deviceId} (${name}). Total Hardware: ${hardwareClients.size}`);
+
+    ws.on('message', (raw) => {
+        try {
+            const msg = JSON.parse(raw.toString());
+            handleHardwareMessage(ws, deviceId, msg);
+        } catch (e) {
+            console.error(`[WS] Invalid hardware JSON from ${deviceId}`);
+        }
+    });
+
+    ws.on('close', () => {
+        hardwareClients.delete(deviceId);
+        deviceQueries.updateStatus(deviceId, 'offline');
+        console.log(`[WS] Hardware disconnected: ${deviceId}`);
+    });
+
+    ws.on('error', (err) => {
+        hardwareClients.delete(deviceId);
+        deviceQueries.updateStatus(deviceId, 'offline');
+    });
+}
+
+function handleUiMessage(ws, msg) {
+    // Web UI sends commands
+    if (onCommandHandler) {
         onCommandHandler(msg);
     }
 }
 
-/** Callback for control commands from WS clients */
-let onCommandHandler = null;
+function handleHardwareMessage(ws, deviceId, msg) {
+    // Hardware sends sensor data
+    if (onHardwareDataHandler) {
+        onHardwareDataHandler(deviceId, msg);
+    }
+}
 
-/**
- * Register a handler for control commands received via WebSocket.
- * @param {Function} handler
- */
+let onCommandHandler = null;
+let onHardwareDataHandler = null;
+
 export function onWsCommand(handler) {
     onCommandHandler = handler;
+}
+
+export function onHardwareData(handler) {
+    onHardwareDataHandler = handler;
 }
 
 /**
@@ -129,32 +170,22 @@ export function broadcastSensors(sensorData) {
         data: sensorData,
         timestamp: Date.now(),
     });
-    for (const ws of clients) {
-        if (ws.readyState === 1) { // OPEN
-            ws.send(msg);
-        }
+    for (const ws of uiClients) {
+        if (ws.readyState === 1) ws.send(msg);
     }
 }
 
-/**
- * Broadcast control state update.
- */
 export function broadcastControl(controlState) {
     const msg = JSON.stringify({
         type: 'control',
         data: controlState,
         timestamp: Date.now(),
     });
-    for (const ws of clients) {
-        if (ws.readyState === 1) {
-            ws.send(msg);
-        }
+    for (const ws of uiClients) {
+        if (ws.readyState === 1) ws.send(msg);
     }
 }
 
-/**
- * Broadcast a phase change event.
- */
 export function broadcastPhaseChange(phase, sessionType) {
     const msg = JSON.stringify({
         type: 'phaseChange',
@@ -162,50 +193,48 @@ export function broadcastPhaseChange(phase, sessionType) {
         sessionType,
         timestamp: Date.now(),
     });
-    for (const ws of clients) {
-        if (ws.readyState === 1) {
-            ws.send(msg);
-        }
+    for (const ws of uiClients) {
+        if (ws.readyState === 1) ws.send(msg);
     }
 }
 
-/**
- * Broadcast an alert.
- */
 export function broadcastAlert(level, message) {
     const msg = JSON.stringify({
         type: 'alert',
-        level,  // 'warning' | 'error' | 'info'
+        level,
         message,
         timestamp: Date.now(),
     });
-    for (const ws of clients) {
-        if (ws.readyState === 1) {
-            ws.send(msg);
-        }
+    for (const ws of uiClients) {
+        if (ws.readyState === 1) ws.send(msg);
     }
 }
 
-/**
- * Broadcast process state update.
- */
 export function broadcastProcessState(state) {
-    global._latestProcessState = state; // Save for periodic reports
+    global._latestProcessState = state;
     const msg = JSON.stringify({
         type: 'process',
         data: state,
         timestamp: Date.now(),
     });
-    for (const ws of clients) {
-        if (ws.readyState === 1) {
-            ws.send(msg);
-        }
+    for (const ws of uiClients) {
+        if (ws.readyState === 1) ws.send(msg);
     }
 }
 
-/**
- * Get the count of connected clients.
- */
+export function sendToHardware(deviceId, cmd) {
+    const ws = hardwareClients.get(deviceId);
+    if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify(cmd));
+        return true;
+    }
+    return false;
+}
+
 export function getClientCount() {
-    return clients.size;
+    return uiClients.size;
+}
+
+export function getHardwareCount() {
+    return hardwareClients.size;
 }

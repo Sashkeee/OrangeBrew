@@ -6,7 +6,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { initDatabase, closeDatabase } from './db/database.js';
-import { initWebSocket, broadcastSensors, broadcastProcessState } from './ws/liveServer.js';
+import {
+    initWebSocket,
+    broadcastSensors,
+    broadcastProcessState,
+    onWsCommand,
+    onHardwareData,
+    getClientCount
+} from './ws/liveServer.js';
 import { updateSensorReadings } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
@@ -24,6 +31,7 @@ import telegramRouter from './routes/telegram.js';
 import createProcessRouter from './routes/process.js';
 import usersRouter from './routes/users.js';
 import authRouter from './routes/auth.js';
+import devicesRouter from './routes/devices.js';
 import { authenticate } from './middleware/auth.js';
 import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 
@@ -61,6 +69,13 @@ app.use('/api/control', authenticate, controlRouter);
 app.use('/api/settings', authenticate, settingsRouter);
 app.use('/api/telegram', authenticate, telegramRouter);
 app.use('/api/users', authenticate, usersRouter);
+app.use('/api/devices', authenticate, devicesRouter);
+
+let processManager = null; // Defined here so we can mount the router early
+app.use('/api/process', (req, res, next) => {
+    if (!processManager) return res.status(503).json({ error: 'Process Manager not ready' });
+    createProcessRouter(processManager)(req, res, next);
+});
 
 // Debug routes for Mock
 app.post('/api/debug/mock/temps', (req, res) => {
@@ -160,7 +175,7 @@ async function main() {
 
     // ─── Process Manager ──────────────────────────────────────
 
-    const processManager = new ProcessManager(pidManager);
+    processManager = new ProcessManager(pidManager);
 
     // Broadcast updates
     processManager.on('update', (state) => {
@@ -170,23 +185,28 @@ async function main() {
     // Global Serial error handler to prevent Node.js crashes if USB disconnects
     serial.on('error', (err) => {
         console.error('[Global Serial Error] Connection issue:', err.message);
-        // Optional: Implement reconnect logic here in the future
     });
 
-    // Pass sensor data to Process Manager and Clients
+    // Pass Serial sensor data (default device)
     serial.on('data', (data) => {
-        // Core updates
+        const deviceId = 'local_serial';
         updateSensorReadings(data);
-        broadcastSensors(data);
+        broadcastSensors({ deviceId, sensors: data.sensors });
         telegram.updateSensorData(data);
         telegram.updateControlState(getControlState());
 
-        // Process Logic
-        processManager.handleSensorData(data);
+        processManager.handleSensorData(deviceId, data);
     });
 
-    // Mount Process API
-    app.use('/api/process', createProcessRouter(processManager));
+    // Pass WebSocket sensor data (remote devices)
+    onHardwareData((deviceId, data) => {
+        // If data is sensors_raw, we route it
+        if (data.type === 'sensors_raw') {
+            // We could update a global state for this device too
+            broadcastSensors({ deviceId, sensors: data.sensors });
+            processManager.handleSensorData(deviceId, data);
+        }
+    });
 
     // Broadcast PID status occasionally? 
     // Or hooks into PidManager to emit WebSocket events?

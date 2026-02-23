@@ -1,5 +1,14 @@
 -- OrangeBrew Database Schema v1
 
+CREATE TABLE IF NOT EXISTS devices (
+    id          TEXT    PRIMARY KEY,      -- Unique ID (e.g., MAC address)
+    name        TEXT    NOT NULL,         -- Friendly name
+    role        TEXT    DEFAULT 'unassigned',
+    status      TEXT    DEFAULT 'offline',
+    last_seen   TEXT    DEFAULT (datetime('now')),
+    created_at  TEXT    DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS recipes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
@@ -21,6 +30,7 @@ CREATE TABLE IF NOT EXISTS recipes (
 CREATE TABLE IF NOT EXISTS brew_sessions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     recipe_id   INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+    device_id   TEXT    REFERENCES devices(id) ON DELETE SET NULL,
     type        TEXT    NOT NULL CHECK(type IN ('brewing','mash','boil','fermentation','distillation','rectification')),
     status      TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','completed','cancelled')),
     started_at  TEXT    DEFAULT (datetime('now')),

@@ -37,7 +37,8 @@ class ProcessManager extends EventEmitter {
             elapsedTime: 0,
             recipeId: null,
             sessionId: null,
-            notifiedEvents: [] // To track one-time notifications (like hop additions)
+            deviceId: 'local_serial', // Default to serial for backward compatibility
+            notifiedEvents: []
         };
 
         // Reset PID
@@ -50,7 +51,7 @@ class ProcessManager extends EventEmitter {
         this.emit('update', this.state);
     }
 
-    start(recipe, sessionId = null, mode = 'mash') {
+    start(recipe, sessionId = null, mode = 'mash', deviceId = 'local_serial') {
         if (this.state.status !== PROCESS_STATUS.IDLE && this.state.status !== PROCESS_STATUS.COMPLETED) {
             throw new Error('Process is already running');
         }
@@ -132,6 +133,7 @@ class ProcessManager extends EventEmitter {
             elapsedTime: savedElapsed,
             recipeId: recipe.id,
             sessionId: finalSessionId,
+            deviceId: deviceId, // Assigned device
             notifiedEvents: []
         };
 
@@ -212,9 +214,12 @@ class ProcessManager extends EventEmitter {
         this.emit('update', this.state);
     }
 
-    handleSensorData(data) {
+    handleSensorData(deviceId, data) {
         if (this.state.status !== PROCESS_STATUS.HEATING && this.state.status !== PROCESS_STATUS.HOLDING) return;
         if (this.state.status === PROCESS_STATUS.PAUSED) return;
+
+        // Only process data from the assigned device
+        if (this.state.deviceId && deviceId !== this.state.deviceId) return;
 
         // Extract boiler temp. Handle both { boiler: 20 } and { boiler: { value: 20 } }
         let currentTemp = data.boiler;

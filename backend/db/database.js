@@ -297,3 +297,36 @@ export const settingsQueries = {
         insertMany(settings);
     },
 };
+
+// ─── Devices ──────────────────────────────────────────────
+
+export const deviceQueries = {
+    getAll: () => queryAll('SELECT * FROM devices ORDER BY last_seen DESC'),
+
+    getById: (id) => queryOne('SELECT * FROM devices WHERE id = ?', [id]),
+
+    upsert: (id, name, role = 'unassigned') => {
+        runSql(`
+            INSERT INTO devices (id, name, role, status, last_seen) 
+            VALUES (?, ?, ?, 'online', datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET 
+                status = 'online',
+                last_seen = datetime('now')
+        `, [id, name, role]);
+        return deviceQueries.getById(id);
+    },
+
+    updateStatus: (id, status) => {
+        runSql('UPDATE devices SET status = ?, last_seen = datetime(\'now\') WHERE id = ?', [status, id]);
+    },
+
+    rename: (id, name) => {
+        runSql('UPDATE devices SET name = ? WHERE id = ?', [name, id]);
+    },
+
+    setRole: (id, role) => {
+        runSql('UPDATE devices SET role = ? WHERE id = ?', [role, id]);
+    },
+
+    delete: (id) => runSql('DELETE FROM devices WHERE id = ?', [id]),
+};

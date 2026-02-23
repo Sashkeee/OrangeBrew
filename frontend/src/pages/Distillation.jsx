@@ -12,7 +12,9 @@ import { PhaseList } from '../components/PhaseList';
 import { FractionLog } from '../components/FractionLog';
 import { SafetyCheck } from '../components/SafetyCheck';
 import { StartButton } from '../components/StartButton';
+import DeviceSelector from '../components/DeviceSelector';
 import { formatTime } from '../utils/formatTime';
+
 import './pages.css';
 
 // Фазы дистилляции
@@ -44,6 +46,8 @@ const Distillation = () => {
     const [showAddFraction, setShowAddFraction] = useState(false);
     const [newFraction, setNewFraction] = useState({ volume: '', abv: '', note: '' });
     const [collectSpeed, setCollectSpeed] = useState(0);
+    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+
 
     // Derived
     const tempBoiler = sensors.boiler?.value || 0;
@@ -178,6 +182,7 @@ const Distillation = () => {
                     />
 
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
+                        {!isStarted && <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />}
                         <StartButton
                             isStarted={isStarted}
                             onClick={() => setIsStarted(!isStarted)}
@@ -189,6 +194,7 @@ const Distillation = () => {
                             <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
                         )}
                     </div>
+
 
                     {/* Handy Tools */}
                     <div className="industrial-panel" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>

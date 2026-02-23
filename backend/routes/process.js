@@ -11,11 +11,11 @@ export default function createProcessRouter(processManager) {
     // Start process
     router.post('/start', (req, res) => {
         try {
-            const { recipe, sessionId, mode } = req.body;
+            const { recipe, sessionId, mode, deviceId } = req.body;
             if (!recipe) {
                 return res.status(400).json({ error: 'Recipe is required' });
             }
-            processManager.start(recipe, sessionId, mode); // mode: 'mash' | 'boil'
+            processManager.start(recipe, sessionId, mode, deviceId || 'local_serial'); // mode: 'mash' | 'boil'
             res.json({ ok: true, state: processManager.getState() });
         } catch (err) {
             res.status(400).json({ error: err.message });

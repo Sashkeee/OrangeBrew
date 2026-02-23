@@ -11,6 +11,8 @@ import {
 import { settingsApi } from '../api/client.js';
 import PidTuningPanel from '../components/PidTuningPanel';
 import UsersSettings from '../components/UsersSettings';
+import DeviceManagement from '../components/DeviceManagement';
+
 
 // Дефолтные настройки
 const DEFAULT_SETTINGS = {
@@ -253,65 +255,73 @@ const SettingsPage = () => {
             case 'hardware':
                 return (
                     <div>
-                        <SettingRow label="Тип подключения" description="Способ связи с ESP32">
-                            <select value={settings.hardware.connectionType} onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
-                                style={{ ...selectStyle, width: '160px' }}>
-                                <option value="serial">USB Serial</option>
-                                <option value="wifi">WiFi</option>
-                                <option value="mock">Эмуляция</option>
-                            </select>
-                        </SettingRow>
+                        <div style={{ marginBottom: '2rem' }}>
+                            <DeviceManagement />
+                        </div>
 
-                        {settings.hardware.connectionType === 'serial' && (
-                            <>
-                                <SettingRow label="COM-порт" description="Порт подключения ESP32">
-                                    <input value={settings.hardware.serialPort} onChange={e => updateSetting('hardware', 'serialPort', e.target.value)}
-                                        style={{ ...inputStyle, width: '160px' }} placeholder="COM3" />
-                                </SettingRow>
-                                <SettingRow label="Скорость (бод)" description="Скорость Serial">
-                                    <select value={settings.hardware.baudRate} onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
-                                        style={{ ...selectStyle, width: '160px' }}>
-                                        {[9600, 19200, 38400, 57600, 115200].map(r => <option key={r} value={r}>{r}</option>)}
-                                    </select>
-                                </SettingRow>
-                            </>
-                        )}
+                        <div style={{ borderTop: '1px solid #333', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+                            <h3 style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>Локальное подключение (Serial)</h3>
+                            <SettingRow label="Тип подключения" description="Способ связи с основным контроллером">
 
-                        {settings.hardware.connectionType === 'wifi' && (
-                            <>
-                                <SettingRow label="IP-адрес ESP32">
-                                    <input value={settings.hardware.esp32Ip} onChange={e => updateSetting('hardware', 'esp32Ip', e.target.value)}
-                                        style={{ ...inputStyle, width: '160px' }} placeholder="192.168.1.100" />
-                                </SettingRow>
-                                <SettingRow label="Порт">
-                                    <input type="number" value={settings.hardware.esp32Port} onChange={e => updateSetting('hardware', 'esp32Port', parseInt(e.target.value))}
-                                        style={{ ...inputStyle, width: '160px' }} />
-                                </SettingRow>
-                            </>
-                        )}
+                                <select value={settings.hardware.connectionType} onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
+                                    style={{ ...selectStyle, width: '160px' }}>
+                                    <option value="serial">USB Serial</option>
+                                    <option value="wifi">WiFi</option>
+                                    <option value="mock">Эмуляция</option>
+                                </select>
+                            </SettingRow>
 
-                        <SettingRow label="Реконнект" description="Интервал переподключения (сек)">
-                            <input type="number" min={1} max={60} value={settings.hardware.reconnectInterval}
-                                onChange={e => updateSetting('hardware', 'reconnectInterval', parseInt(e.target.value))}
-                                style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
-                        </SettingRow>
+                            {settings.hardware.connectionType === 'serial' && (
+                                <>
+                                    <SettingRow label="COM-порт" description="Порт подключения ESP32">
+                                        <input value={settings.hardware.serialPort} onChange={e => updateSetting('hardware', 'serialPort', e.target.value)}
+                                            style={{ ...inputStyle, width: '160px' }} placeholder="COM3" />
+                                    </SettingRow>
+                                    <SettingRow label="Скорость (бод)" description="Скорость Serial">
+                                        <select value={settings.hardware.baudRate} onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
+                                            style={{ ...selectStyle, width: '160px' }}>
+                                            {[9600, 19200, 38400, 57600, 115200].map(r => <option key={r} value={r}>{r}</option>)}
+                                        </select>
+                                    </SettingRow>
+                                </>
+                            )}
 
-                        <SettingRow label="Watchdog" description="Таймаут аварийного отключения (сек)">
-                            <input type="number" min={5} max={60} value={settings.hardware.watchdogTimeout}
-                                onChange={e => updateSetting('hardware', 'watchdogTimeout', parseInt(e.target.value))}
-                                style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
-                        </SettingRow>
+                            {settings.hardware.connectionType === 'wifi' && (
+                                <>
+                                    <SettingRow label="IP-адрес ESP32">
+                                        <input value={settings.hardware.esp32Ip} onChange={e => updateSetting('hardware', 'esp32Ip', e.target.value)}
+                                            style={{ ...inputStyle, width: '160px' }} placeholder="192.168.1.100" />
+                                    </SettingRow>
+                                    <SettingRow label="Порт">
+                                        <input type="number" value={settings.hardware.esp32Port} onChange={e => updateSetting('hardware', 'esp32Port', parseInt(e.target.value))}
+                                            style={{ ...inputStyle, width: '160px' }} />
+                                    </SettingRow>
+                                </>
+                            )}
 
-                        <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,152,0,0.08)', borderRadius: '6px', border: '1px solid rgba(255,152,0,0.2)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                <Usb size={16} color="#ff9800" />
-                                <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Статус</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
-                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: settings.hardware.connectionType === 'mock' ? '#4caf50' : '#f44336' }} />
-                                <span style={{ color: 'var(--text-secondary)' }}>
-                                    {settings.hardware.connectionType === 'mock' ? 'Эмуляция активна' : 'Не подключено (бэкенд не запущен)'}
-                                </span>
+                            <SettingRow label="Реконнект" description="Интервал переподключения (сек)">
+                                <input type="number" min={1} max={60} value={settings.hardware.reconnectInterval}
+                                    onChange={e => updateSetting('hardware', 'reconnectInterval', parseInt(e.target.value))}
+                                    style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
+                            </SettingRow>
+
+                            <SettingRow label="Watchdog" description="Таймаут аварийного отключения (сек)">
+                                <input type="number" min={5} max={60} value={settings.hardware.watchdogTimeout}
+                                    onChange={e => updateSetting('hardware', 'watchdogTimeout', parseInt(e.target.value))}
+                                    style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
+                            </SettingRow>
+
+                            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,152,0,0.08)', borderRadius: '6px', border: '1px solid rgba(255,152,0,0.2)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                    <Usb size={16} color="#ff9800" />
+                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Статус</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: settings.hardware.connectionType === 'mock' ? '#4caf50' : '#f44336' }} />
+                                    <span style={{ color: 'var(--text-secondary)' }}>
+                                        {settings.hardware.connectionType === 'mock' ? 'Эмуляция активна' : 'Не подключено (бэкенд не запущен)'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>

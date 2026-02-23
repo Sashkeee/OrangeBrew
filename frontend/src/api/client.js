@@ -110,3 +110,11 @@ export const settingsApi = {
 export const healthApi = {
     check: () => request('/health'),
 };
+
+// ─── Devices ──────────────────────────────────────────────
+
+export const deviceApi = {
+    getAll: () => request('/devices'),
+    update: (id, data) => request(`/devices/${id}`, { method: 'PATCH', body: data }),
+    delete: (id) => request(`/devices/${id}`, { method: 'DELETE' }),
+};

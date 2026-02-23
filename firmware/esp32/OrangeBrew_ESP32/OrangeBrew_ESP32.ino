@@ -11,6 +11,13 @@
 const char* ssid = "YOUR_WIFI_SSID";     // ЗАМЕНИТЕ на ваше имя Wi-Fi
 const char* password = "YOUR_WIFI_PASS"; // ЗАМЕНИТЕ на ваш пароль Wi-Fi
 
+// --- УНИКАЛЬНЫЙ ID УСТРОЙСТВА ---
+String deviceId = "";
+const char* hardwareApiKey = "default_hardware_key_123"; // Должен совпадать с бэкендом
+const char* deviceName = "OrangeBrew ESP32";             // Имя по умолчанию
+const char* deviceRole = "unassigned";                  // Роль: 'brewing', 'fermentation', 'distillation'
+
+
 
 // --- ПИНЫ (Сможете изменить позже) ---
 #define ONE_WIRE_BUS 13// Пин GPIO13 (D7) для датчиков DS18B20
@@ -109,8 +116,12 @@ void setup() {
   
   ArduinoOTA.begin();
 
+  // Инициализация ID устройства (MAC-адрес)
+  deviceId = WiFi.macAddress();
+  deviceId.replace(":", ""); // Убираем двоеточия для красоты ID
+
   // Стартовое приветствие
-  Serial.println("{\"status\":\"ready\", \"deviceCount\":" + String(deviceCount) + "}");
+  Serial.println("{\"status\":\"ready\", \"deviceId\":\"" + deviceId + "\", \"deviceCount\":" + String(deviceCount) + "}");
 }
 
 // Конвертация сырого адреса DS18B20 в красивую HEX строку

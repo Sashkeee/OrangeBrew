@@ -58,9 +58,24 @@ export default function Login() {
                 borderTop: '4px solid var(--accent-orange)'
             }}>
                 <div style={{ textAlign: 'center' }}>
-                    <Thermometer size={48} color="var(--accent-orange)" style={{ marginBottom: '1rem' }} />
-                    <h1 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '1.8rem' }}>ORANGEBREW</h1>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.5rem' }}>Управление Пивоварней / Винокурней</div>
+                    <div style={{
+                        fontSize: '2.2rem',
+                        fontWeight: '900',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        letterSpacing: '-1px'
+                    }}>
+                        <span style={{ color: '#ffffff' }}>ORANGE</span>
+                        <span style={{
+                            background: '#ffa000',
+                            color: '#000000',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            display: 'inline-block'
+                        }}>BREW</span>
+                    </div>
                 </div>
 
                 {error && (
@@ -121,7 +136,7 @@ export default function Login() {
                         style={{
                             marginTop: '1rem',
                             width: '100%',
-                            background: 'var(--accent-orange)',
+                            background: '#ffa000',
                             color: '#000',
                             border: 'none',
                             padding: '1rem',

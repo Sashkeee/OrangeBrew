@@ -8,6 +8,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebr
 
 // Login route
 router.post('/login', async (req, res) => {
+    console.log(`[Auth] Login attempt for user: ${req.body.username}`);
     try {
         const { username, password } = req.body;
 

@@ -56,7 +56,7 @@ function App() {
               {/* Common overlays that need to be authenticated too */}
               <ConnectionIndicator />
               <ActiveProcessIndicator />
-              <MockControls />
+              {/* <MockControls /> */}
             </PrivateRoute>
           } />
         </Routes>

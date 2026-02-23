@@ -1,0 +1,38 @@
+services:
+  backend-test:
+    build:
+      context: ./backend
+    container_name: orangebrew-backend-test
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DB_PATH=/app/data/orangebrew.db
+      - CONNECTION_TYPE=mock
+      - NODE_ENV=development
+    volumes:
+      - orangebrew-data-test:/app/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  frontend-test:
+    build:
+      context: ./frontend
+    container_name: orangebrew-frontend-test
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    depends_on:
+      - backend-test
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 512M
+
+volumes:
+  orangebrew-data-test:

@@ -1,0 +1,13 @@
+orangebrew.ru {
+    reverse_proxy localhost:8080
+}
+
+test.orangebrew.ru {
+    reverse_proxy localhost:8081
+}
+
+# Backend API mapping (optional if frontend handles it via same domain)
+# But good to have if we want direct API access
+api.orangebrew.ru {
+    reverse_proxy localhost:3000
+}

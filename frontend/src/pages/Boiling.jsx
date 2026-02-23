@@ -9,7 +9,9 @@ import { useProcess } from '../hooks/useProcess';
 import { PageHeader } from '../components/PageHeader';
 import { ProcessChart } from '../components/ProcessChart';
 import { StartButton } from '../components/StartButton';
+import DeviceSelector from '../components/DeviceSelector';
 import { formatTime } from '../utils/formatTime';
+
 import './pages.css';
 
 const CHART_LINES = [
@@ -54,6 +56,8 @@ const Boiling = () => {
 
     const [history, setHistory] = useState([]);
     const [alertedHops, setAlertedHops] = useState(new Set());
+    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+
 
     // Load history from DB
     useEffect(() => {
@@ -115,7 +119,7 @@ const Boiling = () => {
             }
         } else {
             if (recipeData) {
-                start(recipeData, sessionId, 'boil');
+                start(recipeData, sessionId, 'boil', selectedDeviceId);
             } else {
                 alert("Ошибка: рецепт не загружен");
             }
@@ -256,7 +260,9 @@ const Boiling = () => {
 
                     {/* Start / Stop */}
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
+                        {!isStarted && <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />}
                         <StartButton
+
                             isStarted={isStarted && !isPaused}
                             onClick={handleStartStop}
                             startLabel={isPaused ? "ПРОДОЛЖИТЬ" : "СТАРТ КИПЯЧЕНИЯ"}

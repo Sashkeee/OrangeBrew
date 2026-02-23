@@ -10,7 +10,9 @@ import { useProcess } from '../hooks/useProcess';
 import { PageHeader } from '../components/PageHeader';
 import { SafetyCheck } from '../components/SafetyCheck';
 import { StartButton } from '../components/StartButton';
+import DeviceSelector from '../components/DeviceSelector';
 import { formatTime } from '../utils/formatTime';
+
 import './pages.css';
 
 const DEFAULT_STEPS = [
@@ -59,6 +61,8 @@ const Mashing = () => {
     const [graphYMin, setGraphYMin] = useState(20);
     const [graphYMax, setGraphYMax] = useState(100);
     const [mounted, setMounted] = useState(false);
+    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+
 
     // Derived
     const temperature = sensors.boiler?.value || 20;
@@ -127,7 +131,7 @@ const Mashing = () => {
                     alert(`Ошибка запуска!\n\nТекущая температура сусла (${temperature.toFixed(1)}°C) выше температуры первой паузы (${firstStep.temp}°C) более чем на 3 градуса.\nПожалуйста, остудите затор перед началом процесса.`);
                     return;
                 }
-                start(recipeData, sessionId, 'mash');
+                start(recipeData, sessionId, 'mash', selectedDeviceId);
             } else {
                 alert("Ошибка: рецепт не загружен");
             }
@@ -430,7 +434,10 @@ const Mashing = () => {
                             )}
 
                             {!isStarted && (
-                                <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
+                                <>
+                                    <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />
+                                    <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
+                                </>
                             )}
                         </div>
                     )}

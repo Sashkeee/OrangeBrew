@@ -14,6 +14,7 @@
 | **Database**| SQLite через `sql.js` (in-process, без нативных зависимостей)        |
 | **Hardware**| ESP32 через serial или `MockSerial` (программная симуляция)           |
 | **PID**     | Собственный PID-контроллер для автоматического управления нагревом    |
+| **Infrastructure**| Docker, Docker Compose, Caddy (Reverse Proxy), GitHub Actions  |
 | **Тесты**   | Vitest, @testing-library/react, jsdom                                |
 
 ---

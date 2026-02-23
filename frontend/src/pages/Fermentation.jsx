@@ -6,7 +6,9 @@ import { Snowflake, Thermometer, Plus, Trash2, Beaker, CheckCircle, ChevronDown,
 import { PageHeader } from '../components/PageHeader';
 import { ProcessChart } from '../components/ProcessChart';
 import { StartButton } from '../components/StartButton';
+import DeviceSelector from '../components/DeviceSelector';
 import { formatElapsed } from '../utils/formatTime';
+
 import './pages.css';
 
 // Стадии брожения
@@ -39,6 +41,8 @@ const Fermentation = () => {
     ]);
     const [showAddMeasurement, setShowAddMeasurement] = useState(false);
     const [newMeasurement, setNewMeasurement] = useState({ og: '', fg: '', note: '' });
+    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+
 
     // Derived
     const stage = STAGES[currentStage];
@@ -299,8 +303,10 @@ const Fermentation = () => {
 
                     {/* Start / Stop */}
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
+                        {!isStarted && <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />}
                         <StartButton isStarted={isStarted} onClick={handleStartStop} startLabel="СТАРТ БРОЖЕНИЯ" />
                     </div>
+
 
                     {/* Info panel */}
                     {isStarted && (
