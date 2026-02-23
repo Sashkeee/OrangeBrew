@@ -97,14 +97,15 @@ describe('Boiling Page', () => {
         expect(mockStart).toHaveBeenCalledWith(
             expect.objectContaining({ name: 'Test Recipe' }),
             '123',
-            'boil'
+            'boil',
+            'local_serial'
         );
     });
 
     it('displays active state when running', async () => {
         const { useProcess } = await import('../hooks/useProcess');
         useProcess.mockReturnValue({
-            processState: {},
+            processState: { mode: 'boil' },
             status: 'HOLDING', // Boiling
             stepPhase: 'holding',
             remainingTime: 1800, // 30 mins

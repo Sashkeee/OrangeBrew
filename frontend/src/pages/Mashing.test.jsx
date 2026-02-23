@@ -116,14 +116,15 @@ describe('Mashing Page', () => {
         expect(mockStart).toHaveBeenCalledWith(
             expect.objectContaining({ name: 'Test IPA' }),
             '123',
-            'mash'
+            'mash',
+            'local_serial'
         );
     });
 
     it('displays active state when running', async () => {
         const { useProcess } = await import('../hooks/useProcess');
         useProcess.mockReturnValue({
-            processState: {},
+            processState: { mode: 'mash' },
             status: 'HOLDING',
             stepPhase: 'holding',
             remainingTime: 3000,
@@ -152,7 +153,7 @@ describe('Mashing Page', () => {
         expect(screen.getByText('УДЕРЖАНИЕ')).toBeInTheDocument();
 
         // Skip button should be present
-        const skipBtn = screen.getByText(/ПРОПУСТИТЬ/);
+        const skipBtn = screen.getByRole('button', { name: /ПРОПУСТИТЬ/i });
         fireEvent.click(skipBtn);
         expect(mockSkip).toHaveBeenCalled();
     });

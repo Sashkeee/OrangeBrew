@@ -15,7 +15,7 @@ export function StartButton({
 }) {
     return (
         <button
-            className={`btn-start`}
+            className={`btn-start ${isStarted ? 'btn-start--stop' : ''}`}
             style={{
                 background: isStarted ? stopColor : startColor,
                 color: '#000'

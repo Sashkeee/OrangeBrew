@@ -218,7 +218,7 @@ describe('StartButton', () => {
 
     it('should show default stop label when started', () => {
         render(<StartButton isStarted={true} onClick={() => { }} />);
-        expect(screen.getByText('СТОП')).toBeInTheDocument();
+        expect(screen.getByText('ПАУЗА')).toBeInTheDocument();
     });
 
     it('should show custom start label', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import PidController from '../pid/PidController.js';
+import PIDController from '../pid/PIDController.js';
 
 /**
  * Тесты для модуля PIDController.
