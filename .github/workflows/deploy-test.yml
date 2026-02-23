@@ -25,14 +25,14 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: ghcr.io/${{ github.repository }}/backend-test:latest
+          tags: ghcr.io/${{ github.repository_owner }}/anti-orangebrew/backend-test:latest
 
       - name: Build and push frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          tags: ghcr.io/${{ github.repository }}/frontend-test:latest
+          tags: ghcr.io/${{ github.repository_owner }}/anti-orangebrew/frontend-test:latest
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
