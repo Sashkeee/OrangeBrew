@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Search, Wheat, TestTube, Leaf, Plus, X, Save } from 'lucide-react';
+import { ArrowLeft, Search, Plus, X, Save } from 'lucide-react';
+import { HopsIcon, MaltIcon, YeastIcon } from '../components/Icons';
 import { useNavigate } from 'react-router-dom';
 
 const DEFAULT_HOPS = [
@@ -216,17 +217,17 @@ export default function IngredientsReference() {
                 <button
                     onClick={() => setActiveTab('hop')}
                     style={{ flex: 1, padding: '1rem', background: activeTab === 'hop' ? 'rgba(76, 175, 80, 0.15)' : 'rgba(0,0,0,0.5)', border: `1px solid ${activeTab === 'hop' ? '#4caf50' : '#333'}`, color: activeTab === 'hop' ? '#4caf50' : '#888', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
-                    <Leaf size={20} /> Хмель
+                    <HopsIcon size={20} /> Хмель
                 </button>
                 <button
                     onClick={() => setActiveTab('malt')}
                     style={{ flex: 1, padding: '1rem', background: activeTab === 'malt' ? 'rgba(255, 152, 0, 0.15)' : 'rgba(0,0,0,0.5)', border: `1px solid ${activeTab === 'malt' ? '#ff9800' : '#333'}`, color: activeTab === 'malt' ? '#ff9800' : '#888', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
-                    <Wheat size={20} /> Солод
+                    <MaltIcon size={20} /> Солод
                 </button>
                 <button
                     onClick={() => setActiveTab('yeast')}
                     style={{ flex: 1, padding: '1rem', background: activeTab === 'yeast' ? 'rgba(3, 169, 244, 0.15)' : 'rgba(0,0,0,0.5)', border: `1px solid ${activeTab === 'yeast' ? '#03a9f4' : '#333'}`, color: activeTab === 'yeast' ? '#03a9f4' : '#888', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
-                    <TestTube size={20} /> Дрожжи
+                    <YeastIcon size={20} /> Дрожжи
                 </button>
             </div>
 

@@ -1,14 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Beaker, Thermometer, FlaskConical, Settings, History } from 'lucide-react';
+import { MashingIcon, FermentationIcon, DistillationIcon, RectificationIcon } from '../components/Icons';
+import { Settings } from 'lucide-react';
 
 const Home = () => {
   const menuItems = [
-    { title: 'Пивоварение', icon: <Beaker size={32} />, path: '/brewing', color: 'var(--primary-color)' },
-    { title: 'Брожение', icon: <Thermometer size={32} />, path: '/fermentation', color: '#4caf50' },
-    { title: 'Дистилляция', icon: <FlaskConical size={32} />, path: '/distillation', color: '#03a9f4' },
-    { title: 'Ректификация', icon: <FlaskConical size={32} />, path: '/rectification', color: '#e91e63' },
+    { title: 'Пивоварение', icon: <MashingIcon size={32} />, path: '/brewing', color: 'var(--primary-color)' },
+    { title: 'Брожение', icon: <FermentationIcon size={32} />, path: '/fermentation', color: '#4caf50' },
+    { title: 'Дистилляция', icon: <DistillationIcon size={32} />, path: '/distillation', color: '#03a9f4' },
+    { title: 'Ректификация', icon: <RectificationIcon size={32} />, path: '/rectification', color: '#e91e63' },
     { title: 'Настройки', icon: <Settings size={32} />, path: '/settings', color: 'var(--secondary-color)' },
   ];
 
