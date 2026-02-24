@@ -1,8 +1,16 @@
-const isDev = import.meta.env.DEV; // Vite in dev mode
-export const API_BASE = isDev ? 'http://localhost:3001/api' : '/api';
+const isDev = import.meta.env.DEV; // Vite: true в dev-режиме
+export const API_BASE = import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL
+    : isDev ? 'http://localhost:3001/api' : '/api';
 
-const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-export const WS_URL = isDev ? 'ws://localhost:3001/ws' : `${wsProtocol}//${window.location.host}/ws`;
+const wsProtocol =
+    typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsHost =
+    typeof window !== 'undefined' ? window.location.host : 'localhost:3001';
+export const WS_URL = import.meta.env.VITE_WS_URL
+    ? import.meta.env.VITE_WS_URL
+    : isDev ? 'ws://localhost:3001/ws' : `${wsProtocol}//${wsHost}/ws`;
+
 
 /**
  * Helper for debug API calls (PID, Mock controls).

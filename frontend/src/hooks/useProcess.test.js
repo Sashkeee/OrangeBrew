@@ -96,18 +96,26 @@ describe('useProcess Hook', () => {
         // Wait for initial fetch to settle
         await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/process/status')));
 
+        // start() принимает 4 аргумента: recipe, sessionId, mode, deviceId
         await act(async () => {
-            await result.current.start({ name: 'Test Recipe' }, 'session-123');
+            await result.current.start({ name: 'Test Recipe' }, 'session-123', 'mash', 'local_serial');
         });
 
+        // Проверяем, что fetch был вызван с правильным URL и телом
         expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/process/start'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ recipe: { name: 'Test Recipe' }, sessionId: 'session-123' })
+            body: JSON.stringify({
+                recipe: { name: 'Test Recipe' },
+                sessionId: 'session-123',
+                mode: 'mash',
+                deviceId: 'local_serial'
+            })
         });
 
         expect(result.current.status).toBe('HEATING');
     });
+
 
     it('should handle errors', async () => {
         fetch.mockImplementation((url) => {

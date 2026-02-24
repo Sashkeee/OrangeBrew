@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Все о тестах: OrangeBrew Guide</title>
+    <link rel="stylesheet" href="guide.css">
+</head>
+
+<body>
+    <div class="guide-container">
+        <header>
+            <h1>Искусство Тестирования</h1>
+            <p class="intro-text">Полное руководство по автоматизации контроля качества в проекте OrangeBrew. От простых
+                функций до сложных интерфейсов.</p>
+        </header>
+
+        <!-- Секция 1: Типы тестов -->
+        <section>
+            <h2>Архитектура Качества</h2>
+            <div class="grid">
+                <div class="card">
+                    <div class="card-icon">🧪</div>
+                    <h3>Unit Tests (Юниты)</h3>
+                    <p>Проверка элементарной логики. Математика, обработка строк, форматирование дат. Быстрые, надежные,
+                        не требуют браузера.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon">🧱</div>
+                    <h3>Component Tests</h3>
+                    <p>Проверяем кирпичики интерфейса. Отрисовывается ли кнопка? Меняется ли цвет при наведении?
+                        Появляется ли текст ошибки?</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon">🔄</div>
+                    <h3>Integration Tests</h3>
+                    <p>Проверка взаимодействия страницы с данными. Как страница варки реагирует на сигнал от датчика
+                        через хук? Идет ли запрос на сервер?</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Секция 2: Разбор кода -->
+        <section>
+            <h2>Как читать тестовый код</h2>
+
+            <div class="code-window">
+                <div class="code-header">
+                    <div class="dot red"></div>
+                    <div class="dot yellow"></div>
+                    <div class="dot green"></div>
+                    <span style="color: #666; font-size: 0.8rem; margin-left: 10px;">example.test.js</span>
+                </div>
+                <pre>
+<span class="comment">// 1. Группировка тестов по теме</span>
+<span class="keyword">describe</span>(<span class="string">'Функция форматирования'</span>, () => {
+
+  <span class="comment">// 2. Описание конкретного сценария</span>
+  <span class="keyword">it</span>(<span class="string">'должна превращать 90 секунд в 01:30'</span>, () => {
+    
+    <span class="comment">// 3. Само сравнение (Assertion)</span>
+    <span class="comment">// Ожидаю, что результат format(90) СООТВЕТСТВУЕТ "01:30"</span>
+    <span class="keyword">expect</span>(<span class="function">formatTime</span>(90)).<span class="function">toBe</span>(<span class="string">'01:30'</span>);
+  });
+
+});</pre>
+            </div>
+
+            <p>Основные инструменты:</p>
+            <div class="steps">
+                <div class="step-item">
+                    <div class="step-number">1</div>
+                    <div><strong>render()</strong> — виртуально отрисовывает ваш React-компонент, чтобы тест мог его
+                        "увидеть".</div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">2</div>
+                    <div><strong>screen</strong> — ваши глаза. Позволяет искать элементы:
+                        <code>screen.getByText('ОК')</code>.</div>
+                </div>
+                <div class="step-item">
+                    <div class="step-number">3</div>
+                    <div><strong>fireEvent</strong> — ваши руки. Нажимает на кнопки, вводит текст:
+                        <code>fireEvent.click(button)</code>.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Секция 3: OrangeBrew Специфика -->
+        <section>
+            <h2>Специфика OrangeBrew</h2>
+            <div class="card" style="width: 100%;">
+                <h3>Mocks (Заглушки) — наш главный секрет</h3>
+                <p>Наши тесты не подключаются к настоящему ESP32. Мы используем <code>vi.mock()</code>, чтобы "обмануть"
+                    компоненты. Мы говорим им: "Считай, что сейчас температура 65°C и сервер доступен". Это позволяет
+                    тестировать UI в идеальных, предсказуемых условиях.</p>
+                <div class="code-window">
+                    <pre>
+<span class="comment">// Имитируем работу датчиков</span>
+<span class="variable">vi</span>.<span class="variable">mock</span>(<span class="string">'../hooks/useSensors'</span>, () => ({
+    <span class="variable">useSensors</span>: () => ({ 
+        <span class="variable">sensors</span>: { <span class="variable">boiler</span>: { <span class="variable">value</span>: <span class="string">100</span> } } 
+    })
+}));</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Секция 4: Запуск -->
+        <section>
+            <h2>3 шага к запуску</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>Консоль</h3>
+                    <p>Просто напиши <code>npm test</code> в корне фронтенда.</p>
+                </div>
+                <div class="card">
+                    <h3>UI-режим</h3>
+                    <p>Напиши <code>npx vitest --ui</code> для красивого интерфейса в браузере.</p>
+                </div>
+                <div class="card">
+                    <h3>Автоматика</h3>
+                    <p>GitHub Actions сам запустит тесты при каждом твоем коммите.</p>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <p>Создано специально для команды OrangeBrew. Качество — это не случайность, а результат тестирования.</p>
+        </footer>
+    </div>
+</body>
+
+</html>
