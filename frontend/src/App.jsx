@@ -14,6 +14,7 @@ import SettingsPage from './pages/Settings';
 import History from './pages/History';
 import IngredientsReference from './pages/IngredientsReference';
 import Calculators from './pages/Calculators';
+import LogoShowcase from './pages/LogoShowcase';
 import { ConnectionIndicator } from './components/ConnectionIndicator';
 import { ActiveProcessIndicator } from './components/ActiveProcessIndicator';
 import { MockControls } from './components/MockControls';
@@ -52,6 +53,7 @@ function App() {
                 <Route path="/distillation" element={<Distillation />} />
                 <Route path="/rectification" element={<Rectification />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/branding" element={<LogoShowcase />} />
               </Routes>
               {/* Common overlays that need to be authenticated too */}
               <ConnectionIndicator />

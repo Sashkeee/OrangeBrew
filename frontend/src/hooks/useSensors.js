@@ -16,7 +16,10 @@ export function useSensors() {
         output: { value: 0, timestamp: 0 },
         ambient: { value: 0, timestamp: 0 },
     });
-    const [connected, setConnected] = useState(false);
+    // ВАЖНО: инициализируем из текущего состояния wsClient,
+    // а не из false — иначе поздно смонтированные компоненты
+    // пропустят событие 'connection' и навсегда останутся "disconnected"
+    const [connected, setConnected] = useState(wsClient.connected);
     const [error, setError] = useState(null);
     const pollingRef = useRef(null);
 
@@ -65,6 +68,15 @@ export function useSensors() {
                 stopPolling();
             }
         });
+
+        // Синхронизируем состояние: если WS уже подключён к моменту монтирования,
+        // событие 'connection' уже прошло → обновляем вручную
+        if (wsClient.connected) {
+            setConnected(true);
+            stopPolling();
+        } else {
+            startPolling();
+        }
 
         return () => {
             unsubSensors();
