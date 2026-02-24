@@ -14,7 +14,13 @@ const RecipeList = () => {
             ...recipe,
             steps: recipe.mash_steps || [],
         }));
-        navigate(`/brewing/mash/${recipe.id}`);
+        // ВАЖНО: передаём 'new', а не recipe.id.
+        // recipe.id — это ID рецепта, а не сессии.
+        // Передача recipe.id в sessionId приводила к тому, что Mashing/Boiling
+        // пытались загрузить историю температур из БД для несуществующей сессии
+        // (или, что хуже, для сессии с тем же числовым ID — чужие данные на графике).
+        // Настоящий sessionId будет создан бэкендом при вызове start().
+        navigate(`/brewing/mash/new`);
     };
 
     const handleDelete = async (e, id) => {

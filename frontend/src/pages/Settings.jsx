@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useSensors } from '../hooks/useSensors.js';
 import {
     ArrowLeft, Settings as SettingsIcon, Cpu, Thermometer, Sliders,
     Wifi, Bell, Shield, Palette, Info, Save, RotateCcw,
@@ -96,6 +97,7 @@ const SECTIONS = [
 
 const SettingsPage = () => {
     const navigate = useNavigate();
+    const { connected: wsConnected } = useSensors();
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [activeSection, setActiveSection] = useState('hardware');
     const [hasChanges, setHasChanges] = useState(false);
@@ -311,15 +313,24 @@ const SettingsPage = () => {
                                     style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
                             </SettingRow>
 
-                            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,152,0,0.08)', borderRadius: '6px', border: '1px solid rgba(255,152,0,0.2)' }}>
+                            <div style={{ marginTop: '1.5rem', padding: '1rem', background: wsConnected ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.08)', borderRadius: '6px', border: `1px solid ${wsConnected ? 'rgba(76,175,80,0.2)' : 'rgba(255,152,0,0.2)'}` }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                    <Usb size={16} color="#ff9800" />
-                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Статус</span>
+                                    <Usb size={16} color={wsConnected ? '#4caf50' : '#ff9800'} />
+                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Статус бэкенда</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
-                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: settings.hardware.connectionType === 'mock' ? '#4caf50' : '#f44336' }} />
+                                    <div style={{
+                                        width: '8px', height: '8px', borderRadius: '50%',
+                                        background: wsConnected ? '#4caf50' : (settings.hardware.connectionType === 'mock' ? '#4caf50' : '#f44336'),
+                                        boxShadow: wsConnected ? '0 0 6px #4caf5088' : 'none',
+                                        animation: wsConnected ? 'pulse-green 2s infinite' : 'none',
+                                    }} />
                                     <span style={{ color: 'var(--text-secondary)' }}>
-                                        {settings.hardware.connectionType === 'mock' ? 'Эмуляция активна' : 'Не подключено (бэкенд не запущен)'}
+                                        {wsConnected
+                                            ? '✓ Подключено — бэкенд отвечает'
+                                            : settings.hardware.connectionType === 'mock'
+                                                ? 'Эмуляция активна (без бэкенда)'
+                                                : 'Нет соединения — запустите бэкенд'}
                                     </span>
                                 </div>
                             </div>
