@@ -12,8 +12,10 @@ import {
     broadcastProcessState,
     onWsCommand,
     onHardwareData,
+    sendToHardware,
     getClientCount
 } from './ws/liveServer.js';
+import { settingsQueries } from './db/database.js';
 import { updateSensorReadings } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
@@ -183,9 +185,15 @@ async function main() {
     function mapSensors(deviceId, rawData) {
         if (!rawData || !rawData.sensors) return rawData;
 
-        let sensorSettings = settingsQueries.get('sensors');
-        if (typeof sensorSettings === 'string') {
-            try { sensorSettings = JSON.parse(sensorSettings); } catch (e) { sensorSettings = {}; }
+        let sensorSettings;
+        try {
+            sensorSettings = settingsQueries.get('sensors');
+            if (typeof sensorSettings === 'string') {
+                sensorSettings = JSON.parse(sensorSettings);
+            }
+        } catch (e) {
+            console.warn('[mapSensors] Failed to load sensor settings:', e.message);
+            sensorSettings = {};
         }
         sensorSettings = sensorSettings || {};
 
@@ -202,14 +210,21 @@ async function main() {
             if (config && config.enabled && config.address) {
                 const found = rawData.sensors.find(s => s.address === config.address);
                 if (found) {
-                    mapped[role] = found.value + (config.offset || 0);
+                    // ESP шлёт { address, temp }, не { address, value }
+                    const rawTemp = found.temp ?? found.value ?? 0;
+                    mapped[role] = rawTemp + (config.offset || 0);
                 }
             }
         }
 
         // 2. Fallback: If boiler is still undefined, take the first available sensor
         if (mapped.boiler === undefined && rawData.sensors.length > 0) {
-            mapped.boiler = rawData.sensors[0].value;
+            mapped.boiler = rawData.sensors[0].temp ?? rawData.sensors[0].value ?? 0;
+        }
+
+        // 3. Fallback: If column is still undefined, take the second sensor
+        if (mapped.column === undefined && rawData.sensors.length > 1) {
+            mapped.column = rawData.sensors[1].temp ?? rawData.sensors[1].value ?? 0;
         }
 
         return mapped;

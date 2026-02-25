@@ -10,12 +10,22 @@ const router = Router();
 let latestReadings = {};
 
 /**
- * Update the latest readings (called by serial manager or mock).
+ * Update the latest readings (called by serial manager or mapSensors).
+ * Filters out metadata keys — only stores actual sensor role values.
  */
 export function updateSensorReadings(readings) {
     const now = Date.now();
+    // Ключи, которые не являются показаниями датчиков
+    const skipKeys = ['type', 'timestamp', 'deviceId', 'sensors'];
+
     for (const [sensor, value] of Object.entries(readings)) {
-        latestReadings[sensor] = { value, timestamp: now };
+        if (skipKeys.includes(sensor)) continue;
+
+        if (typeof value === 'number') {
+            latestReadings[sensor] = { value, timestamp: now };
+        } else if (typeof value === 'object' && value !== null && 'value' in value) {
+            latestReadings[sensor] = { value: value.value, timestamp: now };
+        }
     }
 }
 

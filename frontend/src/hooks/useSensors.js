@@ -36,14 +36,18 @@ export function useSensors() {
                 const updated = { ...prev };
                 const now = Date.now();
 
+                // Ключи, которые НЕ являются показаниями датчиков
+                const skipKeys = ['type', 'timestamp', 'deviceId', 'sensors'];
+
                 for (const [key, val] of Object.entries(data)) {
-                    // Skip if key is not a known sensor (e.g. 'type' or 'timestamp' from root)
-                    if (key === 'type' || key === 'timestamp') continue;
+                    if (skipKeys.includes(key)) continue;
 
                     if (typeof val === 'object' && val !== null && 'value' in val) {
+                        // Формат: { value: 22.75, timestamp: ... }
                         updated[key] = val;
-                    } else {
-                        updated[key] = { value: Number(val), timestamp: now };
+                    } else if (typeof val === 'number') {
+                        // Формат: boiler: 22.75 (число напрямую из mapSensors)
+                        updated[key] = { value: val, timestamp: now };
                     }
                 }
                 return updated;
