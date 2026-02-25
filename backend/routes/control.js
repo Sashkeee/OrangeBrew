@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import telegram from '../services/telegram.js';
+import { broadcastControl } from '../ws/liveServer.js';
 
 const router = Router();
 
@@ -36,6 +37,16 @@ export function setHeaterState(value) {
     const safeValue = Math.min(100, Math.max(0, parseInt(value) || 0));
     controlState.heater = safeValue;
     if (sendCommand) sendCommand({ cmd: 'setHeater', value: safeValue });
+    broadcastControl(controlState);
+}
+
+/**
+ * Force set pump state internally
+ */
+export function setPumpState(state) {
+    controlState.pump = !!state;
+    if (sendCommand) sendCommand({ cmd: 'setPump', value: controlState.pump });
+    broadcastControl(controlState);
 }
 
 // POST /api/control/heater — set heater power

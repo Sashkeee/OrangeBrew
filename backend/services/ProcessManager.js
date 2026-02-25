@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import telegram from './telegram.js';
 import { temperatureQueries, sessionQueries } from '../db/database.js';
+import { setPumpState } from '../routes/control.js';
 
 // Status constants
 export const PROCESS_STATUS = {
@@ -143,6 +144,8 @@ class ProcessManager extends EventEmitter {
             this.pidManager.setTarget(initialTemp);
             this.pidManager.setEnabled(true);
         }
+        // Turn on pump automatically when process starts
+        setPumpState(true);
 
         // Start loop
         this.startLoop();
@@ -159,6 +162,7 @@ class ProcessManager extends EventEmitter {
 
         this.reset();
         telegram.sendMessage('🛑 Процесс остановлен вручную');
+        setPumpState(false); // Stop pump on abort
 
         if (oldSessionId) {
             try {
@@ -174,6 +178,7 @@ class ProcessManager extends EventEmitter {
 
         this.state.status = PROCESS_STATUS.PAUSED;
         if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(false);
+        setPumpState(false); // Stop pump on pause
         this.emit('update', this.state);
         telegram.sendMessage('⏸ Процесс поставлен на паузу');
     }
@@ -183,6 +188,7 @@ class ProcessManager extends EventEmitter {
 
         this.state.status = this.state.stepPhase === 'heating' ? PROCESS_STATUS.HEATING : PROCESS_STATUS.HOLDING;
         if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(true);
+        setPumpState(true); // Resume pump
         this.emit('update', this.state);
         telegram.sendMessage('▶️ Процесс возобновлен');
     }
@@ -336,6 +342,8 @@ class ProcessManager extends EventEmitter {
         if (this.pidManager && this.pidManager.setEnabled) {
             this.pidManager.setEnabled(false); // Stop heating after process
         }
+        setPumpState(false); // Auto-stop pump at completing
+
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.timerInterval = null;
 
