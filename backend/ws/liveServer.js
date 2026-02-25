@@ -231,6 +231,18 @@ export function sendToHardware(deviceId, cmd) {
     return false;
 }
 
+export function broadcastToAllHardware(cmd) {
+    let sent = false;
+    const msg = JSON.stringify(cmd);
+    for (const ws of hardwareClients.values()) {
+        if (ws.readyState === 1) {
+            ws.send(msg);
+            sent = true;
+        }
+    }
+    return sent;
+}
+
 export function getClientCount() {
     return uiClients.size;
 }

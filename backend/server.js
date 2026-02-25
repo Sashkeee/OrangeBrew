@@ -13,6 +13,7 @@ import {
     onWsCommand,
     onHardwareData,
     sendToHardware,
+    broadcastToAllHardware,
     getClientCount
 } from './ws/liveServer.js';
 import { settingsQueries } from './db/database.js';
@@ -147,12 +148,18 @@ async function main() {
         const targetDeviceId = processManager?.state?.deviceId;
 
         if (targetDeviceId && targetDeviceId !== 'local_serial') {
-            // Send to WebSocket hardware
+            // Send to assigned WebSocket hardware
             const sent = sendToHardware(targetDeviceId, cmd);
             if (!sent) console.warn(`[Server] Failed to send command to device ${targetDeviceId} (disconnected?)`);
-        } else if (serial) {
-            // Send to local Serial (USB)
-            serial.write(JSON.stringify(cmd));
+        } else {
+            // IF IDLE or local_serial, we still want manual controls to work on connected ESPs!
+            // Try to broadcast to all connected WebSocket hardware first.
+            const broadcasted = broadcastToAllHardware(cmd);
+
+            // If no ESPs connected, fallback to local Serial (USB)
+            if (!broadcasted && serial) {
+                serial.write(JSON.stringify(cmd));
+            }
         }
     };
 
