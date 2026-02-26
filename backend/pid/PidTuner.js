@@ -12,7 +12,8 @@ export default class PidTuner {
         this.tuning = false;
         this.target = 0;
         this.stepPower = 100; // Output when heating during relay
-        this.noiseBand = 0.5; // Hysteresis band
+        // Увеличили гистерезис, чтобы шум датчика не вызывал мгновенные переключения
+        this.noiseBand = 1.0;
 
         this.state = 'IDLE'; // IDLE -> HEATING_INITIAL -> COOLING -> HEATING -> COOLING -> DONE
 
@@ -29,19 +30,21 @@ export default class PidTuner {
 
     start(target, stepPower = 100) {
         this.reset();
-        this.target = target;
-        this.stepPower = stepPower;
+        this.target = parseFloat(target) || 65.0; // Гарантируем число
+        this.stepPower = parseFloat(stepPower) || 100;
         this.tuning = true;
         this.state = 'HEATING_INITIAL';
         this.currentMax = -999;
         this.currentMin = 999;
 
-        console.log(`[PidTuner] Started tuning. Target: ${target}, Step: ${stepPower}%`);
+        console.log(`[PidTuner] Started tuning. Target: ${this.target}, Step: ${this.stepPower}%, NoiseBand: ${this.noiseBand}`);
         return this.stepPower;
     }
 
-    update(currentTemp) {
+    update(currentTempStr) {
         if (!this.tuning) return { tuning: false };
+        const currentTemp = parseFloat(currentTempStr);
+        if (isNaN(currentTemp)) return { tuning: true, power: this.state === 'COOLING' ? 0 : this.stepPower };
 
         // Track local extremes
         if (currentTemp > this.currentMax) this.currentMax = currentTemp;
@@ -123,7 +126,16 @@ export default class PidTuner {
         if (periods.length > 0) {
             Tu = periods.reduce((a, b) => a + b, 0) / periods.length;
         } else {
-            return { tuning: false, done: true, error: "Not enough cycles to calculate Period." };
+            return { tuning: false, done: true, error: "Недостаточно циклов для расчета периода." };
+        }
+
+        // Защита от шумовых проскоков "за секунду"
+        if (Tu < 3) {
+            return { tuning: false, done: true, error: `Колебания слишком быстрые (Tu=${Tu.toFixed(1)}с). Похоже на шум датчика или датчик не погружен в жидкость.` };
+        }
+
+        if (A < 0.2) {
+            return { tuning: false, done: true, error: `Амплитуда колебаний слишком мала (A=${A.toFixed(2)}).` };
         }
 
         // 3. Calculate Ultimate Gain (Ku)
@@ -135,8 +147,9 @@ export default class PidTuner {
         const d = this.stepPower / 2;
         const Ku = (4 * d) / (Math.PI * A);
 
-        // 4. Calculate Kp, Ki, Kd using Ziegler-Nichols rules for typical PID
-        // Pessen Integral Rule or Classic. Let's use Classic:
+        // 4. Calculate Kp, Ki, Kd using Ziegler-Nichols (No Overshoot or Classic)
+        // Использование Less-Overshoot (Tyreus-Luyben или Pessen) обычно лучше для пивоварения
+        // Classic: Kp = 0.6 * Ku, Ki = 1.2 * Ku / Tu, Kd = 0.075 * Ku * Tu
         const Kp = 0.6 * Ku;
         const Ki = (1.2 * Ku) / Tu;
         const Kd = 0.075 * Ku * Tu;
