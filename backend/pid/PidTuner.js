@@ -1,16 +1,16 @@
 /**
  * Relay Auto-Tuner (Ziegler-Nichols Method)
  * 
- * Правильная реализация релейного автотюнинга:
+ * Реализация релейного автотюнинга:
  * 1. HEATING_INITIAL: нагрев до целевой температуры
  * 2. RELAY_OSCILLATION: релейные колебания с детекцией реальных пиков/впадин
  * 3. COMPUTING: расчёт Ku, Tu и коэффициентов ПИД
  * 
- * Ключевые защиты от ложных срабатываний:
- * - Экспоненциальное сглаживание температуры (EMA)
- * - Определение пиков/впадин по СМЕНЕ НАПРАВЛЕНИЯ температуры
- * - Минимальное время в каждом состоянии реле (минимум 10 сек)
- * - Подтверждение смены направления несколькими последовательными чтениями
+ * Защиты:
+ * - Аварийный порог температуры (по СЫРОЙ температуре, не по фильтрованной)
+ * - EMA сглаживание для детекции пиков/впадин
+ * - Минимальное время в каждом состоянии реле
+ * - Подтверждение смены направления несколькими чтениями
  */
 
 export default class PidTuner {
@@ -26,29 +26,32 @@ export default class PidTuner {
         // State machine
         this.state = 'IDLE'; // IDLE → HEATING_INITIAL → RELAY_OSCILLATION → DONE
 
-        // EMA filter for temperature smoothing
-        this._emaAlpha = 0.25;     // Smoothing factor (0.0-1.0, lower = more smoothing)
-        this._filteredTemp = null;  // Current filtered temperature
+        // Safety
+        this._maxSafeTemp = 98; // °C — аварийный порог (по сырой температуре!)
+
+        // EMA filter for temperature smoothing (only for peak/valley detection)
+        this._emaAlpha = 0.4;      // Higher alpha = faster response (good for fast systems)
+        this._filteredTemp = null;
 
         // Relay state tracking
-        this._relayIsOn = false;     // Current relay state (true = heating)
-        this._relayLastSwitch = 0;   // Timestamp of last relay switch
-        this._minRelayDwell = 15000; // Min 15 seconds in each relay state before switching
+        this._relayIsOn = false;
+        this._relayLastSwitch = 0;
+        this._minRelayDwell = 5000;  // Min 5 seconds dwell (was 15s — too slow for fast systems)
 
         // Direction tracking for peak/valley detection
         this._prevFilteredTemp = null;
-        this._directionCounter = 0; // positive = rising for N samples, negative = falling for N samples
-        this._confirmSamples = 4;   // Number of consistent direction samples to confirm a peak/valley
+        this._directionCounter = 0;
+        this._confirmSamples = 3;   // Confirm direction change with 3 samples
 
-        // Tracking local extremes for peak/valley values
-        this._localMax = -999;  // Tracks max since last valley
-        this._localMin = 999;   // Tracks min since last peak
+        // Tracking local extremes
+        this._localMax = -999;
+        this._localMin = 999;
 
         // Detected peaks and valleys
         this.peaks = [];   // [{value, time}, ...]
         this.valleys = []; // [{value, time}, ...]
 
-        this.targetCycles = 3; // Number of complete oscillation cycles needed
+        this.targetCycles = 3;
         this.currentCycle = 0;
 
         // Timing
@@ -60,20 +63,21 @@ export default class PidTuner {
         this.reset();
         this.target = parseFloat(target) || 65.0;
         this.stepPower = parseFloat(stepPower) || 100;
+        // Safety limit: at least 5°C above target but max 98°C
+        this._maxSafeTemp = Math.min(98, Math.max(this.target + 15, 85));
         this.tuning = true;
         this.state = 'HEATING_INITIAL';
         this._startTime = Date.now();
-        this._relayIsOn = true; // Start heating
+        this._relayIsOn = true;
         this._relayLastSwitch = Date.now();
 
-        console.log(`[PidTuner] Started. Target: ${this.target}°C, StepPower: ${this.stepPower}%`);
+        console.log(`[PidTuner] Started. Target: ${this.target}°C, StepPower: ${this.stepPower}%, SafetyLimit: ${this._maxSafeTemp}°C`);
         console.log(`[PidTuner] Phase 1: Heating to target temperature...`);
         return this.stepPower;
     }
 
     /**
      * Update the tuner with a new temperature reading.
-     * Called every time a sensor update arrives (~1-2 seconds interval).
      * @param {number|string} rawTemp - current temperature reading
      * @returns {object} - { tuning, done, power, state, cycle, maxCycles, [results], [error] }
      */
@@ -87,7 +91,23 @@ export default class PidTuner {
 
         this._updateCount++;
 
-        // Apply EMA filter
+        // ╔══════════════════════════════════════════════════╗
+        // ║  SAFETY CHECK — uses RAW temp, not filtered!    ║
+        // ║  Immediately stops tuning if temp is dangerous  ║
+        // ╚══════════════════════════════════════════════════╝
+        if (temp >= this._maxSafeTemp) {
+            console.error(`[PidTuner] SAFETY STOP! Raw temp ${temp.toFixed(1)}°C >= limit ${this._maxSafeTemp}°C. Aborting!`);
+            this.tuning = false;
+            this.state = 'DONE';
+            return {
+                tuning: false,
+                done: true,
+                power: 0,
+                error: `Аварийная остановка! Температура ${temp.toFixed(1)}°C превысила безопасный лимит ${this._maxSafeTemp}°C.`
+            };
+        }
+
+        // Apply EMA filter (for oscillation detection only)
         if (this._filteredTemp === null) {
             this._filteredTemp = temp;
             this._prevFilteredTemp = temp;
@@ -101,27 +121,25 @@ export default class PidTuner {
         switch (this.state) {
             case 'HEATING_INITIAL':
                 power = this.stepPower;
-                // Wait until filtered temp reaches target
-                if (filtered >= this.target) {
-                    console.log(`[PidTuner] Target ${this.target}°C reached (filtered: ${filtered.toFixed(1)}°C). Switching to relay oscillation.`);
+                // Use RAW temp for initial heating (faster reaction)
+                if (temp >= this.target) {
+                    console.log(`[PidTuner] Target ${this.target}°C reached (raw: ${temp.toFixed(1)}°C, filtered: ${filtered.toFixed(1)}°C). Switching to relay oscillation.`);
                     this.state = 'RELAY_OSCILLATION';
-
-                    // Initialize relay: we just reached target, so switch heater OFF
+                    // Switch heater OFF immediately
                     this._relayIsOn = false;
                     this._relayLastSwitch = Date.now();
-
-                    // Reset tracking for oscillation detection
-                    this._localMax = filtered;
-                    this._localMin = filtered;
+                    // Reset tracking
+                    this._localMax = temp;
+                    this._localMin = temp;
+                    this._filteredTemp = temp; // Sync filter to current temp
+                    this._prevFilteredTemp = temp;
                     this._directionCounter = 0;
-                    this._prevFilteredTemp = filtered;
-
                     power = 0;
                 }
                 break;
 
             case 'RELAY_OSCILLATION':
-                power = this._runRelayOscillation(filtered);
+                power = this._runRelayOscillation(temp, filtered);
                 break;
         }
 
@@ -129,94 +147,80 @@ export default class PidTuner {
     }
 
     /**
-     * Core relay oscillation logic with robust peak/valley detection.
+     * Core relay oscillation logic.
+     * @param {number} raw - raw temperature (for relay switching)
+     * @param {number} filtered - filtered temperature (for peak/valley detection)
      */
-    _runRelayOscillation(filtered) {
+    _runRelayOscillation(raw, filtered) {
         const now = Date.now();
         const timeSinceLastSwitch = now - this._relayLastSwitch;
 
         // --- 1. RELAY LOGIC ---
-        // Simple relay: above target → OFF, below target → ON
-        // But enforce minimum dwell time to prevent rapid switching
-        if (this._relayIsOn && filtered > this.target && timeSinceLastSwitch >= this._minRelayDwell) {
-            // Switch relay OFF
+        // Use RAW temp for relay switching (faster response)
+        // Enforce minimum dwell time to prevent chattering
+        if (this._relayIsOn && raw > this.target && timeSinceLastSwitch >= this._minRelayDwell) {
             this._relayIsOn = false;
             this._relayLastSwitch = now;
-            console.log(`[PidTuner] Relay OFF at ${filtered.toFixed(1)}°C (above target ${this.target}°C)`);
-        } else if (!this._relayIsOn && filtered < this.target && timeSinceLastSwitch >= this._minRelayDwell) {
-            // Switch relay ON
+            console.log(`[PidTuner] Relay OFF at ${raw.toFixed(1)}°C (above target ${this.target}°C) [dwell: ${(timeSinceLastSwitch / 1000).toFixed(0)}s]`);
+        } else if (!this._relayIsOn && raw < this.target && timeSinceLastSwitch >= this._minRelayDwell) {
             this._relayIsOn = true;
             this._relayLastSwitch = now;
-            console.log(`[PidTuner] Relay ON at ${filtered.toFixed(1)}°C (below target ${this.target}°C)`);
+            console.log(`[PidTuner] Relay ON at ${raw.toFixed(1)}°C (below target ${this.target}°C) [dwell: ${(timeSinceLastSwitch / 1000).toFixed(0)}s]`);
         }
 
-        // --- 2. TRACK LOCAL EXTREMES ---
-        if (filtered > this._localMax) this._localMax = filtered;
-        if (filtered < this._localMin) this._localMin = filtered;
+        // EXTRA SAFETY: if heater is ON and raw temp is already well above target, force OFF
+        if (this._relayIsOn && raw > this.target + 3) {
+            this._relayIsOn = false;
+            this._relayLastSwitch = now;
+            console.log(`[PidTuner] FORCED Relay OFF at ${raw.toFixed(1)}°C (>target+3°C safety margin)`);
+        }
+
+        // --- 2. TRACK LOCAL EXTREMES (use RAW for accurate extremes) ---
+        if (raw > this._localMax) this._localMax = raw;
+        if (raw < this._localMin) this._localMin = raw;
 
         // --- 3. DETECT DIRECTION CHANGE (PEAKS AND VALLEYS) ---
         const delta = filtered - this._prevFilteredTemp;
-        const threshold = 0.02; // Minimum change to count as a direction
+        const threshold = 0.05; // Minimum change to register direction
 
         if (delta > threshold) {
-            // Temperature is rising
+            // Rising
             if (this._directionCounter < 0) {
-                // Was falling, now rising → possible VALLEY
-                this._directionCounter = 1;
+                this._directionCounter = 1; // Direction reversed
             } else {
                 this._directionCounter++;
             }
         } else if (delta < -threshold) {
-            // Temperature is falling
+            // Falling
             if (this._directionCounter > 0) {
-                // Was rising, now falling → possible PEAK
-                this._directionCounter = -1;
+                this._directionCounter = -1; // Direction reversed
             } else {
                 this._directionCounter--;
             }
         }
-        // If within ±threshold, don't change direction counter (deadband)
 
-        // Confirm PEAK: was rising, then fell for confirmSamples readings
+        // Confirm PEAK: was rising, then fell for _confirmSamples readings
         if (this._directionCounter <= -this._confirmSamples) {
-            if (this._localMax > this.target) {
-                // Valid peak detected!
-                const peakValue = this._localMax;
-                const peakTime = now;
-
-                // Only record if we have at least one valley (to form a complete half-cycle)
-                // OR if this is the very first peak (after initial overshoot)
-                if (this.peaks.length === 0 ||
-                    (this.valleys.length > 0 && this.valleys.length >= this.peaks.length)) {
-                    this.peaks.push({ value: peakValue, time: peakTime });
-                    console.log(`[PidTuner] PEAK #${this.peaks.length} detected: ${peakValue.toFixed(1)}°C`);
-
-                    this._checkCompletion();
-                }
+            // Record peak if valid sequence (first peak or after a valley)
+            if (this.peaks.length === 0 ||
+                (this.valleys.length > 0 && this.valleys.length >= this.peaks.length)) {
+                this.peaks.push({ value: this._localMax, time: now });
+                console.log(`[PidTuner] PEAK #${this.peaks.length}: ${this._localMax.toFixed(1)}°C`);
+                this._checkCompletion();
             }
-            // Reset local max tracker after detecting a peak (start looking for valley)
-            this._localMin = filtered;
-            this._directionCounter = -1; // Keep direction as falling, but reset counter
+            this._localMin = raw; // Reset min tracker
+            this._directionCounter = -1;
         }
 
-        // Confirm VALLEY: was falling, then rose for confirmSamples readings
+        // Confirm VALLEY: was falling, then rose for _confirmSamples readings
         if (this._directionCounter >= this._confirmSamples) {
-            if (this._localMin < this.target) {
-                // Valid valley detected!
-                const valleyValue = this._localMin;
-                const valleyTime = now;
-
-                // Only record if we have at least one peak before this valley
-                if (this.peaks.length > this.valleys.length) {
-                    this.valleys.push({ value: valleyValue, time: valleyTime });
-                    console.log(`[PidTuner] VALLEY #${this.valleys.length} detected: ${valleyValue.toFixed(1)}°C`);
-
-                    this._checkCompletion();
-                }
+            if (this.peaks.length > this.valleys.length) {
+                this.valleys.push({ value: this._localMin, time: now });
+                console.log(`[PidTuner] VALLEY #${this.valleys.length}: ${this._localMin.toFixed(1)}°C`);
+                this._checkCompletion();
             }
-            // Reset local min tracker after detecting a valley (start looking for peak)
-            this._localMax = filtered;
-            this._directionCounter = 1; // Keep direction as rising, but reset counter
+            this._localMax = raw; // Reset max tracker
+            this._directionCounter = 1;
         }
 
         this._prevFilteredTemp = filtered;
@@ -225,18 +229,13 @@ export default class PidTuner {
     }
 
     /**
-     * Check if we have enough data to compute PID parameters.
+     * Check if we have enough oscillation data.
      */
     _checkCompletion() {
-        // We need at least targetCycles pairs of (peak, valley)
-        const completeCycles = Math.min(this.peaks.length, this.valleys.length);
-
-        // A full cycle requires at least 2 peaks (period = time between consecutive peaks)
+        // Need targetCycles+1 peaks and targetCycles valleys for targetCycles period measurements
         if (this.peaks.length >= this.targetCycles + 1 && this.valleys.length >= this.targetCycles) {
-            // We have enough data!
-            this.currentCycle = completeCycles;
-            console.log(`[PidTuner] Enough oscillation data collected (${this.peaks.length} peaks, ${this.valleys.length} valleys). Computing...`);
-            // Don't compute immediately - let the current update finish
+            this.currentCycle = Math.min(this.peaks.length, this.valleys.length);
+            console.log(`[PidTuner] Enough data: ${this.peaks.length} peaks, ${this.valleys.length} valleys. Computing...`);
             this.state = 'COMPUTING';
         } else {
             this.currentCycle = Math.max(0, this.peaks.length - 1);
@@ -244,29 +243,28 @@ export default class PidTuner {
     }
 
     /**
-     * Compute PID parameters from collected oscillation data.
+     * Compute PID parameters from oscillation data.
      */
     _computeResults() {
         this.tuning = false;
         this.state = 'DONE';
 
         if (this.peaks.length < 2 || this.valleys.length < 1) {
-            return { tuning: false, done: true, error: "Недостаточно данных колебаний для расчёта." };
+            return { tuning: false, done: true, error: "Недостаточно данных колебаний." };
         }
 
-        // 1. Calculate Amplitude (A) = average (peak - valley) / 2
+        // 1. Amplitude A = average (peak - valley) / 2
         const numPairs = Math.min(this.peaks.length, this.valleys.length);
         let amplitudeSum = 0;
         for (let i = 0; i < numPairs; i++) {
             amplitudeSum += (this.peaks[i].value - this.valleys[i].value);
         }
-        const A = amplitudeSum / (2 * numPairs); // average half-amplitude
+        const A = amplitudeSum / (2 * numPairs);
 
-        // 2. Calculate Period Tu (average time between consecutive peaks)
+        // 2. Period Tu = average time between consecutive peaks (seconds)
         const periods = [];
         for (let i = 1; i < this.peaks.length; i++) {
-            const periodSec = (this.peaks[i].time - this.peaks[i - 1].time) / 1000;
-            periods.push(periodSec);
+            periods.push((this.peaks[i].time - this.peaks[i - 1].time) / 1000);
         }
 
         if (periods.length === 0) {
@@ -276,27 +274,18 @@ export default class PidTuner {
         const Tu = periods.reduce((a, b) => a + b, 0) / periods.length;
 
         // Validation
-        if (Tu < 5) {
-            return {
-                tuning: false, done: true,
-                error: `Период колебаний слишком мал (Tu=${Tu.toFixed(1)}с). Возможно, датчик не погружён в жидкость или слишком сильный шум.`
-            };
+        if (Tu < 2) {
+            return { tuning: false, done: true, error: `Период слишком мал (Tu=${Tu.toFixed(1)}с). Возможен шум.` };
         }
-
         if (A < 0.1) {
-            return {
-                tuning: false, done: true,
-                error: `Амплитуда колебаний слишком мала (A=${A.toFixed(2)}°C). Попробуйте увеличить мощность ступени.`
-            };
+            return { tuning: false, done: true, error: `Амплитуда слишком мала (A=${A.toFixed(2)}°C).` };
         }
 
-        // 3. Calculate Ultimate Gain (Ku)
-        // For relay output going from 0 to stepPower, the relay amplitude d = stepPower / 2
-        // Ku = (4 * d) / (π * A)
+        // 3. Ku = (4 * d) / (π * A), where d = stepPower / 2
         const d = this.stepPower / 2;
         const Ku = (4 * d) / (Math.PI * A);
 
-        // 4. Ziegler-Nichols Classic PID formulas:
+        // 4. Ziegler-Nichols Classic PID:
         // Kp = 0.6 * Ku
         // Ti = 0.5 * Tu   → Ki = Kp / Ti = 1.2 * Ku / Tu
         // Td = 0.125 * Tu → Kd = Kp * Td = 0.075 * Ku * Tu
@@ -310,24 +299,21 @@ export default class PidTuner {
         console.log(`[PidTuner] Duration: ${elapsed} min`);
         console.log(`[PidTuner] Peaks: ${this.peaks.map(p => p.value.toFixed(1)).join(', ')}°C`);
         console.log(`[PidTuner] Valleys: ${this.valleys.map(v => v.value.toFixed(1)).join(', ')}°C`);
-        console.log(`[PidTuner] Amplitude A = ${A.toFixed(2)}°C`);
-        console.log(`[PidTuner] Period Tu = ${Tu.toFixed(1)}s`);
-        console.log(`[PidTuner] Ultimate Gain Ku = ${Ku.toFixed(2)}`);
+        console.log(`[PidTuner] A=${A.toFixed(2)}°C, Tu=${Tu.toFixed(1)}s, Ku=${Ku.toFixed(2)}`);
         console.log(`[PidTuner] → Kp=${Kp.toFixed(2)}, Ki=${Ki.toFixed(3)}, Kd=${Kd.toFixed(2)}`);
 
         return {
             tuning: false,
             done: true,
             results: { Kp, Ki, Kd, Ku, Tu, A },
-            message: `Калибровка завершена за ${elapsed} мин! Kp=${Kp.toFixed(1)}, Ki=${Ki.toFixed(2)}, Kd=${Kd.toFixed(1)}`
+            message: `Калибровка за ${elapsed} мин! Kp=${Kp.toFixed(1)}, Ki=${Ki.toFixed(2)}, Kd=${Kd.toFixed(1)}`
         };
     }
 
     /**
-     * Build status response object.
+     * Build status response.
      */
     _status(power) {
-        // If we just entered COMPUTING state, perform the computation
         if (this.state === 'COMPUTING') {
             const result = this._computeResults();
             return { ...result, power: 0 };
