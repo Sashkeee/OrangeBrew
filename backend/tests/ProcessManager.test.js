@@ -34,6 +34,8 @@ describe('ProcessManager', () => {
         mockPidManager = {
             setTarget: vi.fn(),
             setEnabled: vi.fn(),
+            setMode: vi.fn(),
+            resetIntegral: vi.fn(),
             target: 0,
             enabled: false
         };
