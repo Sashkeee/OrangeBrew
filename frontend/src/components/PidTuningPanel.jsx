@@ -3,6 +3,7 @@ import { Play, Square, Settings as SettingsIcon, AlertCircle, LineChart as Chart
 import { API_BASE } from '../utils/constants';
 import { useSensors } from '../hooks/useSensors';
 import { ProcessChart } from './ProcessChart';
+import SensorSelector from './SensorSelector';
 
 export default function PidTuningPanel({ onTuningComplete }) {
     const [status, setStatus] = useState(null);
@@ -10,9 +11,10 @@ export default function PidTuningPanel({ onTuningComplete }) {
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [successMsg, setSuccessMsg] = useState('');
+    const [selectedSensorAddress, setSelectedSensorAddress] = useState(null);
 
     // Live sensor data for graphing
-    const sensors = useSensors();
+    const { sensors, rawSensors } = useSensors();
     const [chartData, setChartData] = useState([]);
     const chartDataRef = useRef([]);
 
@@ -21,19 +23,27 @@ export default function PidTuningPanel({ onTuningComplete }) {
     useEffect(() => {
         if (!status?.tuning || !sensors.boiler) return;
 
+        // If a valid sensor address is set, use that, otherwise default to boiler mapped
+        let valToUse = sensors.boiler?.value ?? sensors.boiler;
+        if (selectedSensorAddress && rawSensors && rawSensors.length > 0) {
+            const tgt = rawSensors.find(s => s.address === selectedSensorAddress);
+            if (tgt) valToUse = tgt.temp ?? tgt.value;
+        }
+
+        if (valToUse === undefined || isNaN(valToUse)) return;
+
         const nowMs = Date.now();
         const newPoint = {
             unix: nowMs,
             time: new Date(nowMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            temp: sensors.boiler
+            temp: parseFloat(valToUse)
         };
 
         const prevData = chartDataRef.current;
-        // Keep last 600 points (~10 mins if polled every sec, though sensors update every ~1.5s)
         const updated = [...prevData.slice(-599), newPoint];
         chartDataRef.current = updated;
         setChartData(updated);
-    }, [sensors.boiler, status?.tuning]);
+    }, [sensors.boiler, rawSensors, status?.tuning, selectedSensorAddress]);
 
     // Poll tuner status every 1 second
     useEffect(() => {
@@ -74,7 +84,7 @@ export default function PidTuningPanel({ onTuningComplete }) {
             const res = await fetch(`${API_BASE}/process/tune-start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target: targetTemp }),
+                body: JSON.stringify({ target: targetTemp, sensorAddress: selectedSensorAddress }),
             });
             if (!res.ok) {
                 const data = await res.json();
@@ -146,34 +156,38 @@ export default function PidTuningPanel({ onTuningComplete }) {
             )}
 
             {!isTuning ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Целевая Температура (°C)</label>
-                        <input
-                            type="number"
-                            value={targetTemp}
-                            onChange={(e) => setTargetTemp(parseFloat(e.target.value) || 0)}
-                            style={{
-                                width: '120px', padding: '0.6rem', border: '1px solid #444',
-                                background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '4px', textAlign: 'center'
-                            }}
-                        />
-                    </div>
+                <div>
+                    <SensorSelector rawSensors={rawSensors} value={selectedSensorAddress} onChange={setSelectedSensorAddress} label="Выберите датчик для калибровки" />
 
-                    <button
-                        onClick={handleStartTuning}
-                        disabled={loading}
-                        style={{
-                            marginTop: '1.2rem', padding: '0.6rem 1.2rem', background: '#ff9800',
-                            color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '4px',
-                            cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'
-                        }}
-                    >
-                        <Play size={18} /> Начать Калибровку
-                    </button>
-                    <span style={{ fontSize: '0.75rem', color: '#999', marginTop: '1.2rem' }}>
-                        *Займет около 15-20 минут
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '1rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>Целевая Температура (°C)</label>
+                            <input
+                                type="number"
+                                value={targetTemp}
+                                onChange={(e) => setTargetTemp(parseFloat(e.target.value) || 0)}
+                                style={{
+                                    width: '120px', padding: '0.6rem', border: '1px solid #444',
+                                    background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '4px', textAlign: 'center'
+                                }}
+                            />
+                        </div>
+
+                        <button
+                            onClick={handleStartTuning}
+                            disabled={loading}
+                            style={{
+                                marginTop: '1.2rem', padding: '0.6rem 1.2rem', background: '#ff9800',
+                                color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '4px',
+                                cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem'
+                            }}
+                        >
+                            <Play size={18} /> Начать Калибровку
+                        </button>
+                        <span style={{ fontSize: '0.75rem', color: '#999', marginTop: '1.2rem' }}>
+                            *Займет около 15-20 минут
+                        </span>
+                    </div>
                 </div>
             ) : (
                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: '8px', border: '1px solid #444' }}>

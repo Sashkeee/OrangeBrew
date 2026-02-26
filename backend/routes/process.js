@@ -50,7 +50,8 @@ export default function createProcessRouter(processManager) {
     router.post('/tune-start', (req, res) => {
         try {
             const target = req.body.target || 65;
-            processManager.pidManager.startTuning(target);
+            const sensorAddress = req.body.sensorAddress || null;
+            processManager.pidManager.startTuning(target, sensorAddress);
             res.json({ ok: true, message: 'Autotune started' });
         } catch (err) {
             res.status(500).json({ error: err.message });

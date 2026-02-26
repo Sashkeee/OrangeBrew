@@ -112,9 +112,10 @@ export default class PidManager {
     }
 
     // --- Tuning Methods ---
-    startTuning(target) {
+    startTuning(target, sensorAddress = null) {
         this.setEnabled(false); // Disable normal PID
         this.lastTuningResults = null; // Clear old results
+        this.setSensorAddress(sensorAddress);
         this.tuner.start(target, 100);
     }
 
