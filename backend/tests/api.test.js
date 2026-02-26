@@ -9,7 +9,7 @@ import recipesRouter from '../routes/recipes.js';
 import sessionsRouter from '../routes/sessions.js';
 import sensorsRouter, { updateSensorReadings } from '../routes/sensors.js';
 import controlRouter from '../routes/control.js';
-import settingsRouter from '../routes/settings.js';
+import createSettingsRouter from '../routes/settings.js';
 
 // ─── Test Server Setup ────────────────────────────────────
 
@@ -25,7 +25,7 @@ function createApp() {
     app.use('/api/sessions', sessionsRouter);
     app.use('/api/sensors', sensorsRouter);
     app.use('/api/control', controlRouter);
-    app.use('/api/settings', settingsRouter);
+    app.use('/api/settings', createSettingsRouter({ pidManager: null }));
 
     return app;
 }

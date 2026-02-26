@@ -17,13 +17,19 @@ export default class PidManager {
         this.serial = serial;
 
         // Load initial tunings from DB if available, else defaults
+        // Support both formats: nested pid object (from Settings page) and flat pid_p/pid_i/pid_d (legacy)
         const settings = settingsQueries.getAll();
-        const p = parseFloat(settings.pid_p) || 5.0;
-        const i = parseFloat(settings.pid_i) || 0.1;
-        const d = parseFloat(settings.pid_d) || 1.0;
+        const pidSettings = settings.pid; // Nested object: { kp, ki, kd, ... }
+
+        const p = parseFloat(pidSettings?.kp) || parseFloat(settings.pid_p) || 5.0;
+        const i = parseFloat(pidSettings?.ki) || parseFloat(settings.pid_i) || 0.1;
+        const d = parseFloat(pidSettings?.kd) || parseFloat(settings.pid_d) || 1.0;
+
+        console.log(`[PidManager] Loaded tunings from DB: P=${p} I=${i} D=${d}`);
 
         this.pid = new PIDController(p, i, d, 1.0); // Kp, Ki, Kd, dt
         this.tuner = new PidTuner();
+        this.lastTuningResults = null; // Store last tuning results for API retrieval
         this.enabled = false;
         this.mode = 'heating'; // 'heating' | 'holding'
         this.sensorAddress = null; // Specific sensor address to track
@@ -108,6 +114,7 @@ export default class PidManager {
     // --- Tuning Methods ---
     startTuning(target) {
         this.setEnabled(false); // Disable normal PID
+        this.lastTuningResults = null; // Clear old results
         this.tuner.start(target, 100);
     }
 
@@ -117,12 +124,17 @@ export default class PidManager {
     }
 
     getTunerStatus() {
-        return {
+        const status = {
             tuning: this.tuner.tuning,
             state: this.tuner.state,
             cycle: this.tuner.currentCycle,
             maxCycles: this.tuner.targetCycles
         };
+        // Include results if tuning completed
+        if (this.lastTuningResults) {
+            status.results = this.lastTuningResults;
+        }
+        return status;
     }
 
     update(sensors) {
@@ -141,12 +153,33 @@ export default class PidManager {
             setHeaterState(result.power); // Send PWM
 
             if (result.done) {
-                // Save new coefficients to DB
-                settingsQueries.setBulk({
-                    pid_p: result.results.Kp.toFixed(2),
-                    pid_i: result.results.Ki.toFixed(3),
-                    pid_d: result.results.Kd.toFixed(2)
+                if (result.error) {
+                    console.error(`[PidManager] Tuning failed: ${result.error}`);
+                    this.lastTuningResults = { error: result.error };
+                    setHeaterState(0);
+                    return;
+                }
+
+                // Store results for API retrieval
+                this.lastTuningResults = {
+                    Kp: result.results.Kp,
+                    Ki: result.results.Ki,
+                    Kd: result.results.Kd,
+                    Ku: result.results.Ku,
+                    Tu: result.results.Tu,
+                    A: result.results.A
+                };
+
+                // Save to DB in the format expected by both frontend and PidManager
+                // Save as nested object under 'pid' key (for Settings page)
+                const currentPidSettings = settingsQueries.get('pid') || {};
+                settingsQueries.set('pid', {
+                    ...currentPidSettings,
+                    kp: parseFloat(result.results.Kp.toFixed(2)),
+                    ki: parseFloat(result.results.Ki.toFixed(3)),
+                    kd: parseFloat(result.results.Kd.toFixed(2))
                 });
+
                 // Apply to running PID
                 this.setTunings(result.results.Kp, result.results.Ki, result.results.Kd);
                 console.log(result.message);
@@ -156,7 +189,9 @@ export default class PidManager {
         }
 
         // 2. Handle Normal PID
-        if (!this.enabled || !this.serial) return;
+        // NOTE: We don't check this.serial here — PID can work even without serial
+        // because setHeaterState() handles hardware communication independently.
+        if (!this.enabled) return;
 
         let heaterPower;
         if (this.mode === 'heating') {

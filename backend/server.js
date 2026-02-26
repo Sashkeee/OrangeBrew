@@ -29,7 +29,7 @@ import recipesRouter from './routes/recipes.js';
 import sessionsRouter from './routes/sessions.js';
 import sensorsRouter from './routes/sensors.js';
 import controlRouter from './routes/control.js';
-import settingsRouter from './routes/settings.js';
+import createSettingsRouter from './routes/settings.js';
 import telegramRouter from './routes/telegram.js';
 import createProcessRouter from './routes/process.js';
 import usersRouter from './routes/users.js';
@@ -75,18 +75,27 @@ app.use(['/api/recipes', '/recipes'], authenticate, recipesRouter);
 app.use(['/api/sessions', '/sessions'], authenticate, sessionsRouter);
 app.use(['/api/sensors', '/sensors'], authenticate, sensorsRouter);
 app.use(['/api/control', '/control'], authenticate, controlRouter);
-app.use(['/api/settings', '/settings'], authenticate, settingsRouter);
 app.use(['/api/telegram', '/telegram'], authenticate, telegramRouter);
 app.use(['/api/users', '/users'], authenticate, usersRouter);
 app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
 
 let processManager = null; // Defined here so we can mount the router early
 let processRouter = null;
+
 app.use(['/api/process', '/process'], (req, res, next) => {
     if (!processManager) return res.status(503).json({ error: 'Process Manager not ready' });
     // Create router once, then reuse
     if (!processRouter) processRouter = createProcessRouter(processManager);
     processRouter(req, res, next);
+});
+
+let pidManager = null;
+let settingsRouterInstance = null;
+app.use(['/api/settings', '/settings'], authenticate, (req, res, next) => {
+    if (!settingsRouterInstance) {
+        settingsRouterInstance = createSettingsRouter({ pidManager });
+    }
+    settingsRouterInstance(req, res, next);
 });
 
 // Debug routes for Mock
@@ -130,7 +139,7 @@ app.post('/api/debug/pid/tunings', (req, res) => {
 // ─── Initialize ───────────────────────────────────────────
 
 let serial = null;
-let pidManager = null; // Global PID Manager
+
 
 async function main() {
     // Database (async — sql.js loads WASM)
