@@ -141,19 +141,24 @@ export default class PidManager {
     update(sensors) {
         // Extract temperature from the correct sensor
         let input;
+        const hasSensorsArray = sensors.sensors && Array.isArray(sensors.sensors);
 
-        if (this.sensorAddress && sensors.sensors && Array.isArray(sensors.sensors)) {
-            const targetSensor = sensors.sensors.find(s => s.address === this.sensorAddress);
-            if (targetSensor) {
-                input = parseFloat(targetSensor.temp ?? targetSensor.value);
-            } else {
-                // Specific sensor requested but NOT found in this data packet.
-                // During tuning: SKIP entirely — do NOT fallback to boiler (could be wrong sensor!)
-                if (this.tuner.tuning) return;
-                // Normal mode: fallback to boiler
+        if (this.sensorAddress) {
+            // Specific sensor address requested
+            if (hasSensorsArray) {
+                const targetSensor = sensors.sensors.find(s => s.address === this.sensorAddress);
+                if (targetSensor) {
+                    input = parseFloat(targetSensor.temp ?? targetSensor.value);
+                }
+            }
+            // If sensorAddress is set but sensor NOT found (no array or address mismatch):
+            // During tuning — MUST skip, do NOT use fallback boiler value
+            if ((input === undefined || input === null) && this.tuner.tuning) {
+                return; // Skip this data packet completely
             }
         }
 
+        // Fallback to mapped boiler value (only when no sensorAddress or normal mode)
         if (input === undefined || input === null) input = parseFloat(sensors.boiler);
         if (input === undefined || input === null || isNaN(input)) return;
 
