@@ -81,9 +81,12 @@ app.use(['/api/users', '/users'], authenticate, usersRouter);
 app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
 
 let processManager = null; // Defined here so we can mount the router early
+let processRouter = null;
 app.use(['/api/process', '/process'], (req, res, next) => {
     if (!processManager) return res.status(503).json({ error: 'Process Manager not ready' });
-    createProcessRouter(processManager)(req, res, next);
+    // Create router once, then reuse
+    if (!processRouter) processRouter = createProcessRouter(processManager);
+    processRouter(req, res, next);
 });
 
 // Debug routes for Mock
@@ -259,10 +262,18 @@ async function main() {
     });
 
     // Pass WebSocket sensor data (remote devices)
+    let lastHwDataLog = 0;
     onHardwareData((deviceId, data) => {
         // If data is sensors_raw, we route it
         if (data.type === 'sensors_raw') {
             const mappedData = mapSensors(deviceId, data);
+
+            // Periodic log
+            const now = Date.now();
+            if (now - lastHwDataLog > 30000) {
+                console.log(`[Server] WiFi data from '${deviceId}': boiler=${mappedData.boiler}°C, sensors=${data.sensors?.length || 0}`);
+                lastHwDataLog = now;
+            }
 
             // Update global latest readings for REST API
             updateSensorReadings(mappedData);

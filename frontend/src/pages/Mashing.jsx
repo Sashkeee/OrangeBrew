@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Play, Pause, Droplets, Zap, Thermometer, CheckCircle, ZoomIn, ZoomOut, SkipForward } from 'lucide-react';
+import { Play, Pause, Droplets, Zap, Thermometer, CheckCircle, ZoomIn, ZoomOut, SkipForward, AlertTriangle } from 'lucide-react';
 import { AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
@@ -56,12 +56,13 @@ const Mashing = () => {
     // Core state
     const [isHeaterCovered, setIsHeaterCovered] = useState(false);
     const [history, setHistory] = useState([]);
+    const [uiError, setUiError] = useState(null);
 
     // Graph scale
     const [graphYMin, setGraphYMin] = useState(20);
     const [graphYMax, setGraphYMax] = useState(100);
     const [mounted, setMounted] = useState(false);
-    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+    const [selectedDeviceId, setSelectedDeviceId] = useState(null);
 
 
     // Derived
@@ -113,14 +114,23 @@ const Mashing = () => {
         });
     }, [temperature, targetTemp, isStarted]);
 
+    // Auto-clear error after 8 seconds
+    useEffect(() => {
+        if (uiError) {
+            const t = setTimeout(() => setUiError(null), 8000);
+            return () => clearTimeout(t);
+        }
+    }, [uiError]);
+
     // Handle Start / Stop / Pause
-    const handleStartStop = () => {
+    const handleStartStop = async () => {
+        setUiError(null);
         if (isStarted) {
             if (isPaused) {
-                resume();
+                try { await resume(); } catch (e) { setUiError(`Ошибка возобновления: ${e.message}`); }
             } else {
                 if (confirm("Вы уверены, что хотите поставить затирание на паузу?")) {
-                    pause();
+                    try { await pause(); } catch (e) { setUiError(`Ошибка паузы: ${e.message}`); }
                 }
             }
         } else {
@@ -128,12 +138,20 @@ const Mashing = () => {
             if (recipeData) {
                 const firstStep = recipeData.mash_steps?.[0] || recipeData.steps?.[0];
                 if (firstStep && temperature > firstStep.temp + 3) {
-                    alert(`Ошибка запуска!\n\nТекущая температура сусла (${temperature.toFixed(1)}°C) выше температуры первой паузы (${firstStep.temp}°C) более чем на 3 градуса.\nПожалуйста, остудите затор перед началом процесса.`);
+                    setUiError(`Температура сусла (${temperature.toFixed(1)}°C) выше первой паузы (${firstStep.temp}°C) на 3+ градуса. Остудите затор.`);
                     return;
                 }
-                start(recipeData, sessionId, 'mash', selectedDeviceId);
+                const deviceToUse = selectedDeviceId || 'local_serial';
+                console.log('[Mashing] Starting process with device:', deviceToUse, 'recipe:', recipeData.name);
+                try {
+                    await start(recipeData, sessionId, 'mash', deviceToUse);
+                    console.log('[Mashing] Process started successfully');
+                } catch (e) {
+                    console.error('[Mashing] Start failed:', e);
+                    setUiError(`Ошибка запуска: ${e.message}`);
+                }
             } else {
-                alert("Ошибка: рецепт не загружен");
+                setUiError("Рецепт не загружен! Вернитесь на страницу варки и выберите рецепт.");
             }
         }
     };
@@ -161,11 +179,14 @@ const Mashing = () => {
     }, [allDone, navigate, sessionId, processState?.sessionId]);
 
     // Pump toggle
-    const handlePumpToggle = () => {
+    const handlePumpToggle = async () => {
         const next = !pumpOn;
-        setPump(next);
-        // Telegram notify handled by backend for process, but manual pump toggle might not be?
-        // Let's assume backend observes pump state or we just toggle it.
+        try {
+            await setPump(next);
+        } catch (e) {
+            console.error('[Mashing] Pump toggle failed:', e);
+            setUiError(`Ошибка переключения насоса: ${e.message}`);
+        }
     };
 
     // Manual Heater (disabled if auto)
@@ -189,6 +210,32 @@ const Mashing = () => {
 
     return (
         <div className="page-container" style={{ maxWidth: '1200px' }}>
+            {/* Error Notification */}
+            <AnimatePresence>
+                {uiError && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        style={{
+                            background: 'rgba(244, 67, 54, 0.15)',
+                            border: '1px solid var(--accent-red)',
+                            borderRadius: '8px',
+                            padding: '1rem 1.5rem',
+                            marginBottom: '1rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.8rem',
+                            cursor: 'pointer'
+                        }}
+                        onClick={() => setUiError(null)}
+                    >
+                        <AlertTriangle size={20} color="var(--accent-red)" />
+                        <span style={{ color: 'var(--accent-red)', fontSize: '0.9rem', fontWeight: 500 }}>{uiError}</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <PageHeader
                 title={`Затирание: ${recipeName}`}
                 color="var(--primary-color)"
@@ -396,7 +443,7 @@ const Mashing = () => {
                             <button
                                 className={`btn-start ${isStarted && !isPaused ? 'btn-start--active' : ''}`}
                                 onClick={handleStartStop}
-                                disabled={!isStarted && !isHeaterCovered}
+                                disabled={(!isStarted && !isHeaterCovered) || isLoading}
                                 style={{
                                     width: '100%',
                                     padding: '1.2rem',

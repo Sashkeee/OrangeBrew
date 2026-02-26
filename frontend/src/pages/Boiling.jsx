@@ -56,7 +56,7 @@ const Boiling = () => {
 
     const [history, setHistory] = useState([]);
     const [alertedHops, setAlertedHops] = useState(new Set());
-    const [selectedDeviceId, setSelectedDeviceId] = useState('local_serial');
+    const [selectedDeviceId, setSelectedDeviceId] = useState(null);
 
 
     // Load history from DB
@@ -107,19 +107,24 @@ const Boiling = () => {
         });
     }, [remainingTime, recipeData, isBoiling, alertedHops]);
 
-    const handleStartStop = () => {
+    const handleStartStop = async () => {
         if (isStarted) {
             if (isPaused) {
-                resume();
+                try { await resume(); } catch (e) { alert(`Ошибка: ${e.message}`); }
             }
             else {
                 if (confirm("Вы уверены, что хотите поставить процесс на паузу?")) {
-                    pause();
+                    try { await pause(); } catch (e) { alert(`Ошибка: ${e.message}`); }
                 }
             }
         } else {
             if (recipeData) {
-                start(recipeData, sessionId, 'boil', selectedDeviceId);
+                const deviceToUse = selectedDeviceId || 'local_serial';
+                try {
+                    await start(recipeData, sessionId, 'boil', deviceToUse);
+                } catch (e) {
+                    alert(`Ошибка запуска кипячения: ${e.message}`);
+                }
             } else {
                 alert("Ошибка: рецепт не загружен");
             }

@@ -28,7 +28,7 @@ class ProcessManager extends EventEmitter {
 
         this.state = {
             status: PROCESS_STATUS.IDLE,
-            mode: 'mash', // 'mash' | 'boil'
+            mode: null, // null when idle, 'mash' or 'boil' when running
             recipeName: '',
             steps: [],
             currentStepIndex: -1,
@@ -49,6 +49,7 @@ class ProcessManager extends EventEmitter {
         }
 
         this.lastTempLogTime = 0;
+        console.log('[ProcessManager] Reset to IDLE');
         this.emit('update', this.state);
     }
 
@@ -138,13 +139,22 @@ class ProcessManager extends EventEmitter {
             notifiedEvents: []
         };
 
+        console.log(`[ProcessManager] ===== START ${mode.toUpperCase()} =====`);
+        console.log(`[ProcessManager] Recipe: ${recipe.name}`);
+        console.log(`[ProcessManager] Device: ${deviceId}`);
+        console.log(`[ProcessManager] Session: ${finalSessionId}`);
+        console.log(`[ProcessManager] Steps (${steps.length}):`);
+        steps.forEach((s, i) => console.log(`[ProcessManager]   ${i}: ${s.name} - ${s.temp}°C / ${s.duration}min`));
+
         // Initialize hardware
         const initialTemp = this.state.steps[0].temp;
+        console.log(`[ProcessManager] Enabling PID, target: ${initialTemp}°C`);
         if (this.pidManager && this.pidManager.setEnabled) {
             this.pidManager.setTarget(initialTemp);
             this.pidManager.setEnabled(true);
         }
         // Turn on pump automatically when process starts
+        console.log('[ProcessManager] Turning pump ON');
         setPumpState(true);
 
         // Start loop
@@ -225,13 +235,23 @@ class ProcessManager extends EventEmitter {
         if (this.state.status === PROCESS_STATUS.PAUSED) return;
 
         // Only process data from the assigned device
-        if (this.state.deviceId && deviceId !== this.state.deviceId) return;
+        if (this.state.deviceId && deviceId !== this.state.deviceId) {
+            // Don't spam logs - only log once per minute
+            if (!this._lastDeviceMismatchLog || Date.now() - this._lastDeviceMismatchLog > 60000) {
+                console.warn(`[ProcessManager] Device mismatch: expected '${this.state.deviceId}', got '${deviceId}'. Ignoring.`);
+                this._lastDeviceMismatchLog = Date.now();
+            }
+            return;
+        }
 
         // Extract boiler temp. Handle both { boiler: 20 } and { boiler: { value: 20 } }
         let currentTemp = data.boiler;
         if (typeof currentTemp === 'object' && currentTemp !== null) currentTemp = currentTemp.value;
 
-        if (currentTemp === undefined) return;
+        if (currentTemp === undefined) {
+            console.warn('[ProcessManager] No boiler temperature in data:', Object.keys(data));
+            return;
+        }
 
         const currentStep = this.state.steps[this.state.currentStepIndex];
         if (!currentStep) return;
@@ -241,6 +261,7 @@ class ProcessManager extends EventEmitter {
         const targetReached = currentTemp >= (this.state.mode === 'boil' ? 99 : currentStep.temp);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
+            console.log(`[ProcessManager] Target ${currentStep.temp}°C reached (current: ${currentTemp}°C) → HOLDING`);
             this.state.stepPhase = 'holding';
             this.state.status = PROCESS_STATUS.HOLDING;
             this.state.remainingTime = currentStep.duration * 60;
@@ -314,12 +335,15 @@ class ProcessManager extends EventEmitter {
     advanceStep() {
         const nextIndex = this.state.currentStepIndex + 1;
         if (nextIndex >= this.state.steps.length) {
+            console.log('[ProcessManager] All steps complete → finishing');
             this.complete();
         } else {
             this.state.currentStepIndex = nextIndex;
             this.state.stepPhase = 'heating';
             this.state.status = PROCESS_STATUS.HEATING;
             const nextStep = this.state.steps[nextIndex];
+
+            console.log(`[ProcessManager] Advancing to step ${nextIndex + 1}: ${nextStep.name} (${nextStep.temp}°C / ${nextStep.duration}min)`);
 
             // Set new target
             if (this.pidManager && this.pidManager.setEnabled) {

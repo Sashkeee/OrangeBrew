@@ -55,6 +55,7 @@ router.post('/heater', (req, res) => {
         const value = Math.min(100, Math.max(0, parseInt(req.body.value) || 0));
         controlState.heater = value;
         if (sendCommand) sendCommand({ cmd: 'setHeater', value });
+        broadcastControl(controlState);
         res.json({ ok: true, heater: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -67,6 +68,7 @@ router.post('/cooler', (req, res) => {
         const value = Math.min(100, Math.max(0, parseInt(req.body.value) || 0));
         controlState.cooler = value;
         if (sendCommand) sendCommand({ cmd: 'setCooler', value });
+        broadcastControl(controlState);
         res.json({ ok: true, cooler: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -79,6 +81,7 @@ router.post('/pump', (req, res) => {
         const value = !!req.body.value;
         controlState.pump = value;
         if (sendCommand) sendCommand({ cmd: 'setPump', value });
+        broadcastControl(controlState);
         telegram.notifyPumpChange(value); // Notify telegram when pump state changes
         res.json({ ok: true, pump: value });
     } catch (err) {
@@ -94,6 +97,7 @@ router.post('/dephleg', (req, res) => {
         controlState.dephleg = value;
         controlState.dephlegMode = mode;
         if (sendCommand) sendCommand({ cmd: 'setDephleg', value, mode });
+        broadcastControl(controlState);
         res.json({ ok: true, dephleg: value, mode });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -108,6 +112,7 @@ router.post('/emergency-stop', (req, res) => {
         controlState.pump = false;
         controlState.dephleg = 0;
         if (sendCommand) sendCommand({ cmd: 'emergencyStop' });
+        broadcastControl(controlState);
         res.json({ ok: true, message: 'Emergency stop executed' });
     } catch (err) {
         res.status(500).json({ error: err.message });

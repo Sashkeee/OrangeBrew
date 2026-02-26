@@ -111,6 +111,13 @@ export default class PidManager {
         const output = this.pid.compute(input);
         const heaterPower = Math.round(Math.max(0, Math.min(100, output)));
         setHeaterState(heaterPower);
+
+        // Periodic log (every 30s)
+        const now = Date.now();
+        if (!this._lastPidLog || now - this._lastPidLog > 30000) {
+            console.log(`[PidManager] PID: input=${input.toFixed(1)}°C target=${this.pid.target}°C → heater=${heaterPower}%`);
+            this._lastPidLog = now;
+        }
     }
 
     getStatus() {

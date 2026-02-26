@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, ChevronDown } from 'lucide-react';
+import { Cpu, ChevronDown, Wifi } from 'lucide-react';
 import { deviceApi } from '../api/client';
 
 export default function DeviceSelector({ value, onChange, label = "Контроллер" }) {
@@ -16,15 +16,22 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
             ];
             setDevices(options);
 
-            // If no value is set, default to first online or serial
-            if (!value && options.length > 0) {
-                onChange(options[0].id);
+            // Auto-select: if there are online WiFi devices and no value yet (or default),
+            // select the first online one
+            if (onlineOnes.length > 0 && (!value || value === 'local_serial')) {
+                onChange(onlineOnes[0].id);
+            } else if (!value) {
+                onChange('local_serial');
             }
         }).catch(err => {
             console.error('[DeviceSelector] Failed to fetch devices', err);
             setDevices([{ id: 'local_serial', name: 'Локальный порт (USB)' }]);
+            if (!value) onChange('local_serial');
         }).finally(() => setLoading(false));
     }, []);
+
+    const selectedDevice = devices.find(d => d.id === value);
+    const isWifi = value && value !== 'local_serial';
 
     return (
         <div style={{ marginBottom: '1rem' }}>
@@ -46,7 +53,7 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
                         width: '100%',
                         padding: '0.8rem 1rem 0.8rem 2.5rem',
                         background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid #444',
+                        border: `1px solid ${isWifi ? 'var(--accent-green)' : '#444'}`,
                         borderRadius: '8px',
                         color: '#fff',
                         appearance: 'none',
@@ -60,15 +67,27 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
                         <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                 </select>
-                <Cpu
-                    size={16}
-                    style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary-color)' }}
-                />
+                {isWifi ? (
+                    <Wifi
+                        size={16}
+                        style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent-green)' }}
+                    />
+                ) : (
+                    <Cpu
+                        size={16}
+                        style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary-color)' }}
+                    />
+                )}
                 <ChevronDown
                     size={16}
                     style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#666', pointerEvents: 'none' }}
                 />
             </div>
+            {isWifi && (
+                <div style={{ fontSize: '0.7rem', color: 'var(--accent-green)', marginTop: '0.3rem' }}>
+                    ✓ WiFi устройство подключено
+                </div>
+            )}
         </div>
     );
 }

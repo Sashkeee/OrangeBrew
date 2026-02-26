@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import wsClient from '../api/wsClient.js';
+import { API_BASE } from '../utils/constants.js';
 
-const API_PROCESS_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/process`;
+const API_PROCESS_URL = `${API_BASE}/process`;
 
 // Initial default state
 const DEFAULT_STATE = {
     status: 'IDLE',
+    mode: null,
     recipeName: '',
     steps: [],
     currentStepIndex: -1,
@@ -26,8 +28,7 @@ export const useProcess = () => {
     useEffect(() => {
         fetchStatus();
 
-        // Listen for WebSocket updates using the shared client
-        // We need to ensure the client is connected (usually handled in App or useSensors)
+        // Listen for WebSocket updates
         if (!wsClient.connected) {
             wsClient.connect();
         }
@@ -37,7 +38,7 @@ export const useProcess = () => {
             setProcessState(data);
         });
 
-        // Also fallback poll every 2s in case WS drops
+        // Fallback poll every 2s
         const poller = setInterval(fetchStatus, 2000);
 
         return () => {
@@ -48,7 +49,11 @@ export const useProcess = () => {
 
     const fetchStatus = async () => {
         try {
-            const res = await fetch(`${API_PROCESS_URL}/status`);
+            const token = localStorage.getItem('orangebrew_token');
+            const headers = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            const res = await fetch(`${API_PROCESS_URL}/status`, { headers });
             if (res.ok) {
                 const data = await res.json();
                 setProcessState(data);
@@ -62,21 +67,24 @@ export const useProcess = () => {
         setIsLoading(true);
         setError(null);
         try {
+            const token = localStorage.getItem('orangebrew_token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
             const res = await fetch(`${API_PROCESS_URL}/${action}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Command failed');
 
-            // Optimistic update or wait for WS? 
-            // Better to use the returned state if available
             if (data.state) setProcessState(data.state);
             return data;
         } catch (e) {
             setError(e.message);
-            throw e;
+            console.error(`[Process] Command '${action}' failed:`, e.message);
+            throw e; // Re-throw so caller can handle
         } finally {
             setIsLoading(false);
         }
@@ -90,7 +98,7 @@ export const useProcess = () => {
 
     return {
         processState,
-        status: processState.status, // shortcut
+        status: processState.status,
         currentStep: processState.steps && processState.steps[processState.currentStepIndex] ? processState.steps[processState.currentStepIndex] : null,
         activeStepIndex: processState.currentStepIndex,
         stepPhase: processState.stepPhase,
