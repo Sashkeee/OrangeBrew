@@ -43,7 +43,10 @@ describe('useProcess Hook', () => {
         expect(result.current.processState.steps).toEqual([]);
 
         // Should try to fetch initial status
-        await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/process/status')));
+        await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+            expect.stringContaining('/process/status'),
+            expect.objectContaining({ headers: expect.any(Object) })
+        ));
     });
 
     it('should connect to WebSocket if not connected', async () => {
@@ -94,7 +97,10 @@ describe('useProcess Hook', () => {
         const { result } = renderHook(() => useProcess());
 
         // Wait for initial fetch to settle
-        await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/process/status')));
+        await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+            expect.stringContaining('/process/status'),
+            expect.objectContaining({ headers: expect.any(Object) })
+        ));
 
         // start() принимает 4 аргумента: recipe, sessionId, mode, deviceId
         await act(async () => {
@@ -102,16 +108,16 @@ describe('useProcess Hook', () => {
         });
 
         // Проверяем, что fetch был вызван с правильным URL и телом
-        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/process/start'), {
+        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/process/start'), expect.objectContaining({
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 recipe: { name: 'Test Recipe' },
                 sessionId: 'session-123',
                 mode: 'mash',
                 deviceId: 'local_serial'
             })
-        });
+        }));
 
         expect(result.current.status).toBe('HEATING');
     });
