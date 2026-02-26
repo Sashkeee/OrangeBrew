@@ -148,9 +148,10 @@ class ProcessManager extends EventEmitter {
 
         // Initialize hardware
         const initialTemp = this.state.steps[0].temp;
-        console.log(`[ProcessManager] Enabling PID, target: ${initialTemp}°C`);
+        console.log(`[ProcessManager] Enabling PID, target: ${initialTemp}°C, mode: heating`);
         if (this.pidManager && this.pidManager.setEnabled) {
             this.pidManager.setTarget(initialTemp);
+            this.pidManager.setMode('heating'); // Start in heating mode (full power with ramp-down)
             this.pidManager.setEnabled(true);
         }
         // Turn on pump automatically when process starts
@@ -197,7 +198,11 @@ class ProcessManager extends EventEmitter {
         if (this.state.status !== PROCESS_STATUS.PAUSED) return;
 
         this.state.status = this.state.stepPhase === 'heating' ? PROCESS_STATUS.HEATING : PROCESS_STATUS.HOLDING;
-        if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(true);
+        if (this.pidManager && this.pidManager.setEnabled) {
+            // Restore PID mode based on current phase
+            this.pidManager.setMode(this.state.stepPhase); // 'heating' or 'holding'
+            this.pidManager.setEnabled(true);
+        }
         setPumpState(true); // Resume pump
         this.emit('update', this.state);
         telegram.sendMessage('▶️ Процесс возобновлен');
@@ -261,10 +266,15 @@ class ProcessManager extends EventEmitter {
         const targetReached = currentTemp >= (this.state.mode === 'boil' ? 99 : currentStep.temp);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
-            console.log(`[ProcessManager] Target ${currentStep.temp}°C reached (current: ${currentTemp}°C) → HOLDING`);
+            console.log(`[ProcessManager] Target ${currentStep.temp}°C reached (current: ${currentTemp}°C) → HOLDING for ${currentStep.duration}min`);
             this.state.stepPhase = 'holding';
             this.state.status = PROCESS_STATUS.HOLDING;
             this.state.remainingTime = currentStep.duration * 60;
+
+            // CRITICAL: Switch PID to holding mode (resets integral to prevent overshoot)
+            if (this.pidManager && this.pidManager.setMode) {
+                this.pidManager.setMode('holding');
+            }
 
             if (this.state.mode === 'mash') {
                 telegram.notifyMashStep('reached', currentStep);
@@ -345,9 +355,11 @@ class ProcessManager extends EventEmitter {
 
             console.log(`[ProcessManager] Advancing to step ${nextIndex + 1}: ${nextStep.name} (${nextStep.temp}°C / ${nextStep.duration}min)`);
 
-            // Set new target
+            // Set new target and switch PID to heating mode
             if (this.pidManager && this.pidManager.setEnabled) {
+                this.pidManager.resetIntegral(); // Clear old integral from previous step
                 this.pidManager.setTarget(nextStep.temp);
+                this.pidManager.setMode('heating'); // Back to heating mode (full power)
             }
 
             this.state.remainingTime = nextStep.duration * 60; // Pre-set for display

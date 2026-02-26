@@ -3,6 +3,15 @@ import PidTuner from './PidTuner.js';
 import { setHeaterState } from '../routes/control.js';
 import { settingsQueries } from '../db/database.js'; // To save tunings
 
+/**
+ * PidManager orchestrates the PID controller for brewing.
+ * 
+ * Two operational modes:
+ * - 'heating': Full power with ramp-down near target (fast heating)
+ * - 'holding': Classic PID to maintain temperature (gentle control)
+ * 
+ * The ProcessManager tells PidManager which mode to use via setMode().
+ */
 export default class PidManager {
     constructor(serial) {
         this.serial = serial;
@@ -16,6 +25,7 @@ export default class PidManager {
         this.pid = new PIDController(p, i, d, 1.0); // Kp, Ki, Kd, dt
         this.tuner = new PidTuner();
         this.enabled = false;
+        this.mode = 'heating'; // 'heating' | 'holding'
 
         // Listen to sensor updates
         if (this.serial) {
@@ -55,6 +65,29 @@ export default class PidManager {
     setTarget(target) {
         this.pid.setTarget(parseFloat(target));
         console.log(`[PidManager] Target set to ${target}°C`);
+    }
+
+    /**
+     * Set operational mode.
+     * @param {'heating'|'holding'} mode 
+     */
+    setMode(mode) {
+        const old = this.mode;
+        this.mode = mode;
+        if (mode === 'holding' && old === 'heating') {
+            // Reset integral when transitioning to holding to prevent overshoot
+            this.pid.resetIntegral();
+            console.log(`[PidManager] Mode: heating → holding (integral reset)`);
+        } else {
+            console.log(`[PidManager] Mode: ${mode}`);
+        }
+    }
+
+    /**
+     * Reset PID integral (used when changing steps/targets).
+     */
+    resetIntegral() {
+        this.pid.resetIntegral();
     }
 
     setTunings(kp, ki, kd) {
@@ -108,14 +141,23 @@ export default class PidManager {
 
         // 2. Handle Normal PID
         if (!this.enabled || !this.serial) return;
-        const output = this.pid.compute(input);
-        const heaterPower = Math.round(Math.max(0, Math.min(100, output)));
+
+        let heaterPower;
+        if (this.mode === 'heating') {
+            // Heating mode: full power with ramp-down near target
+            heaterPower = this.pid.computeHeating(input, 5);
+        } else {
+            // Holding mode: classic PID for temperature maintenance
+            const output = this.pid.compute(input);
+            heaterPower = Math.round(Math.max(0, Math.min(100, output)));
+        }
+
         setHeaterState(heaterPower);
 
         // Periodic log (every 30s)
         const now = Date.now();
         if (!this._lastPidLog || now - this._lastPidLog > 30000) {
-            console.log(`[PidManager] PID: input=${input.toFixed(1)}°C target=${this.pid.target}°C → heater=${heaterPower}%`);
+            console.log(`[PidManager] ${this.mode.toUpperCase()}: input=${input.toFixed(1)}°C target=${this.pid.target}°C → heater=${heaterPower}%`);
             this._lastPidLog = now;
         }
     }
@@ -123,6 +165,7 @@ export default class PidManager {
     getStatus() {
         return {
             enabled: this.enabled,
+            mode: this.mode,
             target: this.pid.target,
             kp: this.pid.kp,
             ki: this.pid.ki,
@@ -131,5 +174,3 @@ export default class PidManager {
         };
     }
 }
-
-
