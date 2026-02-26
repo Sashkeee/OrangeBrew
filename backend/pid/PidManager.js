@@ -26,6 +26,7 @@ export default class PidManager {
         this.tuner = new PidTuner();
         this.enabled = false;
         this.mode = 'heating'; // 'heating' | 'holding'
+        this.sensorAddress = null; // Specific sensor address to track
 
         // Listen to sensor updates
         if (this.serial) {
@@ -65,6 +66,15 @@ export default class PidManager {
     setTarget(target) {
         this.pid.setTarget(parseFloat(target));
         console.log(`[PidManager] Target set to ${target}°C`);
+    }
+
+    /**
+     * Set which sensor address to use for PID input.
+     * @param {string|null} address - sensor address or null for default (mapped boiler)
+     */
+    setSensorAddress(address) {
+        this.sensorAddress = address;
+        console.log(`[PidManager] Sensor address: ${address || 'auto (mapped)'}`);
     }
 
     /**
@@ -116,7 +126,13 @@ export default class PidManager {
     }
 
     update(sensors) {
-        const input = sensors.boiler;
+        // Extract temperature: use specific sensor if address is set, else mapped boiler
+        let input;
+        if (this.sensorAddress && sensors.sensors && Array.isArray(sensors.sensors)) {
+            const targetSensor = sensors.sensors.find(s => s.address === this.sensorAddress);
+            if (targetSensor) input = targetSensor.temp ?? targetSensor.value;
+        }
+        if (input === undefined) input = sensors.boiler;
         if (input === undefined) return;
 
         // 1. Handle Tuning

@@ -53,7 +53,7 @@ class ProcessManager extends EventEmitter {
         this.emit('update', this.state);
     }
 
-    start(recipe, sessionId = null, mode = 'mash', deviceId = 'local_serial') {
+    start(recipe, sessionId = null, mode = 'mash', deviceId = 'local_serial', sensorAddress = null) {
         if (this.state.status !== PROCESS_STATUS.IDLE && this.state.status !== PROCESS_STATUS.COMPLETED) {
             throw new Error('Process is already running');
         }
@@ -136,12 +136,14 @@ class ProcessManager extends EventEmitter {
             recipeId: recipe.id,
             sessionId: finalSessionId,
             deviceId: deviceId, // Assigned device
+            sensorAddress: sensorAddress, // Specific sensor address to track
             notifiedEvents: []
         };
 
         console.log(`[ProcessManager] ===== START ${mode.toUpperCase()} =====`);
         console.log(`[ProcessManager] Recipe: ${recipe.name}`);
         console.log(`[ProcessManager] Device: ${deviceId}`);
+        console.log(`[ProcessManager] Sensor: ${sensorAddress || 'auto (first/mapped)'}`);
         console.log(`[ProcessManager] Session: ${finalSessionId}`);
         console.log(`[ProcessManager] Steps (${steps.length}):`);
         steps.forEach((s, i) => console.log(`[ProcessManager]   ${i}: ${s.name} - ${s.temp}°C / ${s.duration}min`));
@@ -150,6 +152,7 @@ class ProcessManager extends EventEmitter {
         const initialTemp = this.state.steps[0].temp;
         console.log(`[ProcessManager] Enabling PID, target: ${initialTemp}°C, mode: heating`);
         if (this.pidManager && this.pidManager.setEnabled) {
+            if (this.pidManager.setSensorAddress) this.pidManager.setSensorAddress(sensorAddress);
             this.pidManager.setTarget(initialTemp);
             this.pidManager.setMode('heating'); // Start in heating mode (full power with ramp-down)
             this.pidManager.setEnabled(true);
@@ -171,9 +174,9 @@ class ProcessManager extends EventEmitter {
     stop() {
         const oldSessionId = this.state.sessionId;
 
-        this.reset();
+        this.reset(); // This disables PID (turns off heater)
         telegram.sendMessage('🛑 Процесс остановлен вручную');
-        setPumpState(false); // Stop pump on abort
+        // NOTE: Pump state is NOT changed — user controls pump manually
 
         if (oldSessionId) {
             try {
@@ -188,8 +191,9 @@ class ProcessManager extends EventEmitter {
         if (this.state.status === PROCESS_STATUS.IDLE || this.state.status === PROCESS_STATUS.COMPLETED) return;
 
         this.state.status = PROCESS_STATUS.PAUSED;
+        // Turn off heater (PID disabled → setHeaterState(0))
         if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(false);
-        setPumpState(false); // Stop pump on pause
+        // NOTE: Pump state is NOT changed — user controls pump manually
         this.emit('update', this.state);
         telegram.sendMessage('⏸ Процесс поставлен на паузу');
     }
@@ -203,7 +207,7 @@ class ProcessManager extends EventEmitter {
             this.pidManager.setMode(this.state.stepPhase); // 'heating' or 'holding'
             this.pidManager.setEnabled(true);
         }
-        setPumpState(true); // Resume pump
+        // NOTE: Pump state is NOT changed — user controls pump manually
         this.emit('update', this.state);
         telegram.sendMessage('▶️ Процесс возобновлен');
     }
@@ -249,9 +253,24 @@ class ProcessManager extends EventEmitter {
             return;
         }
 
-        // Extract boiler temp. Handle both { boiler: 20 } and { boiler: { value: 20 } }
-        let currentTemp = data.boiler;
-        if (typeof currentTemp === 'object' && currentTemp !== null) currentTemp = currentTemp.value;
+        // Extract boiler temp.
+        // If a specific sensorAddress is set, find the temp from raw sensors array.
+        // Otherwise, use the mapped boiler value.
+        let currentTemp;
+
+        if (this.state.sensorAddress && data.sensors && Array.isArray(data.sensors)) {
+            // Find the specific sensor by address
+            const targetSensor = data.sensors.find(s => s.address === this.state.sensorAddress);
+            if (targetSensor) {
+                currentTemp = targetSensor.temp ?? targetSensor.value;
+            }
+        }
+
+        // Fallback to mapped boiler value
+        if (currentTemp === undefined) {
+            currentTemp = data.boiler;
+            if (typeof currentTemp === 'object' && currentTemp !== null) currentTemp = currentTemp.value;
+        }
 
         if (currentTemp === undefined) {
             console.warn('[ProcessManager] No boiler temperature in data:', Object.keys(data));
@@ -375,10 +394,11 @@ class ProcessManager extends EventEmitter {
         const prevMode = this.state.mode;
         this.state.status = PROCESS_STATUS.COMPLETED;
         this.state.remainingTime = 0;
+        // Turn off heater (PID disabled → setHeaterState(0))
         if (this.pidManager && this.pidManager.setEnabled) {
-            this.pidManager.setEnabled(false); // Stop heating after process
+            this.pidManager.setEnabled(false);
         }
-        setPumpState(false); // Auto-stop pump at completing
+        // NOTE: Pump state is NOT changed — user controls pump manually
 
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.timerInterval = null;

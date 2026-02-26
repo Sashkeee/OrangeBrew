@@ -6,7 +6,8 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 // Mock hooks
 vi.mock('../hooks/useSensors', () => ({
     useSensors: vi.fn(() => ({
-        sensors: { boiler: { value: 65 } }
+        sensors: { boiler: { value: 65 } },
+        rawSensors: []
     }))
 }));
 
@@ -117,7 +118,8 @@ describe('Mashing Page', () => {
             expect.objectContaining({ name: 'Test IPA' }),
             '123',
             'mash',
-            'local_serial'
+            'local_serial',
+            null
         );
     });
 

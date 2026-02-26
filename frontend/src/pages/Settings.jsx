@@ -316,7 +316,7 @@ const SettingsPage = () => {
                             <div style={{ marginTop: '1.5rem', padding: '1rem', background: wsConnected ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.08)', borderRadius: '6px', border: `1px solid ${wsConnected ? 'rgba(76,175,80,0.2)' : 'rgba(255,152,0,0.2)'}` }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                                     <Usb size={16} color={wsConnected ? '#4caf50' : '#ff9800'} />
-                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Статус бэкенда</span>
+                                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Сервер OrangeBrew</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
                                     <div style={{
@@ -327,11 +327,14 @@ const SettingsPage = () => {
                                     }} />
                                     <span style={{ color: 'var(--text-secondary)' }}>
                                         {wsConnected
-                                            ? '✓ Подключено — бэкенд отвечает'
+                                            ? '✓ Подключено — WebSocket соединение с сервером активно'
                                             : settings.hardware.connectionType === 'mock'
                                                 ? 'Эмуляция активна (без бэкенда)'
-                                                : 'Нет соединения — запустите бэкенд'}
+                                                : '✗ Нет соединения с сервером — запустите бэкенд'}
                                     </span>
+                                </div>
+                                <div style={{ fontSize: '0.65rem', color: '#555', marginTop: '0.5rem' }}>
+                                    Статус отображает WebSocket-соединение браузера с сервером OrangeBrew, а не с ESP-контроллерами. Подключённые ESP-устройства показаны выше в разделе «Обнаруженные контроллеры».
                                 </div>
                             </div>
                         </div>

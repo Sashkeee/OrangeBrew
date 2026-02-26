@@ -11,6 +11,7 @@ import { PageHeader } from '../components/PageHeader';
 import { SafetyCheck } from '../components/SafetyCheck';
 import { StartButton } from '../components/StartButton';
 import DeviceSelector from '../components/DeviceSelector';
+import SensorSelector from '../components/SensorSelector';
 import { formatTime } from '../utils/formatTime';
 
 import './pages.css';
@@ -23,7 +24,7 @@ const Mashing = () => {
     const navigate = useNavigate();
     const { sessionId } = useParams();
 
-    const { sensors } = useSensors();
+    const { sensors, rawSensors } = useSensors();
     const { control, setHeater, setPump } = useControl();
 
     // New backend process hook
@@ -63,10 +64,17 @@ const Mashing = () => {
     const [graphYMax, setGraphYMax] = useState(100);
     const [mounted, setMounted] = useState(false);
     const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+    const [selectedSensorAddress, setSelectedSensorAddress] = useState(null);
 
 
-    // Derived
-    const temperature = sensors.boiler?.value || 20;
+    // Derived - use selected sensor's temp if available, fallback to mapped boiler
+    const temperature = (() => {
+        if (selectedSensorAddress && rawSensors.length > 0) {
+            const selected = rawSensors.find(s => s.address === selectedSensorAddress);
+            if (selected && selected.temp !== undefined) return selected.temp;
+        }
+        return sensors.boiler?.value || 20;
+    })();
     const heaterPower = control.heater;
     const pumpOn = control.pump;
     const isStarted = status !== 'IDLE' && status !== 'COMPLETED' && processState?.mode === 'mash';
@@ -142,9 +150,9 @@ const Mashing = () => {
                     return;
                 }
                 const deviceToUse = selectedDeviceId || 'local_serial';
-                console.log('[Mashing] Starting process with device:', deviceToUse, 'recipe:', recipeData.name);
+                console.log('[Mashing] Starting process with device:', deviceToUse, 'sensor:', selectedSensorAddress, 'recipe:', recipeData.name);
                 try {
-                    await start(recipeData, sessionId, 'mash', deviceToUse);
+                    await start(recipeData, sessionId, 'mash', deviceToUse, selectedSensorAddress);
                     console.log('[Mashing] Process started successfully');
                 } catch (e) {
                     console.error('[Mashing] Start failed:', e);
@@ -483,6 +491,7 @@ const Mashing = () => {
                             {!isStarted && (
                                 <>
                                     <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />
+                                    <SensorSelector rawSensors={rawSensors} value={selectedSensorAddress} onChange={setSelectedSensorAddress} />
                                     <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
                                 </>
                             )}

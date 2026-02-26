@@ -6,7 +6,7 @@ import { sensorsApi } from '../api/client.js';
  * Hook for real-time sensor data via WebSocket.
  * Falls back to REST polling if WebSocket is unavailable.
  *
- * @returns {{ sensors, connected, error }}
+ * @returns {{ sensors, rawSensors, connected, error }}
  */
 export function useSensors() {
     const [sensors, setSensors] = useState({
@@ -16,6 +16,7 @@ export function useSensors() {
         output: { value: 0, timestamp: 0 },
         ambient: { value: 0, timestamp: 0 },
     });
+    const [rawSensors, setRawSensors] = useState([]); // Raw sensor array [{address, temp}, ...]
     // ВАЖНО: инициализируем из текущего состояния wsClient,
     // а не из false — иначе поздно смонтированные компоненты
     // пропустят событие 'connection' и навсегда останутся "disconnected"
@@ -31,6 +32,11 @@ export function useSensors() {
         const unsubSensors = wsClient.on('sensors', (msg) => {
             // Support both {type: 'sensors', data: {...}} and raw {...}
             const data = msg.data || msg;
+
+            // Store raw sensor array if present
+            if (data.sensors && Array.isArray(data.sensors)) {
+                setRawSensors(data.sensors);
+            }
 
             setSensors(prev => {
                 const updated = { ...prev };
@@ -66,15 +72,13 @@ export function useSensors() {
         const unsubConn = wsClient.on('connection', (msg) => {
             setConnected(msg.connected);
             if (!msg.connected) {
-                // Start REST polling as fallback
                 startPolling();
             } else {
                 stopPolling();
             }
         });
 
-        // Синхронизируем состояние: если WS уже подключён к моменту монтирования,
-        // событие 'connection' уже прошло → обновляем вручную
+        // Синхронизируем состояние
         if (wsClient.connected) {
             setConnected(true);
             stopPolling();
@@ -109,5 +113,5 @@ export function useSensors() {
         }
     };
 
-    return { sensors, connected, error };
+    return { sensors, rawSensors, connected, error };
 }

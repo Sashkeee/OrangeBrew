@@ -90,7 +90,7 @@ export const useProcess = () => {
         }
     };
 
-    const start = useCallback((recipe, sessionId, mode, deviceId) => sendCommand('start', { recipe, sessionId, mode, deviceId }), []);
+    const start = useCallback((recipe, sessionId, mode, deviceId, sensorAddress) => sendCommand('start', { recipe, sessionId, mode, deviceId, sensorAddress }), []);
     const stop = useCallback(() => sendCommand('stop'), []);
     const pause = useCallback(() => sendCommand('pause'), []);
     const resume = useCallback(() => sendCommand('resume'), []);

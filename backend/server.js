@@ -279,11 +279,12 @@ async function main() {
             updateSensorReadings(mappedData);
 
             // Broadcast sensors (both raw for debugging and mapped for UI)
+            const enrichedData = { ...mappedData, sensors: data.sensors };
             broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
 
-            // Pass to process and pid managers
-            processManager.handleSensorData(deviceId, mappedData);
-            if (pidManager) pidManager.update(mappedData);
+            // Pass to process and pid managers (with raw sensors array for address lookup)
+            processManager.handleSensorData(deviceId, enrichedData);
+            if (pidManager) pidManager.update(enrichedData);
         }
     });
 
