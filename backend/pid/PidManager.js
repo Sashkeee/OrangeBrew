@@ -152,13 +152,13 @@ export default class PidManager {
                 }
             }
             // If sensorAddress is set but sensor NOT found (no array or address mismatch):
-            // During tuning — MUST skip, do NOT use fallback boiler value
-            if ((input === undefined || input === null) && this.tuner.tuning) {
+            // ALWAYS skip — do NOT fallback to boiler (could be mock or wrong sensor!)
+            if (input === undefined || input === null) {
                 return; // Skip this data packet completely
             }
         }
 
-        // Fallback to mapped boiler value (only when no sensorAddress or normal mode)
+        // Fallback to mapped boiler value (only when no sensorAddress is set)
         if (input === undefined || input === null) input = parseFloat(sensors.boiler);
         if (input === undefined || input === null || isNaN(input)) return;
 
