@@ -281,8 +281,10 @@ class ProcessManager extends EventEmitter {
         if (!currentStep) return;
 
         // Logic: if heating and temp reached -> switch to holding
-        // For boil, we consider 99C as reaching boil
-        const targetReached = currentTemp >= (this.state.mode === 'boil' ? 99 : currentStep.temp);
+        const targetTemp = parseFloat(this.state.mode === 'boil' ? 99 : currentStep.temp);
+        const currentTempFloat = parseFloat(currentTemp);
+
+        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
             console.log(`[ProcessManager] Target ${currentStep.temp}°C reached (current: ${currentTemp}°C) → HOLDING for ${currentStep.duration}min`);

@@ -230,20 +230,20 @@ async function main() {
                 const found = rawData.sensors.find(s => s.address === config.address);
                 if (found) {
                     // ESP шлёт { address, temp }, не { address, value }
-                    const rawTemp = found.temp ?? found.value ?? 0;
-                    mapped[role] = rawTemp + (config.offset || 0);
+                    const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
+                    mapped[role] = rawTemp + parseFloat(config.offset || 0);
                 }
             }
         }
 
         // 2. Fallback: If boiler is still undefined, take the first available sensor
         if (mapped.boiler === undefined && rawData.sensors.length > 0) {
-            mapped.boiler = rawData.sensors[0].temp ?? rawData.sensors[0].value ?? 0;
+            mapped.boiler = parseFloat(rawData.sensors[0].temp ?? rawData.sensors[0].value ?? 0);
         }
 
         // 3. Fallback: If column is still undefined, take the second sensor
         if (mapped.column === undefined && rawData.sensors.length > 1) {
-            mapped.column = rawData.sensors[1].temp ?? rawData.sensors[1].value ?? 0;
+            mapped.column = parseFloat(rawData.sensors[1].temp ?? rawData.sensors[1].value ?? 0);
         }
 
         return mapped;

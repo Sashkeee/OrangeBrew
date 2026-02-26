@@ -142,10 +142,10 @@ export default class PidManager {
         let input;
         if (this.sensorAddress && sensors.sensors && Array.isArray(sensors.sensors)) {
             const targetSensor = sensors.sensors.find(s => s.address === this.sensorAddress);
-            if (targetSensor) input = targetSensor.temp ?? targetSensor.value;
+            if (targetSensor) input = parseFloat(targetSensor.temp ?? targetSensor.value);
         }
-        if (input === undefined) input = sensors.boiler;
-        if (input === undefined) return;
+        if (input === undefined || input === null) input = parseFloat(sensors.boiler);
+        if (input === undefined || input === null || isNaN(input)) return;
 
         // 1. Handle Tuning
         if (this.tuner.tuning) {
