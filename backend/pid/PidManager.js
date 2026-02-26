@@ -139,12 +139,21 @@ export default class PidManager {
     }
 
     update(sensors) {
-        // Extract temperature: use specific sensor if address is set, else mapped boiler
+        // Extract temperature from the correct sensor
         let input;
+
         if (this.sensorAddress && sensors.sensors && Array.isArray(sensors.sensors)) {
             const targetSensor = sensors.sensors.find(s => s.address === this.sensorAddress);
-            if (targetSensor) input = parseFloat(targetSensor.temp ?? targetSensor.value);
+            if (targetSensor) {
+                input = parseFloat(targetSensor.temp ?? targetSensor.value);
+            } else {
+                // Specific sensor requested but NOT found in this data packet.
+                // During tuning: SKIP entirely — do NOT fallback to boiler (could be wrong sensor!)
+                if (this.tuner.tuning) return;
+                // Normal mode: fallback to boiler
+            }
         }
+
         if (input === undefined || input === null) input = parseFloat(sensors.boiler);
         if (input === undefined || input === null || isNaN(input)) return;
 
