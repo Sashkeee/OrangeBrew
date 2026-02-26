@@ -151,7 +151,15 @@ export default class PidManager {
         // 1. Handle Tuning
         if (this.tuner.tuning) {
             const result = this.tuner.update(input);
-            setHeaterState(result.power); // Send PWM
+            const powerToSend = Math.max(0, parseInt(result.power) || 0);
+            setHeaterState(powerToSend);
+
+            // Debug log every update during tuning
+            const now = Date.now();
+            if (!this._lastTuneLog || now - this._lastTuneLog > 3000) {
+                console.log(`[PidManager:TUNE] input=${input.toFixed(1)}°C → tuner.power=${result.power} → heater=${powerToSend}% state=${result.state || 'done'}`);
+                this._lastTuneLog = now;
+            }
 
             if (result.done) {
                 if (result.error) {

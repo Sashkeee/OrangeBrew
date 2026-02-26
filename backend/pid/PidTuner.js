@@ -33,10 +33,12 @@ export default class PidTuner {
         this._emaAlpha = 0.4;      // Higher alpha = faster response (good for fast systems)
         this._filteredTemp = null;
 
-        // Relay state tracking
+        // Relay state tracking with hysteresis (NOT dwell time!)
+        // Relay ON when: raw < target - hysteresis
+        // Relay OFF when: raw > target + hysteresis
+        // This prevents chattering near target without blocking the relay for seconds
         this._relayIsOn = false;
-        this._relayLastSwitch = 0;
-        this._minRelayDwell = 5000;  // Min 5 seconds dwell (was 15s — too slow for fast systems)
+        this._hysteresis = 1.5; // °C — deadband half-width around target
 
         // Direction tracking for peak/valley detection
         this._prevFilteredTemp = null;
@@ -69,7 +71,6 @@ export default class PidTuner {
         this.state = 'HEATING_INITIAL';
         this._startTime = Date.now();
         this._relayIsOn = true;
-        this._relayLastSwitch = Date.now();
 
         console.log(`[PidTuner] Started. Target: ${this.target}°C, StepPower: ${this.stepPower}%, SafetyLimit: ${this._maxSafeTemp}°C`);
         console.log(`[PidTuner] Phase 1: Heating to target temperature...`);
@@ -127,11 +128,10 @@ export default class PidTuner {
                     this.state = 'RELAY_OSCILLATION';
                     // Switch heater OFF immediately
                     this._relayIsOn = false;
-                    this._relayLastSwitch = Date.now();
                     // Reset tracking
                     this._localMax = temp;
                     this._localMin = temp;
-                    this._filteredTemp = temp; // Sync filter to current temp
+                    this._filteredTemp = temp;
                     this._prevFilteredTemp = temp;
                     this._directionCounter = 0;
                     power = 0;
@@ -153,26 +153,19 @@ export default class PidTuner {
      */
     _runRelayOscillation(raw, filtered) {
         const now = Date.now();
-        const timeSinceLastSwitch = now - this._relayLastSwitch;
+        const upperBound = this.target + this._hysteresis; // e.g. 66.5°C
+        const lowerBound = this.target - this._hysteresis; // e.g. 63.5°C
 
-        // --- 1. RELAY LOGIC ---
-        // Use RAW temp for relay switching (faster response)
-        // Enforce minimum dwell time to prevent chattering
-        if (this._relayIsOn && raw > this.target && timeSinceLastSwitch >= this._minRelayDwell) {
+        // --- 1. RELAY LOGIC (hysteresis deadband) ---
+        // Relay turns OFF only when temp clearly exceeds target + hysteresis
+        // Relay turns ON only when temp clearly drops below target - hysteresis
+        // In the deadband zone (target ± hysteresis), relay state does NOT change
+        if (this._relayIsOn && raw >= upperBound) {
             this._relayIsOn = false;
-            this._relayLastSwitch = now;
-            console.log(`[PidTuner] Relay OFF at ${raw.toFixed(1)}°C (above target ${this.target}°C) [dwell: ${(timeSinceLastSwitch / 1000).toFixed(0)}s]`);
-        } else if (!this._relayIsOn && raw < this.target && timeSinceLastSwitch >= this._minRelayDwell) {
+            console.log(`[PidTuner] Relay OFF at ${raw.toFixed(1)}°C (>= ${upperBound}°C)`);
+        } else if (!this._relayIsOn && raw <= lowerBound) {
             this._relayIsOn = true;
-            this._relayLastSwitch = now;
-            console.log(`[PidTuner] Relay ON at ${raw.toFixed(1)}°C (below target ${this.target}°C) [dwell: ${(timeSinceLastSwitch / 1000).toFixed(0)}s]`);
-        }
-
-        // EXTRA SAFETY: if heater is ON and raw temp is already well above target, force OFF
-        if (this._relayIsOn && raw > this.target + 3) {
-            this._relayIsOn = false;
-            this._relayLastSwitch = now;
-            console.log(`[PidTuner] FORCED Relay OFF at ${raw.toFixed(1)}°C (>target+3°C safety margin)`);
+            console.log(`[PidTuner] Relay ON at ${raw.toFixed(1)}°C (<= ${lowerBound}°C)`);
         }
 
         // --- 2. TRACK LOCAL EXTREMES (use RAW for accurate extremes) ---
