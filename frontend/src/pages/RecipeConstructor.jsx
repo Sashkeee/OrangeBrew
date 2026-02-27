@@ -9,6 +9,10 @@ const RecipeConstructor = () => {
     const navigate = useNavigate();
     const [saving, setSaving] = useState(false);
 
+    // Brand color constants
+    const BRAND_ORANGE = '#ff9800';
+    const DANGER_RED = '#f44336';
+
     // Load ingredients from Dictionary for dropdowns
     const [dictionary, setDictionary] = useState({ malt: [], hop: [], yeast: [] });
 
@@ -77,10 +81,9 @@ const RecipeConstructor = () => {
                 if (i.id === id) {
                     const updated = { ...i, [field]: value };
 
-                    // Auto-update unit and placeholder for Water
+                    // Auto-update unit for Water (placeholder handles the rest)
                     if (field === 'type' && value === 'Вода') {
                         updated.unit = 'л';
-                        if (!updated.name) updated.name = 'Покупная/родниковая';
                     } else if (field === 'type' && value !== 'Вода' && i.unit === 'л') {
                         updated.unit = 'кг';
                     }
@@ -170,16 +173,17 @@ const RecipeConstructor = () => {
                 >
                     <ArrowLeft size={20} />
                 </button>
-                <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: '800', background: 'linear-gradient(90deg, #ff9800, #ff5722)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: '800', background: `linear-gradient(90deg, ${BRAND_ORANGE}, #ff5722)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                     Конструктор Рецепта
                 </h1>
             </header>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {/* ─── SINGLE MAIN PANEL ───────────────────────── */}
+            <div className="industrial-panel" style={{ padding: '2rem', background: '#111', borderRadius: '12px', border: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
 
-                {/* ─── Layout Section: Basic Info ───────────────── */}
-                <section className="industrial-panel" style={{ padding: '2rem', background: '#111', borderRadius: '12px', border: '1px solid #222' }}>
-                    <h3 style={{ marginTop: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ff9800' }}>
+                {/* ─── Basic Info ───────────────── */}
+                <section>
+                    <h3 style={{ marginTop: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
                         <Beaker size={20} /> Основная информация
                     </h3>
 
@@ -236,15 +240,15 @@ const RecipeConstructor = () => {
                     </div>
                 </section>
 
-                {/* ─── Layout Section: Mash Steps ───────────────── */}
-                <section className="industrial-panel" style={{ padding: '2rem', background: '#111', borderRadius: '12px', border: '1px solid #222' }}>
+                {/* ─── Mash Steps ───────────────── */}
+                <section>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#2196f3' }}>
+                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
                             <Thermometer size={20} /> Температурные паузы
                         </h3>
                         <button
                             onClick={addStep}
-                            style={{ background: 'rgba(33, 150, 243, 0.1)', border: '1px solid #2196f3', color: '#2196f3', padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
+                            style={{ background: 'rgba(255, 152, 0, 0.1)', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
                         >
                             <Plus size={18} /> Добавить паузу
                         </button>
@@ -281,7 +285,7 @@ const RecipeConstructor = () => {
                                 <button
                                     onClick={() => removeStep(step.id)}
                                     disabled={recipe.mash_steps.length === 1}
-                                    style={{ background: 'rgba(244, 67, 54, 0.1)', border: 'none', color: '#f44336', padding: '0.6rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', opacity: recipe.mash_steps.length === 1 ? 0.3 : 1 }}
+                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.6rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', opacity: recipe.mash_steps.length === 1 ? 0.3 : 1 }}
                                 >
                                     <Trash2 size={18} />
                                 </button>
@@ -290,15 +294,15 @@ const RecipeConstructor = () => {
                     </div>
                 </section>
 
-                {/* ─── Layout Section: Ingredients ───────────────── */}
-                <section className="industrial-panel" style={{ padding: '2rem', background: '#111', borderRadius: '12px', border: '1px solid #222' }}>
+                {/* ─── Ingredients ───────────────── */}
+                <section>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#4caf50' }}>
+                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
                             <Plus size={20} /> Ингредиенты
                         </h3>
                         <button
                             onClick={addIngredient}
-                            style={{ background: 'rgba(76, 175, 80, 0.1)', border: '1px solid #4caf50', color: '#4caf50', padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
+                            style={{ background: 'rgba(255, 152, 0, 0.1)', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
                         >
                             <Plus size={18} /> Добавить
                         </button>
@@ -356,7 +360,7 @@ const RecipeConstructor = () => {
                                 />
                                 <button
                                     onClick={() => removeIngredient(ing.id)}
-                                    style={{ background: 'none', border: 'none', color: '#f44336', padding: '0.6rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.6rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
                                 >
                                     <Trash2 size={18} />
                                 </button>
@@ -365,15 +369,15 @@ const RecipeConstructor = () => {
                     </div>
                 </section>
 
-                {/* ─── Layout Section: Hops (Boil) ───────────────── */}
-                <section className="industrial-panel" style={{ padding: '2rem', background: '#111', borderRadius: '12px', border: '1px solid #222' }}>
+                {/* ─── Hops (Boil) ───────────────── */}
+                <section>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#9c27b0' }}>
+                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
                             <Clock size={20} /> Внесение хмеля на варке
                         </h3>
                         <button
                             onClick={addHop}
-                            style={{ background: 'rgba(156, 39, 176, 0.1)', border: '1px solid #9c27b0', color: '#e040fb', padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
+                            style={{ background: 'rgba(255, 152, 0, 0.1)', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
                         >
                             <Plus size={18} /> Внести хмель
                         </button>
@@ -417,7 +421,7 @@ const RecipeConstructor = () => {
                                 </div>
                                 <button
                                     onClick={() => removeHop(hop.id)}
-                                    style={{ background: 'none', border: 'none', color: '#f44336', padding: '0.6rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.6rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
                                 >
                                     <Trash2 size={18} />
                                 </button>
@@ -431,21 +435,21 @@ const RecipeConstructor = () => {
             <div style={{ display: 'flex', gap: '1.5rem', marginTop: '3rem', padding: '1rem 0', borderTop: '1px solid #222' }}>
                 <button
                     onClick={() => navigate('/brewing')}
-                    style={{ flex: 1, padding: '1.2rem', background: 'transparent', border: '1px solid #333', color: '#888', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                    style={{ flex: 1, padding: '1.2rem', background: 'transparent', border: `1px solid ${DANGER_RED}`, color: DANGER_RED, borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' }}
                 >
                     Отмена
                 </button>
                 <button
                     onClick={handleSave}
                     disabled={saving || !recipe.name.trim()}
-                    style={{ flex: 1, padding: '1.2rem', background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem', cursor: saving ? 'wait' : 'pointer', fontWeight: 'bold', opacity: saving ? 0.5 : 1 }}
+                    style={{ flex: 1, padding: '1.2rem', background: '#222', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem', cursor: saving ? 'wait' : 'pointer', fontWeight: 'bold', opacity: saving ? 0.5 : 1 }}
                 >
                     <Save size={22} /> {saving ? '...' : 'Сохранить'}
                 </button>
                 <button
                     onClick={handleStartBrew}
                     disabled={saving || !recipe.name.trim()}
-                    style={{ flex: 2, padding: '1.2rem', background: 'linear-gradient(90deg, #ff9800, #ff5722)', border: 'none', color: '#000', fontWeight: '900', fontSize: '1.1rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem', cursor: saving ? 'wait' : 'pointer', transition: 'transform 0.2s', boxShadow: '0 4px 15px rgba(255,152,0,0.3)' }}
+                    style={{ flex: 2, padding: '1.2rem', background: `linear-gradient(90deg, ${BRAND_ORANGE}, #ff5722)`, border: 'none', color: '#000', fontWeight: '900', fontSize: '1.1rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem', cursor: saving ? 'wait' : 'pointer', transition: 'transform 0.2s', boxShadow: `0 4px 15px rgba(255,152,0,0.3)` }}
                 >
                     <Play size={24} fill="black" /> {saving ? 'ЗАГРУЗКА...' : 'НАЧАТЬ ВАРКУ'}
                 </button>
