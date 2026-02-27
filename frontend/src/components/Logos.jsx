@@ -336,3 +336,208 @@ export const HopChipBannerLogo = ({ size = 250, color = '#FF9800', accentColor =
         </g>
     </svg>
 );
+// ═══════════════════════════════════════════════════════════════
+//  ★ ANIMATED NEON LOGOS — With framer-motion and glow effects
+// ═══════════════════════════════════════════════════════════════
+import { motion } from 'framer-motion';
+
+/**
+ * ★ Animated — Hop-Chip Neon Glow
+ * Ожившая версия логотипа с пульсирующим свечением и "проявляющимися" дорожками платы.
+ */
+export const AnimatedHopNeonLogo = ({
+    size = 150,
+    color = '#FF9800',
+    accentColor = '#4CAF50',
+    glow = true,
+    animationDelay = 0
+}) => {
+    const draw = {
+        hidden: { pathLength: 0, opacity: 0 },
+        visible: (i) => {
+            const delay = animationDelay + i * 0.2;
+            return {
+                pathLength: 1,
+                opacity: 0.8,
+                transition: {
+                    pathLength: { delay, type: "spring", duration: 1.5, bounce: 0 },
+                    opacity: { delay, duration: 0.01 }
+                }
+            };
+        }
+    };
+
+    const glowFilter = i => glow ? `drop-shadow(0 0 ${i}px ${color}) drop-shadow(0 0 ${i / 2}px ${color})` : 'none';
+
+    return (
+        <svg width={size} height={size} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <filter id="neon_glow_filter">
+                    <feGaussianBlur stdDeviation="3" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+            </defs>
+
+            {/* Анимированная шишка хмеля */}
+            <motion.g
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.8, delay: animationDelay }}
+            >
+                {/* Лепестки хмеля (основная форма) */}
+                <path d="M100 70 Q130 70 130 100 Q130 130 100 130 Q70 130 70 100 Q70 70 100 70"
+                    fill={accentColor}
+                    fillOpacity="0.1"
+                    stroke={accentColor}
+                    strokeWidth="1"
+                    strokeOpacity="0.3"
+                />
+                <circle cx="100" cy="85" r="22" fill={accentColor} fillOpacity="0.15" />
+                <circle cx="85" cy="105" r="20" fill={accentColor} fillOpacity="0.1" />
+                <circle cx="115" cy="105" r="20" fill={accentColor} fillOpacity="0.1" />
+            </motion.g>
+
+            {/* Дорожки микросхемы - АНИМИРОВАННЫЕ */}
+            <g style={{ filter: glow ? 'url(#neon_glow_filter)' : 'none' }}>
+                <motion.path
+                    d="M100 130 V180"
+                    stroke={color}
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    variants={draw}
+                    initial="hidden"
+                    animate="visible"
+                    custom={1}
+                />
+
+                <motion.path
+                    d="M80 120 C 80 140, 60 140, 60 170"
+                    stroke={color}
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    variants={draw}
+                    initial="hidden"
+                    animate="visible"
+                    custom={2}
+                />
+
+                <motion.path
+                    d="M120 120 C 120 140, 140 140, 140 170"
+                    stroke={color}
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    variants={draw}
+                    initial="hidden"
+                    animate="visible"
+                    custom={2}
+                />
+
+                {/* Точки-контакты с пульсацией */}
+                <motion.circle
+                    cx="100" cy="183" r="4.5"
+                    fill={color}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{
+                        opacity: 1,
+                        scale: [1, 1.3, 1],
+                        filter: [`drop-shadow(0 0 2px ${color})`, `drop-shadow(0 0 8px ${color})`, `drop-shadow(0 0 2px ${color})`]
+                    }}
+                    transition={{
+                        opacity: { delay: animationDelay + 1.2 },
+                        scale: { repeat: Infinity, duration: 2, ease: "easeInOut" },
+                        filter: { repeat: Infinity, duration: 2, ease: "easeInOut" }
+                    }}
+                />
+                <motion.circle
+                    cx="60" cy="173" r="4"
+                    fill={color}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: animationDelay + 1.4 }}
+                />
+                <motion.circle
+                    cx="140" cy="173" r="4"
+                    fill={color}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: animationDelay + 1.4 }}
+                />
+
+                {/* Центральный чип на хмеле */}
+                <motion.rect
+                    x="88" y="85" width="24" height="24" rx="2"
+                    stroke={color}
+                    strokeWidth="2"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: animationDelay + 0.5 }}
+                />
+                <motion.rect
+                    x="93" y="90" width="14" height="14" rx="1"
+                    fill={color}
+                    initial={{ opacity: 0 }}
+                    animate={{
+                        opacity: [0.2, 0.6, 0.2]
+                    }}
+                    transition={{
+                        opacity: { repeat: Infinity, duration: 3, ease: "easeInOut", delay: animationDelay + 1 }
+                    }}
+                />
+            </g>
+
+            {/* Стебель с "бегущим током" */}
+            <motion.path
+                d="M100 45 L100 20 L80 5"
+                stroke={accentColor}
+                strokeWidth="3"
+                strokeLinecap="round"
+                variants={draw}
+                initial="hidden"
+                animate="visible"
+                custom={3}
+            />
+            <motion.path
+                d="M100 20 L120 5"
+                stroke={accentColor}
+                strokeWidth="3"
+                strokeLinecap="round"
+                variants={draw}
+                initial="hidden"
+                animate="visible"
+                custom={3}
+            />
+        </svg>
+    );
+};
+
+/**
+ * ★ Animated — Binary Hop
+ * Версия хмеля, где вместо листочков - бинарные данные 0 и 1, светящиеся оранжевым.
+ */
+export const BinaryHopLogo = ({ size = 150, color = '#FF9800', accentColor = '#4CAF50' }) => (
+    <svg width={size} height={size} viewBox="0 0 200 200" fill="none">
+        <motion.g
+            animate={{ y: [0, -5, 0] }}
+            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+        >
+            {/* Контур хмеля */}
+            <path d="M100 40 C60 40 40 80 40 110 C40 145 70 170 100 170 C130 170 160 145 160 110 C160 80 140 40 100 40Z"
+                stroke={accentColor} strokeWidth="1" strokeDasharray="4 4" opacity="0.4"
+            />
+
+            {/* Падающие "биты" внутри хмеля */}
+            <motion.text x="80" y="80" fill={color} fontSize="14" fontWeight="bold" style={{ filter: `drop-shadow(0 0 5px ${color})` }}
+                animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 2, delay: 0 }}>1</motion.text>
+            <motion.text x="110" y="100" fill={color} fontSize="14" fontWeight="bold" style={{ filter: `drop-shadow(0 0 5px ${color})` }}
+                animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 2, delay: 0.5 }}>0</motion.text>
+            <motion.text x="90" y="120" fill={color} fontSize="14" fontWeight="bold" style={{ filter: `drop-shadow(0 0 5px ${color})` }}
+                animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 2, delay: 1 }}>1</motion.text>
+            <motion.text x="70" y="105" fill={color} fontSize="14" fontWeight="bold" style={{ filter: `drop-shadow(0 0 5px ${color})` }}
+                animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 2, delay: 1.5 }}>0</motion.text>
+
+            {/* Дорожки */}
+            <path d="M50 130 H150" stroke={color} strokeWidth="1" opacity="0.2" />
+            <circle cx="100" cy="180" r="10" stroke={color} strokeWidth="2" strokeDasharray="2 2" />
+        </motion.g>
+    </svg>
+);

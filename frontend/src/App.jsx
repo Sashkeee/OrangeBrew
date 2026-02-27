@@ -4,6 +4,7 @@ import Home from './pages/Home';
 import Brewing from './pages/Brewing';
 import RecipeList from './pages/RecipeList';
 import RecipeConstructor from './pages/RecipeConstructor';
+import RecipeConstructor_V2 from './pages/RecipeConstructor_V2';
 import RecipeEditor from './pages/RecipeEditor';
 import Mashing from './pages/Mashing';
 import Boiling from './pages/Boiling';
@@ -43,6 +44,7 @@ function App() {
                 <Route path="/brewing" element={<Brewing />} />
                 <Route path="/brewing/recipes" element={<RecipeList />} />
                 <Route path="/brewing/recipes/new" element={<RecipeConstructor />} />
+                <Route path="/brewing/recipes/new-v2" element={<RecipeConstructor_V2 />} />
                 <Route path="/brewing/recipes/:id/edit" element={<RecipeEditor />} />
                 <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
                 <Route path="/brewing/boil/:sessionId" element={<Boiling />} />

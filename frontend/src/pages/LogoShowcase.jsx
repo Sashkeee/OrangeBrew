@@ -6,7 +6,8 @@ import {
     OrangeBrewLogo, CompactLogo, IndustrialLogo, ColumnLogo,
     HardwareLogo, MinimalLogo, BoutiqueLogo, CyberLogo,
     HopChipClassicLogo, HopChipShieldLogo, HopChipNeonLogo,
-    HopChipMonogramLogo, HopChipRoundedLogo, HopChipBannerLogo
+    HopChipMonogramLogo, HopChipRoundedLogo, HopChipBannerLogo,
+    AnimatedHopNeonLogo, BinaryHopLogo
 } from '../components/Logos';
 
 const LogoShowcase = () => {
@@ -34,6 +35,11 @@ const LogoShowcase = () => {
         { id: 'HopChipMonogram', name: 'Hop-Chip Monogram', component: <HopChipMonogramLogo size={150} color={primaryColor} accentColor={accentColor} />, desc: 'Монограмма «OB» в форме хмеля с ножками микросхемы.' },
         { id: 'HopChipRounded', name: 'Hop-Chip Rounded', component: <HopChipRoundedLogo size={150} color={primaryColor} accentColor={accentColor} />, desc: 'Мягкий, дружелюбный стиль. Плавные кривые PCB-дорожек.' },
         { id: 'HopChipBanner', name: 'Hop-Chip Banner', component: <HopChipBannerLogo size={400} color={primaryColor} accentColor={accentColor} />, desc: 'Горизонтальный фирменный логотип: символ + текст «OrangeBrew».' }
+    ];
+
+    const animatedLogos = [
+        { id: 'AnimatedHopNeon', name: 'Animated Neon Glow', component: <AnimatedHopNeonLogo size={180} color={primaryColor} accentColor={accentColor} />, desc: 'Ожившая версия: пульсирующее свечение и анимированные дорожки. Идеально для Splash-screen.' },
+        { id: 'BinaryHop', name: 'Binary / Digital Hop', component: <BinaryHopLogo size={180} color={primaryColor} accentColor={accentColor} />, desc: 'Хмель, состоящий из бинарного кода. Символ цифровой трансформации классического пивоварения.' }
     ];
 
     const copyToClipboard = (text) => {
@@ -148,7 +154,7 @@ const LogoShowcase = () => {
                 </button>
                 <div>
                     <h1 style={{ margin: 0, fontSize: '2.4rem', fontWeight: 800, color: primaryColor }}>Brand Library</h1>
-                    <p style={{ margin: '0.3rem 0 0', color: subColor }}>OrangeBrew Visual Identity System — {originalLogos.length + aiLogos.length} assets</p>
+                    <p style={{ margin: '0.3rem 0 0', color: subColor }}>OrangeBrew Visual Identity System — {originalLogos.length + aiLogos.length + animatedLogos.length} assets</p>
                 </div>
             </header>
 
@@ -174,6 +180,29 @@ const LogoShowcase = () => {
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
                             {aiLogos.map((logo) => <LogoCard key={logo.id} logo={logo} isAI={true} />)}
+                        </div>
+                    </div>
+
+                    {/* ★ ANIMATED SECTION */}
+                    <div style={{ marginBottom: '3rem' }}>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1.5rem',
+                            paddingBottom: '0.8rem', borderBottom: `2px solid #00E5FF33`
+                        }}>
+                            <Sparkles size={22} color="#00E5FF" />
+                            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>
+                                ★ Animated & Neon
+                            </h2>
+                            <span style={{
+                                fontSize: '0.65rem', padding: '0.2rem 0.6rem',
+                                background: '#00E5FF22', color: '#00E5FF',
+                                borderRadius: '10px', fontWeight: 700
+                            }}>
+                                MOTION
+                            </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+                            {animatedLogos.map((logo) => <LogoCard key={logo.id} logo={logo} isAI={true} />)}
                         </div>
                     </div>
 
