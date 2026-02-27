@@ -9,9 +9,7 @@ const RecipeConstructor = () => {
     const navigate = useNavigate();
     const [saving, setSaving] = useState(false);
 
-    // Brand color constants
-    const BRAND_ORANGE = '#ff9800';
-    const DANGER_RED = '#f44336';
+
 
     // Load ingredients from Dictionary for dropdowns
     const [dictionary, setDictionary] = useState({ malt: [], hop: [], yeast: [] });
@@ -162,79 +160,139 @@ const RecipeConstructor = () => {
         }
     };
 
+    const BRAND_ORANGE = '#ff9800';
+    const DANGER_RED = '#f44336';
+    const TEXT_MUTED = '#737373';
+    const BG_INPUT = '#141414';
+
+    const s_input = {
+        width: '100%',
+        padding: '0.8rem 1rem',
+        background: BG_INPUT,
+        border: 'transparent 1px solid',
+        color: '#fff',
+        borderRadius: '8px',
+        outline: 'none',
+        fontSize: '0.95rem',
+        transition: 'border-color 0.2s',
+    };
+
+    const s_label = {
+        display: 'block',
+        marginBottom: '0.5rem',
+        color: TEXT_MUTED,
+        fontSize: '0.85rem',
+        fontWeight: '500'
+    };
+
+    const s_header = {
+        margin: '0 0 1.5rem 0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.6rem',
+        color: BRAND_ORANGE,
+        fontSize: '1.1rem',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        paddingBottom: '0.8rem'
+    };
+
+    const s_addBtn = {
+        background: 'transparent',
+        border: 'none',
+        color: BRAND_ORANGE,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.4rem',
+        cursor: 'pointer',
+        fontWeight: '500',
+        fontSize: '0.9rem',
+        padding: '0.5rem 0',
+        marginTop: '0.5rem'
+    };
+
+    const s_row = {
+        display: 'grid',
+        gap: '0.8rem',
+        alignItems: 'center',
+        marginBottom: '0.8rem'
+    };
+
     const ingredientTypes = ['Солод', 'Хмель', 'Дрожжи', 'Вода', 'Добавка'];
 
     return (
-        <div style={{ padding: '2rem 1rem', maxWidth: '900px', margin: '0 auto', color: '#fff' }}>
-            <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+        <div style={{ padding: '2rem 1rem', maxWidth: '800px', margin: '0 auto', color: '#fff' }}>
+
+            <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '3rem' }}>
                 <button
                     onClick={() => navigate('/brewing')}
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #333', color: '#fff', padding: '0.6rem', borderRadius: '8px', cursor: 'pointer' }}
+                    style={{ background: 'transparent', border: 'none', color: TEXT_MUTED, cursor: 'pointer', padding: 0 }}
                 >
-                    <ArrowLeft size={20} />
+                    <ArrowLeft size={24} />
                 </button>
-                <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: '800', background: `linear-gradient(90deg, ${BRAND_ORANGE}, #ff5722)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                    Конструктор Рецепта
+                <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: '600', color: '#fff', letterSpacing: '0.5px' }}>
+                    Создание рецепта
                 </h1>
             </header>
 
-            {/* ─── SINGLE MAIN PANEL ───────────────────────── */}
-            <div className="industrial-panel" style={{ padding: '2rem', background: '#111', borderRadius: '12px', border: '1px solid #222', display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3.5rem' }}>
 
                 {/* ─── Basic Info ───────────────── */}
                 <section>
-                    <h3 style={{ marginTop: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
-                        <Beaker size={20} /> Основная информация
+                    <h3 style={s_header}>
+                        <Beaker size={18} /> Основная информация
                     </h3>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-                        <div className="form-group">
-                            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#888', fontSize: '0.9rem' }}>Название рецепта *</label>
+                        <div>
+                            <label style={s_label}>Название рецепта *</label>
                             <input
                                 type="text"
                                 value={recipe.name}
                                 onChange={(e) => setRecipe({ ...recipe, name: e.target.value })}
-                                style={{ width: '100%', padding: '1rem', background: '#000', border: '1px solid #333', color: '#fff', borderRadius: '8px', outline: 'none' }}
+                                style={s_input}
                                 placeholder="Напр: Жигулевское"
                             />
                         </div>
-                        <div className="form-group">
-                            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#888', fontSize: '0.9rem' }}>Стиль</label>
+                        <div>
+                            <label style={s_label}>Стиль</label>
                             <input
                                 type="text"
                                 value={recipe.style}
                                 onChange={(e) => setRecipe({ ...recipe, style: e.target.value })}
-                                style={{ width: '100%', padding: '1rem', background: '#000', border: '1px solid #333', color: '#fff', borderRadius: '8px', outline: 'none' }}
+                                style={s_input}
                                 placeholder="Напр: American IPA"
                             />
                         </div>
-                        <div className="form-group">
-                            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#888', fontSize: '0.9rem' }}>Объём варки (л)</label>
+                        <div>
+                            <label style={s_label}>Объём варки (л)</label>
                             <input
                                 type="number"
                                 value={recipe.batch_size}
                                 onChange={(e) => setRecipe({ ...recipe, batch_size: parseFloat(e.target.value) || 0 })}
-                                style={{ width: '100%', padding: '1rem', background: '#000', border: '1px solid #333', color: '#fff', borderRadius: '8px', outline: 'none' }}
+                                style={s_input}
                             />
                         </div>
-                        <div className="form-group">
-                            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#888', fontSize: '0.9rem' }}>Время кипячения (мин)</label>
+                        <div>
+                            <label style={s_label}>Время кипячения (мин)</label>
                             <input
                                 type="number"
                                 value={recipe.boil_time}
                                 onChange={(e) => setRecipe({ ...recipe, boil_time: parseInt(e.target.value) || 0 })}
-                                style={{ width: '100%', padding: '1rem', background: '#000', border: '1px solid #333', color: '#fff', borderRadius: '8px', outline: 'none' }}
+                                style={s_input}
                             />
                         </div>
                     </div>
 
                     <div style={{ marginTop: '1.5rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#888', fontSize: '0.9rem' }}>Заметки</label>
+                        <label style={s_label}>Заметки</label>
                         <textarea
                             value={recipe.notes}
                             onChange={(e) => setRecipe({ ...recipe, notes: e.target.value })}
                             rows={2}
-                            style={{ width: '100%', padding: '1rem', background: '#000', border: '1px solid #333', color: '#fff', borderRadius: '8px', outline: 'none', resize: 'vertical' }}
+                            style={{ ...s_input, resize: 'vertical' }}
                             placeholder="Дополнительные заметки к рецепту..."
                         />
                     </div>
@@ -242,84 +300,71 @@ const RecipeConstructor = () => {
 
                 {/* ─── Mash Steps ───────────────── */}
                 <section>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
-                            <Thermometer size={20} /> Температурные паузы
-                        </h3>
-                        <button
-                            onClick={addStep}
-                            style={{ background: 'rgba(255, 152, 0, 0.1)', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
-                        >
-                            <Plus size={18} /> Добавить паузу
-                        </button>
-                    </div>
+                    <h3 style={s_header}>
+                        <Thermometer size={18} /> Температурные паузы
+                    </h3>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div>
                         {recipe.mash_steps.map((step, idx) => (
-                            <div key={step.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 2fr) 120px 120px 48px', gap: '1rem', alignItems: 'center', background: '#000', padding: '1rem', borderRadius: '10px', border: '1px solid #222' }}>
+                            <div key={step.id} style={{ ...s_row, gridTemplateColumns: 'minmax(150px, 2fr) 110px 110px 40px' }}>
                                 <input
                                     type="text"
                                     value={step.name}
                                     onChange={(e) => updateStep(step.id, 'name', e.target.value)}
                                     placeholder="Название паузы"
-                                    style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.5rem' }}
+                                    style={s_input}
                                 />
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         type="number"
                                         value={step.temp}
                                         onChange={(e) => updateStep(step.id, 'temp', parseInt(e.target.value))}
-                                        style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.5rem', width: '100%' }}
+                                        style={{ ...s_input, paddingRight: '2.5rem' }}
                                     />
-                                    <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#555', fontSize: '0.8rem' }}>°C</span>
+                                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: TEXT_MUTED, fontSize: '0.85rem' }}>°C</span>
                                 </div>
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         type="number"
                                         value={step.duration}
                                         onChange={(e) => updateStep(step.id, 'duration', parseInt(e.target.value))}
-                                        style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.5rem', width: '100%' }}
+                                        style={{ ...s_input, paddingRight: '2.5rem' }}
                                     />
-                                    <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#555', fontSize: '0.8rem' }}>мин</span>
+                                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: TEXT_MUTED, fontSize: '0.85rem' }}>мин</span>
                                 </div>
                                 <button
                                     onClick={() => removeStep(step.id)}
                                     disabled={recipe.mash_steps.length === 1}
-                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.6rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'center', opacity: recipe.mash_steps.length === 1 ? 0.3 : 1 }}
+                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'center', opacity: recipe.mash_steps.length === 1 ? 0.3 : 1 }}
                                 >
                                     <Trash2 size={18} />
                                 </button>
                             </div>
                         ))}
+                        <button onClick={addStep} style={s_addBtn}>
+                            <Plus size={16} /> Добавить паузу
+                        </button>
                     </div>
                 </section>
 
                 {/* ─── Ingredients ───────────────── */}
                 <section>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
-                            <Plus size={20} /> Ингредиенты
-                        </h3>
-                        <button
-                            onClick={addIngredient}
-                            style={{ background: 'rgba(255, 152, 0, 0.1)', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
-                        >
-                            <Plus size={18} /> Добавить
-                        </button>
-                    </div>
+                    <h3 style={s_header}>
+                        <Plus size={18} /> Ингредиенты
+                    </h3>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div>
                         {recipe.ingredients.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '2rem', border: '1px dashed #333', borderRadius: '10px', color: '#555' }}>
-                                Ингредиенты не добавлены
+                            <div style={{ color: TEXT_MUTED, fontSize: '0.9rem', marginBottom: '1rem' }}>
+                                Ингредиенты пока не добавлены
                             </div>
                         )}
                         {recipe.ingredients.map((ing) => (
-                            <div key={ing.id} style={{ display: 'grid', gridTemplateColumns: '140px minmax(200px, 1fr) 100px 80px 48px', gap: '1rem', alignItems: 'center', background: '#000', padding: '1rem', borderRadius: '10px', border: '1px solid #222' }}>
+                            <div key={ing.id} style={{ ...s_row, gridTemplateColumns: '130px minmax(180px, 1fr) 90px 70px 40px' }}>
                                 <select
                                     value={ing.type}
                                     onChange={(e) => updateIngredient(ing.id, 'type', e.target.value)}
-                                    style={{ background: '#111', border: '1px solid #333', color: '#fff', padding: '0.6rem', borderRadius: '6px', outline: 'none' }}
+                                    style={s_input}
                                 >
                                     {ingredientTypes.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
@@ -328,10 +373,10 @@ const RecipeConstructor = () => {
                                     <select
                                         value={ing.name}
                                         onChange={(e) => updateIngredient(ing.id, 'name', e.target.value)}
-                                        style={{ background: '#111', border: '1px solid #333', color: '#fff', padding: '0.6rem', borderRadius: '6px', outline: 'none' }}
+                                        style={s_input}
                                     >
                                         <option value="">Выберите...</option>
-                                        {ing.type === 'Солод' && dictionary.malt.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                                        {dictionary.malt.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                                         {ing.type === 'Хмель' && dictionary.hop.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
                                         {ing.type === 'Дрожжи' && dictionary.yeast.map(y => <option key={y.id} value={y.name}>{y.name}</option>)}
                                     </select>
@@ -341,7 +386,7 @@ const RecipeConstructor = () => {
                                         value={ing.name}
                                         onChange={(e) => updateIngredient(ing.id, 'name', e.target.value)}
                                         placeholder={ing.type === 'Вода' ? 'Покупная/родниковая' : 'Название'}
-                                        style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.6rem' }}
+                                        style={s_input}
                                     />
                                 )}
 
@@ -350,51 +395,46 @@ const RecipeConstructor = () => {
                                     value={ing.amount}
                                     onChange={(e) => updateIngredient(ing.id, 'amount', parseFloat(e.target.value) || '')}
                                     placeholder="Кол-во"
-                                    style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.6rem', width: '100%' }}
+                                    style={s_input}
                                 />
                                 <input
                                     type="text"
                                     value={ing.unit}
                                     onChange={(e) => updateIngredient(ing.id, 'unit', e.target.value)}
-                                    style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.6rem', width: '100%', textAlign: 'center' }}
+                                    style={{ ...s_input, textAlign: 'center', padding: '0.8rem 0' }}
                                 />
                                 <button
                                     onClick={() => removeIngredient(ing.id)}
-                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.6rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
                                 >
                                     <Trash2 size={18} />
                                 </button>
                             </div>
                         ))}
+                        <button onClick={addIngredient} style={s_addBtn}>
+                            <Plus size={16} /> Добавить ингредиент
+                        </button>
                     </div>
                 </section>
 
                 {/* ─── Hops (Boil) ───────────────── */}
                 <section>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: BRAND_ORANGE, textTransform: 'uppercase', letterSpacing: '1px', fontSize: '1rem' }}>
-                            <Clock size={20} /> Внесение хмеля на варке
-                        </h3>
-                        <button
-                            onClick={addHop}
-                            style={{ background: 'rgba(255, 152, 0, 0.1)', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '600' }}
-                        >
-                            <Plus size={18} /> Внести хмель
-                        </button>
-                    </div>
+                    <h3 style={s_header}>
+                        <Clock size={18} /> Внесение хмеля на варке
+                    </h3>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div>
                         {recipe.hop_additions.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '2rem', border: '1px dashed #333', borderRadius: '10px', color: '#555' }}>
+                            <div style={{ color: TEXT_MUTED, fontSize: '0.9rem', marginBottom: '1rem' }}>
                                 График внесения хмеля пуст
                             </div>
                         )}
                         {recipe.hop_additions.map((hop) => (
-                            <div key={hop.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 120px 150px 48px', gap: '1rem', alignItems: 'center', background: '#000', padding: '1rem', borderRadius: '10px', border: '1px solid #222' }}>
+                            <div key={hop.id} style={{ ...s_row, gridTemplateColumns: 'minmax(200px, 1fr) 110px 130px 40px' }}>
                                 <select
                                     value={hop.name}
                                     onChange={(e) => updateHop(hop.id, 'name', e.target.value)}
-                                    style={{ background: '#111', border: '1px solid #333', color: '#fff', padding: '0.6rem', borderRadius: '6px', outline: 'none' }}
+                                    style={s_input}
                                 >
                                     <option value="">Выберите сорт...</option>
                                     {dictionary.hop.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
@@ -406,54 +446,59 @@ const RecipeConstructor = () => {
                                         type="number"
                                         value={hop.amount}
                                         onChange={(e) => updateHop(hop.id, 'amount', parseFloat(e.target.value) || 0)}
-                                        style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.6rem', width: '100%' }}
+                                        style={{ ...s_input, paddingRight: '2rem' }}
                                     />
-                                    <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#555', fontSize: '0.8rem' }}>г.</span>
+                                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: TEXT_MUTED, fontSize: '0.85rem' }}>г.</span>
                                 </div>
                                 <div style={{ position: 'relative' }}>
                                     <input
                                         type="number"
                                         value={hop.time}
                                         onChange={(e) => updateHop(hop.id, 'time', parseInt(e.target.value) || 0)}
-                                        style={{ background: 'transparent', border: 'none', borderBottom: '1px solid #333', color: '#fff', padding: '0.6rem', width: '100%' }}
+                                        style={{ ...s_input, paddingRight: '2.5rem' }}
                                     />
-                                    <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#555', fontSize: '0.7rem', textAlign: 'right', lineHeight: '1.1' }}>мин до конца</span>
+                                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: TEXT_MUTED, fontSize: '0.75rem', textAlign: 'right', lineHeight: '1.1' }}>мин (конец)</span>
                                 </div>
                                 <button
                                     onClick={() => removeHop(hop.id)}
-                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.6rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
+                                    style={{ background: 'none', border: 'none', color: DANGER_RED, padding: '0.5rem', cursor: 'pointer', display: 'flex', justifyContent: 'center' }}
                                 >
                                     <Trash2 size={18} />
                                 </button>
                             </div>
                         ))}
+                        <button onClick={addHop} style={s_addBtn}>
+                            <Plus size={16} /> Внести хмель
+                        </button>
                     </div>
                 </section>
             </div>
 
             {/* ─── Footer Action Bar ──────────────────── */}
-            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '3rem', padding: '1rem 0', borderTop: '1px solid #222' }}>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '4rem', paddingTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                 <button
                     onClick={() => navigate('/brewing')}
-                    style={{ flex: 1, padding: '1.2rem', background: 'transparent', border: `1px solid ${DANGER_RED}`, color: DANGER_RED, borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                    style={{ padding: '0.9rem 1.5rem', background: 'rgba(244, 67, 54, 0.1)', color: DANGER_RED, border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '1rem' }}
                 >
                     Отмена
                 </button>
+                <div style={{ flex: 1 }} />
                 <button
                     onClick={handleSave}
                     disabled={saving || !recipe.name.trim()}
-                    style={{ flex: 1, padding: '1.2rem', background: '#222', border: `1px solid ${BRAND_ORANGE}`, color: BRAND_ORANGE, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem', cursor: saving ? 'wait' : 'pointer', fontWeight: 'bold', opacity: saving ? 0.5 : 1 }}
+                    style={{ padding: '0.9rem 2rem', background: 'rgba(255, 152, 0, 0.15)', color: BRAND_ORANGE, border: 'none', borderRadius: '8px', cursor: saving ? 'wait' : 'pointer', fontWeight: '600', fontSize: '1rem', opacity: saving ? 0.5 : 1 }}
                 >
-                    <Save size={22} /> {saving ? '...' : 'Сохранить'}
+                    {saving ? '...' : 'Сохранить'}
                 </button>
                 <button
                     onClick={handleStartBrew}
                     disabled={saving || !recipe.name.trim()}
-                    style={{ flex: 2, padding: '1.2rem', background: `linear-gradient(90deg, ${BRAND_ORANGE}, #ff5722)`, border: 'none', color: '#000', fontWeight: '900', fontSize: '1.1rem', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.7rem', cursor: saving ? 'wait' : 'pointer', transition: 'transform 0.2s', boxShadow: `0 4px 15px rgba(255,152,0,0.3)` }}
+                    style={{ padding: '0.9rem 2.5rem', background: BRAND_ORANGE, color: '#000', border: 'none', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: saving ? 'wait' : 'pointer', fontWeight: '700', fontSize: '1rem', opacity: saving ? 0.7 : 1 }}
                 >
-                    <Play size={24} fill="black" /> {saving ? 'ЗАГРУЗКА...' : 'НАЧАТЬ ВАРКУ'}
+                    <Play size={18} fill="#000" /> {saving ? 'ЗАГРУЗКА...' : 'НАЧАТЬ ВАРКУ'}
                 </button>
             </div>
+
         </div>
     );
 };
