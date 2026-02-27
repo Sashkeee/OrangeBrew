@@ -253,21 +253,26 @@ class ProcessManager extends EventEmitter {
             return;
         }
 
-        // Extract boiler temp.
-        // If a specific sensorAddress is set, find the temp from raw sensors array.
-        // Otherwise, use the mapped boiler value.
+        // Extract boiler temp using ONLY the selected sensor if sensorAddress is set.
+        // NEVER fallback to data.boiler when sensorAddress is set — boiler mapping
+        // can randomly point to a different sensor (e.g. the room-temp one at 20°C).
         let currentTemp;
+        const hasSensorsArray = data.sensors && Array.isArray(data.sensors);
 
-        if (this.state.sensorAddress && data.sensors && Array.isArray(data.sensors)) {
-            // Find the specific sensor by address
-            const targetSensor = data.sensors.find(s => s.address === this.state.sensorAddress);
-            if (targetSensor) {
-                currentTemp = targetSensor.temp ?? targetSensor.value;
+        if (this.state.sensorAddress) {
+            // Specific sensor required — find it by address
+            if (hasSensorsArray) {
+                const targetSensor = data.sensors.find(s => s.address === this.state.sensorAddress);
+                if (targetSensor) {
+                    currentTemp = targetSensor.temp ?? targetSensor.value;
+                }
             }
-        }
-
-        // Fallback to mapped boiler value
-        if (currentTemp === undefined) {
+            // If sensor not found in this packet — skip entirely (mock or wrong device)
+            if (currentTemp === undefined) {
+                return;
+            }
+        } else {
+            // No specific sensor — use mapped boiler value (legacy / auto mode)
             currentTemp = data.boiler;
             if (typeof currentTemp === 'object' && currentTemp !== null) currentTemp = currentTemp.value;
         }
