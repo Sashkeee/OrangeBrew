@@ -111,10 +111,26 @@ export const healthApi = {
     check: () => request('/health'),
 };
 
+// ─── Auth ─────────────────────────────────────────────────
+
+export const authApi = {
+    login: (username, password) => request('/auth/login', {
+        method: 'POST',
+        body: { username, password },
+    }),
+    register: (data) => request('/auth/register', {
+        method: 'POST',
+        body: data,
+    }),
+    me: () => request('/auth/me'),
+};
+
 // ─── Devices ──────────────────────────────────────────────
 
 export const deviceApi = {
     getAll: () => request('/devices'),
     update: (id, data) => request(`/devices/${id}`, { method: 'PATCH', body: data }),
     delete: (id) => request(`/devices/${id}`, { method: 'DELETE' }),
+    pairInit: () => request('/devices/pair/init', { method: 'POST' }),
+    pairStatus: (code) => request(`/devices/pair/status?code=${encodeURIComponent(code)}`),
 };

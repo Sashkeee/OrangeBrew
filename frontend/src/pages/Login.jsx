@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Thermometer, Lock, ShieldAlert } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Lock, ShieldAlert } from 'lucide-react';
 import { API_BASE } from '../utils/constants';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
+    const navigate = useNavigate();
+    const { login } = useAuth();
+
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState(null);
@@ -27,9 +31,8 @@ export default function Login() {
                 throw new Error(data.error || 'Ошибка авторизации');
             }
 
-            // Save token
-            localStorage.setItem('orangebrew_token', data.token);
-            window.location.href = '/'; // Reload to start authenticated session
+            login(data.token, data.user);
+            navigate('/');
 
         } catch (err) {
             setError(err.message);
@@ -154,6 +157,13 @@ export default function Login() {
                         <Lock size={18} /> {loading ? 'ВХОД...' : 'ВОЙТИ'}
                     </button>
                 </form>
+
+                <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                    Нет аккаунта?{' '}
+                    <Link to="/register" style={{ color: '#ffa000', textDecoration: 'none', fontWeight: 'bold' }}>
+                        Зарегистрироваться
+                    </Link>
+                </p>
             </div>
         </div>
     );

@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -44,9 +46,34 @@ const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'mock';
 
 // ─── Express ──────────────────────────────────────────────
 
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
 const app = express();
-app.use(cors());
+app.use(helmet({
+    // CSP отключён — frontend и backend на разных портах в dev; Caddy управляет заголовками в prod
+    contentSecurityPolicy: false,
+}));
+app.use(cors({
+    origin: FRONTEND_URL,
+    credentials: true,
+}));
 app.use(express.json());
+
+// Rate limiting
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 минут
+    max: 20,                   // 20 попыток за окно
+    message: { error: 'Слишком много попыток. Повторите через 15 минут.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,  // 1 минута
+    max: 200,             // 200 запросов/мин на общий API
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Request logging for debugging routing behind proxy
 app.use((req, res, next) => {
@@ -67,8 +94,8 @@ app.get(['/api/health', '/health'], (req, res) => {
     });
 });
 
-// Auth route (public)
-app.use(['/api/auth', '/auth'], authRouter);
+// Auth route (public) — с rate limiting для защиты от брутфорса
+app.use(['/api/auth', '/auth'], authLimiter, authRouter);
 
 // Protected API routes
 app.use(['/api/recipes', '/recipes'], authenticate, recipesRouter);
