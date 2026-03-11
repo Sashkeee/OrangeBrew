@@ -1,20 +1,28 @@
 import { WebSocketServer } from 'ws';
+import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import url from 'url';
 import { getSensorReadings } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
-import { deviceQueries } from '../db/database.js';
+import { deviceQueries, pairingQueries } from '../db/database.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
-const HARDWARE_API_KEY = process.env.HARDWARE_API_KEY || 'default_hardware_key_123';
 
-/** @type {Set<import('ws').WebSocket>} */
-const uiClients = new Set();
+/**
+ * UI clients: Map<ws, { userId: number }>
+ * Replaces old Set — we now track which user each UI connection belongs to.
+ */
+const uiClients = new Map();
 
-/** @type {Map<string, import('ws').WebSocket>} */
+/**
+ * Hardware clients: Map<deviceId, { ws, userId: number }>
+ * userId = owner of the device (set at auth/pairing time).
+ */
 const hardwareClients = new Map();
 
 let wss = null;
+
+// ─── Init ──────────────────────────────────────────────────
 
 /**
  * Initialize WebSocket server on the given HTTP server.
@@ -25,59 +33,104 @@ export function initWebSocket(server) {
 
     wss.on('connection', (ws, req) => {
         const query = url.parse(req.url, true).query;
-        let isAuth = false;
 
-        // Check if token query is present for web UI
+        // ── UI client: authenticates via JWT in query string ──
         if (query.token) {
             try {
-                jwt.verify(query.token, JWT_SECRET);
-                isAuth = true;
-            } catch (err) {
-                // Invalid token
+                const decoded = jwt.verify(query.token, JWT_SECRET);
+                setupUiClient(ws, decoded.id);
+                return;
+            } catch {
+                ws.close(4001, 'Invalid token');
+                return;
             }
         }
 
-        // Wait for first message from Hardware to provide hardware key, or if token was valid from UI then we are good
-        if (isAuth) {
-            setupAuthenticatedClient(ws);
-        } else {
-            // Hardware doesn't support query token easily right now, wait for a message with auth_key.
-            // Allow 5 seconds to auth
-            const authTimeout = setTimeout(() => {
-                ws.close(4001, 'Unauthorized');
-            }, 5000);
+        // ── Hardware client: authenticates via first message ──
+        const authTimeout = setTimeout(() => {
+            ws.close(4001, 'Auth timeout');
+        }, 10_000);
 
-            ws.once('message', (raw) => {
-                try {
-                    const msg = JSON.parse(raw.toString());
-                    // Support old auth_key or new auth object
-                    const key = msg.auth_key || (msg.type === 'auth' ? msg.apiKey : null);
+        ws.once('message', async (raw) => {
+            clearTimeout(authTimeout);
+            try {
+                const msg = JSON.parse(raw.toString());
 
-                    if (key === HARDWARE_API_KEY) {
-                        clearTimeout(authTimeout);
-                        const deviceId = msg.deviceId || `esp32_${Math.random().toString(36).substr(2, 9)}`;
-                        setupHardwareClient(ws, deviceId, msg.name, msg.role);
-
-                        // Forward if it contains other data too
-                        if (msg.type === 'sensors_raw') {
-                            handleHardwareMessage(ws, deviceId, msg);
-                        }
-                    } else {
-                        ws.close(4001, 'Unauthorized hardware key');
-                    }
-                } catch (e) {
-                    ws.close(4000, 'Invalid auth payload');
+                // ── Pairing flow: ESP32 has no api_key yet ──
+                if (msg.type === 'pair') {
+                    await handlePairingMessage(ws, msg);
+                    return;
                 }
-            });
-        }
+
+                // ── Auth flow: ESP32 has api_key from previous pairing ──
+                if (msg.type === 'auth') {
+                    const device = deviceQueries.getByApiKey(msg.api_key);
+                    if (!device) {
+                        ws.close(4001, 'Unknown api_key');
+                        return;
+                    }
+                    setupHardwareClient(ws, device.id, device.user_id, device.name, device.role);
+
+                    // If first message also contains sensor data, handle it
+                    if (msg.sensors) {
+                        handleHardwareMessage(device.id, msg);
+                    }
+                    return;
+                }
+
+                ws.close(4000, 'Expected type:auth or type:pair');
+            } catch {
+                ws.close(4000, 'Invalid JSON');
+            }
+        });
     });
 
-    console.log('[WS] WebSocket server initialized on /ws (Secured)');
+    console.log('[WS] WebSocket server initialized on /ws');
 }
 
-function setupAuthenticatedClient(ws) {
-    uiClients.add(ws);
-    console.log(`[WS] UI Client connected. Total UI: ${uiClients.size}`);
+// ─── Pairing ───────────────────────────────────────────────
+
+/**
+ * Handle {type:'pair', pairing_code, deviceId, name} from ESP32.
+ * If code is valid, creates device + api_key and sends {type:'paired', api_key} back.
+ */
+async function handlePairingMessage(ws, msg) {
+    const { pairing_code, deviceId, name = 'OrangeBrew ESP32' } = msg;
+
+    if (!pairing_code || !deviceId) {
+        ws.send(JSON.stringify({ type: 'error', message: 'pairing_code and deviceId are required' }));
+        ws.close(4000, 'Bad pairing payload');
+        return;
+    }
+
+    const pairing = pairingQueries.getByCode(pairing_code);
+    if (!pairing) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid or expired pairing code' }));
+        ws.close(4001, 'Invalid pairing code');
+        return;
+    }
+
+    // Generate per-device api_key
+    const api_key = randomUUID();
+
+    // Create/upsert device record owned by the user who initiated pairing
+    deviceQueries.upsert(deviceId, name, pairing.user_id, api_key);
+
+    // Mark pairing as used
+    pairingQueries.markUsed(pairing.id, deviceId);
+
+    console.log(`[WS] Device paired: ${deviceId} → user_id=${pairing.user_id}`);
+
+    // Tell ESP32 its new api_key (it should store in NVS and reconnect with type:'auth')
+    ws.send(JSON.stringify({ type: 'paired', api_key }));
+    ws.close(1000, 'Paired — reconnect with api_key');
+}
+
+// ─── Client setup ──────────────────────────────────────────
+
+function setupUiClient(ws, userId) {
+    uiClients.set(ws, { userId });
+    console.log(`[WS] UI client connected (userId=${userId}). Total UI: ${uiClients.size}`);
 
     ws.send(JSON.stringify({
         type: 'init',
@@ -88,38 +141,34 @@ function setupAuthenticatedClient(ws) {
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw.toString());
-            handleUiMessage(ws, msg);
-        } catch (e) {
+            handleUiMessage(ws, userId, msg);
+        } catch {
             ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
         }
     });
 
     ws.on('close', () => {
         uiClients.delete(ws);
-        console.log(`[WS] UI Client disconnected. Total UI: ${uiClients.size}`);
+        console.log(`[WS] UI client disconnected (userId=${userId}). Total UI: ${uiClients.size}`);
     });
 
-    ws.on('error', (err) => {
+    ws.on('error', () => {
         uiClients.delete(ws);
     });
 }
 
-function setupHardwareClient(ws, deviceId, name = 'OrangeBrew ESP32', role = 'unassigned') {
-    // Upsert to DB
-    deviceQueries.upsert(deviceId, name, role);
-
-    // Store in Map
-    hardwareClients.set(deviceId, ws);
+function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', role = 'unassigned') {
+    hardwareClients.set(deviceId, { ws, userId });
     ws.deviceId = deviceId;
 
-    console.log(`[WS] Hardware connected: ${deviceId} (${name}). Total Hardware: ${hardwareClients.size}`);
+    console.log(`[WS] Hardware connected: ${deviceId} (user=${userId}, name=${name}). Total HW: ${hardwareClients.size}`);
 
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw.toString());
-            handleHardwareMessage(ws, deviceId, msg);
-        } catch (e) {
-            console.error(`[WS] Invalid hardware JSON from ${deviceId}`);
+            handleHardwareMessage(deviceId, msg);
+        } catch {
+            console.error(`[WS] Invalid JSON from hardware ${deviceId}`);
         }
     });
 
@@ -129,23 +178,24 @@ function setupHardwareClient(ws, deviceId, name = 'OrangeBrew ESP32', role = 'un
         console.log(`[WS] Hardware disconnected: ${deviceId}`);
     });
 
-    ws.on('error', (err) => {
+    ws.on('error', () => {
         hardwareClients.delete(deviceId);
         deviceQueries.updateStatus(deviceId, 'offline');
     });
 }
 
-function handleUiMessage(ws, msg) {
-    // Web UI sends commands
+// ─── Message handlers ──────────────────────────────────────
+
+function handleUiMessage(ws, userId, msg) {
     if (onCommandHandler) {
-        onCommandHandler(msg);
+        onCommandHandler(msg, userId);
     }
 }
 
-function handleHardwareMessage(ws, deviceId, msg) {
-    // Hardware sends sensor data
+function handleHardwareMessage(deviceId, msg) {
     if (onHardwareDataHandler) {
-        onHardwareDataHandler(deviceId, msg);
+        const meta = hardwareClients.get(deviceId);
+        onHardwareDataHandler(deviceId, msg, meta?.userId);
     }
 }
 
@@ -160,88 +210,103 @@ export function onHardwareData(handler) {
     onHardwareDataHandler = handler;
 }
 
+// ─── Broadcast helpers ─────────────────────────────────────
+
 /**
- * Broadcast sensor data to all connected clients.
- * @param {object} sensorData
+ * Send a message to all UI connections of a specific user.
+ * @param {number} userId
+ * @param {string} type
+ * @param {object} data
  */
-export function broadcastSensors(sensorData) {
-    const msg = JSON.stringify({
-        type: 'sensors',
-        data: sensorData,
-        timestamp: Date.now(),
-    });
-    for (const ws of uiClients) {
+export function broadcastToUser(userId, type, data) {
+    const msg = JSON.stringify({ type, data, timestamp: Date.now() });
+    for (const [ws, meta] of uiClients) {
+        if (meta.userId === userId && ws.readyState === 1) {
+            ws.send(msg);
+        }
+    }
+}
+
+/**
+ * Broadcast to ALL connected UI clients (used for global sensor data in single-user or system events).
+ */
+function broadcastAll(payload) {
+    const msg = JSON.stringify({ ...payload, timestamp: Date.now() });
+    for (const ws of uiClients.keys()) {
         if (ws.readyState === 1) ws.send(msg);
     }
+}
+
+export function broadcastSensors(sensorData) {
+    broadcastAll({ type: 'sensors', data: sensorData });
 }
 
 export function broadcastControl(controlState) {
-    const msg = JSON.stringify({
-        type: 'control',
-        data: controlState,
-        timestamp: Date.now(),
-    });
-    for (const ws of uiClients) {
-        if (ws.readyState === 1) ws.send(msg);
-    }
+    broadcastAll({ type: 'control', data: controlState });
 }
 
 export function broadcastPhaseChange(phase, sessionType) {
-    const msg = JSON.stringify({
-        type: 'phaseChange',
-        phase,
-        sessionType,
-        timestamp: Date.now(),
-    });
-    for (const ws of uiClients) {
-        if (ws.readyState === 1) ws.send(msg);
-    }
+    broadcastAll({ type: 'phaseChange', phase, sessionType });
 }
 
 export function broadcastAlert(level, message) {
-    const msg = JSON.stringify({
-        type: 'alert',
-        level,
-        message,
-        timestamp: Date.now(),
-    });
-    for (const ws of uiClients) {
-        if (ws.readyState === 1) ws.send(msg);
+    broadcastAll({ type: 'alert', level, message });
+}
+
+/**
+ * Broadcast process state.
+ * When userId is provided → only sent to that user's sessions.
+ * Without userId → sent to all (legacy/global fallback).
+ * @param {object} state
+ * @param {number|null} userId
+ */
+export function broadcastProcessState(state, userId = null) {
+    if (userId !== null) {
+        broadcastToUser(userId, 'process', state);
+    } else {
+        broadcastAll({ type: 'process', data: state });
     }
 }
 
-export function broadcastProcessState(state) {
-    global._latestProcessState = state;
-    const msg = JSON.stringify({
-        type: 'process',
-        data: state,
-        timestamp: Date.now(),
-    });
-    for (const ws of uiClients) {
-        if (ws.readyState === 1) ws.send(msg);
-    }
-}
+// ─── Hardware commands ─────────────────────────────────────
 
 export function sendToHardware(deviceId, cmd) {
-    const ws = hardwareClients.get(deviceId);
-    if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify(cmd));
+    const entry = hardwareClients.get(deviceId);
+    if (entry?.ws.readyState === 1) {
+        entry.ws.send(JSON.stringify(cmd));
         return true;
     }
     return false;
 }
 
-export function broadcastToAllHardware(cmd) {
-    let sent = false;
+/**
+ * Send command to all hardware devices owned by a specific user.
+ */
+export function sendToUserHardware(userId, cmd) {
     const msg = JSON.stringify(cmd);
-    for (const ws of hardwareClients.values()) {
-        if (ws.readyState === 1) {
-            ws.send(msg);
+    let sent = false;
+    for (const [deviceId, entry] of hardwareClients) {
+        if (entry.userId === userId && entry.ws.readyState === 1) {
+            entry.ws.send(msg);
             sent = true;
         }
     }
     return sent;
 }
+
+export function broadcastToAllHardware(cmd) {
+    let sent = false;
+    const msg = JSON.stringify(cmd);
+    for (const entry of hardwareClients.values()) {
+        if (entry.ws.readyState === 1) {
+            entry.ws.send(msg);
+            sent = true;
+        }
+    }
+    return sent;
+}
+
+// ─── Stats ─────────────────────────────────────────────────
 
 export function getClientCount() {
     return uiClients.size;

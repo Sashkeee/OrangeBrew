@@ -12,20 +12,22 @@ const router = Router();
 export default function createSettingsRouter(deps = {}) {
     const { pidManager } = deps;
 
-    // GET /api/settings — all settings
+    // GET /api/settings — settings for current user (merged with global defaults)
     router.get('/', (req, res) => {
         try {
-            const settings = settingsQueries.getAll();
-            res.json(settings);
+            // Global defaults first, then user overrides on top
+            const global  = settingsQueries.getAll(null);
+            const userSet = settingsQueries.getAll(req.user.id);
+            res.json({ ...global, ...userSet });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
     });
 
-    // PUT /api/settings — bulk update settings
+    // PUT /api/settings — bulk update settings for current user
     router.put('/', (req, res) => {
         try {
-            settingsQueries.setBulk(req.body);
+            settingsQueries.setBulk(req.body, req.user.id);
 
             // If telegram settings were updated, reload the service
             if (req.body.telegram) {

@@ -82,7 +82,7 @@ app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
 let processManager = null; // Defined here so we can mount the router early
 let processRouter = null;
 
-app.use(['/api/process', '/process'], (req, res, next) => {
+app.use(['/api/process', '/process'], authenticate, (req, res, next) => {
     if (!processManager) return res.status(503).json({ error: 'Process Manager not ready' });
     // Create router once, then reuse
     if (!processRouter) processRouter = createProcessRouter(processManager);
@@ -98,33 +98,33 @@ app.use(['/api/settings', '/settings'], authenticate, (req, res, next) => {
     settingsRouterInstance(req, res, next);
 });
 
-// Debug routes for Mock
-app.post('/api/debug/mock/temps', (req, res) => {
+// Debug routes — protected in all environments (техдолг #2 из CLAUDE.md)
+app.post('/api/debug/mock/temps', authenticate, (req, res) => {
     if (CONNECTION_TYPE !== 'mock' || !serial) return res.status(400).json({ error: 'Not in mock mode' });
     serial.setTemperatures(req.body);
     res.json({ ok: true });
 });
 
-app.post('/api/debug/mock/simulation', (req, res) => {
+app.post('/api/debug/mock/simulation', authenticate, (req, res) => {
     if (CONNECTION_TYPE !== 'mock' || !serial) return res.status(400).json({ error: 'Not in mock mode' });
     serial.setSimulationEnabled(req.body.enabled);
     res.json({ ok: true, enabled: req.body.enabled });
 });
 
-// PID Debug Routes (Temporary until standard control route updated)
-app.post('/api/debug/pid/enable', (req, res) => {
+// PID Debug Routes
+app.post('/api/debug/pid/enable', authenticate, (req, res) => {
     if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
     pidManager.setEnabled(req.body.enabled);
     res.json({ ok: true, enabled: req.body.enabled });
 });
 
-app.post('/api/debug/pid/target', (req, res) => {
+app.post('/api/debug/pid/target', authenticate, (req, res) => {
     if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
     pidManager.setTarget(req.body.target);
     res.json({ ok: true, target: req.body.target });
 });
 
-app.post('/api/debug/pid/tunings', (req, res) => {
+app.post('/api/debug/pid/tunings', authenticate, (req, res) => {
     if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
     const { kp, ki, kd } = req.body;
     pidManager.setTunings(kp, ki, kd);
@@ -200,13 +200,19 @@ async function main() {
 
     /**
      * Maps raw sensor addresses to roles (boiler, column, etc.) based on settings.
+     * Uses user-scoped settings first, falls back to global.
+     * @param {string} deviceId
+     * @param {object} rawData
+     * @param {number|null} userId
      */
-    function mapSensors(deviceId, rawData) {
+    function mapSensors(deviceId, rawData, userId = null) {
         if (!rawData || !rawData.sensors) return rawData;
 
         let sensorSettings;
         try {
-            sensorSettings = settingsQueries.get('sensors');
+            // Try user settings first, then global fallback
+            sensorSettings = (userId !== null ? settingsQueries.get('sensors', userId) : null)
+                ?? settingsQueries.get('sensors', null);
             if (typeof sensorSettings === 'string') {
                 sensorSettings = JSON.parse(sensorSettings);
             }
@@ -272,26 +278,27 @@ async function main() {
 
     // Pass WebSocket sensor data (remote devices)
     let lastHwDataLog = 0;
-    onHardwareData((deviceId, data) => {
+    onHardwareData((deviceId, data, userId) => {
         // If data is sensors_raw, we route it
         if (data.type === 'sensors_raw') {
-            const mappedData = mapSensors(deviceId, data);
+            // Use user-scoped sensor settings if userId is known; fall back to global
+            const mappedData = mapSensors(deviceId, data, userId);
 
             // Periodic log
             const now = Date.now();
             if (now - lastHwDataLog > 30000) {
-                console.log(`[Server] WiFi data from '${deviceId}': boiler=${mappedData.boiler}°C, sensors=${data.sensors?.length || 0}`);
+                console.log(`[Server] WiFi data from '${deviceId}' (user=${userId}): boiler=${mappedData.boiler}°C, sensors=${data.sensors?.length || 0}`);
                 lastHwDataLog = now;
             }
 
             // Update global latest readings for REST API
             updateSensorReadings(mappedData);
 
-            // Broadcast sensors (both raw for debugging and mapped for UI)
+            // Broadcast sensors to the owning user only
             const enrichedData = { ...mappedData, sensors: data.sensors };
             broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
 
-            // Pass to process and pid managers (with raw sensors array for address lookup)
+            // Pass to process and pid managers
             processManager.handleSensorData(deviceId, enrichedData);
             if (pidManager) pidManager.update(enrichedData);
         }

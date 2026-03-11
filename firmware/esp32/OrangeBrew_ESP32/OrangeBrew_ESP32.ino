@@ -13,8 +13,8 @@
 #endif
 
 // --- НАСТРОЙКИ (ЗАМЕНИТЕ НА ВАШИ) ---
-const char* ssid = "YOUR_WIFI_SSID";     // Имя Wi-Fi
-const char* password = "REMOVED_WIFI_PASS"; // Пароль Wi-Fi
+const char* ssid = "MTS_GPON_14FC";     // Имя Wi-Fi
+const char* password = "tXQ7QRXQ"; // Пароль Wi-Fi
 
 // Адрес вашего сервера (без http://)
 const char* ws_host = "orangebrew.ru"; 
