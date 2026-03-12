@@ -135,7 +135,7 @@ export const userQueries = {
         // New users get a 14-day trial subscription
         const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
         const { lastId } = runSql(
-            `INSERT INTO users (username, password, role, email, subscription_tier, subscription_status, subscription_expires_at)
+            `INSERT INTO users (username, password_hash, role, email, subscription_tier, subscription_status, subscription_expires_at)
              VALUES (?, ?, ?, ?, 'trial', 'active', ?)`,
             [username, password_hash, role, email, expiresAt]
         );
@@ -143,7 +143,7 @@ export const userQueries = {
     },
 
     updatePassword: (id, password_hash) => {
-        runSql('UPDATE users SET password = ? WHERE id = ?', [password_hash, id]);
+        runSql('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, id]);
     },
 
     updateSubscription: (id, { tier, status, expiresAt }) => {

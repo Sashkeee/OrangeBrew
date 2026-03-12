@@ -2,16 +2,22 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
     initDatabase, closeDatabase,
     recipeQueries, sessionQueries, temperatureQueries,
-    fractionQueries, fermentationQueries, settingsQueries,
+    fractionQueries, fermentationQueries, settingsQueries, userQueries,
 } from '../db/database.js';
 import { join } from 'path';
 import { existsSync, unlinkSync, mkdirSync } from 'fs';
 
 const TEST_DB = join(import.meta.dirname, '..', 'data', 'test_unit.db');
 
+// Создаётся один раз в beforeAll и доступен всем describe-блокам
+let TEST_USER_ID;
+
 beforeAll(async () => {
     if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
     await initDatabase(TEST_DB);
+    // Создаём тестового пользователя — нужен для FK user_id в recipes/sessions
+    const user = userQueries.create({ username: 'testuser', password_hash: 'x', role: 'admin' });
+    TEST_USER_ID = user.id;
 });
 
 afterAll(() => {
@@ -40,7 +46,7 @@ describe('recipeQueries', () => {
             mash_steps: [{ name: 'Mash', temp: 65, duration: 60 }],
             hop_additions: [{ name: 'Citra', amount: 30, time: 60 }],
             notes: 'Test recipe',
-        });
+        }, TEST_USER_ID);
 
         expect(recipe).toBeDefined();
         expect(recipe.id).toBeDefined();
@@ -49,31 +55,31 @@ describe('recipeQueries', () => {
     });
 
     it('getAll() should return array with recipes', () => {
-        const all = recipeQueries.getAll();
+        const all = recipeQueries.getAll(TEST_USER_ID);
         expect(Array.isArray(all)).toBe(true);
         expect(all.length).toBeGreaterThanOrEqual(1);
     });
 
     it('getById() should return the correct recipe', () => {
-        const recipe = recipeQueries.getById(recipeId);
+        const recipe = recipeQueries.getById(recipeId, TEST_USER_ID);
         expect(recipe).toBeDefined();
         expect(recipe.name).toBe('Test IPA');
         expect(recipe.style).toBe('IPA');
     });
 
     it('getById() should return null for non-existent id', () => {
-        const recipe = recipeQueries.getById(99999);
+        const recipe = recipeQueries.getById(99999, TEST_USER_ID);
         expect(recipe).toBeNull();
     });
 
     it('update() should modify recipe fields', () => {
-        const updated = recipeQueries.update(recipeId, { name: 'Updated IPA', ibu: 70 });
+        const updated = recipeQueries.update(recipeId, { name: 'Updated IPA', ibu: 70 }, TEST_USER_ID);
         expect(updated.name).toBe('Updated IPA');
     });
 
     it('delete() should remove the recipe', () => {
-        recipeQueries.delete(recipeId);
-        const recipe = recipeQueries.getById(recipeId);
+        recipeQueries.delete(recipeId, TEST_USER_ID);
+        const recipe = recipeQueries.getById(recipeId, TEST_USER_ID);
         expect(recipe).toBeNull();
     });
 });
@@ -86,7 +92,7 @@ describe('sessionQueries', () => {
     let sessionId;
 
     it('create() should insert a session', () => {
-        const session = sessionQueries.create({ type: 'mash', notes: 'Test session' });
+        const session = sessionQueries.create({ type: 'mash', notes: 'Test session' }, TEST_USER_ID);
         expect(session).toBeDefined();
         expect(session.id).toBeDefined();
         expect(session.type).toBe('mash');
@@ -95,35 +101,35 @@ describe('sessionQueries', () => {
     });
 
     it('getAll() should return sessions', () => {
-        sessionQueries.create({ type: 'boil' });
-        const all = sessionQueries.getAll();
+        sessionQueries.create({ type: 'boil' }, TEST_USER_ID);
+        const all = sessionQueries.getAll(TEST_USER_ID);
         expect(all.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('getAll(type) should filter by type', () => {
-        const mashOnly = sessionQueries.getAll('mash');
+    it('getAll(userId, type) should filter by type', () => {
+        const mashOnly = sessionQueries.getAll(TEST_USER_ID, 'mash');
         expect(mashOnly.every(s => s.type === 'mash')).toBe(true);
     });
 
     it('getById() should return a session', () => {
-        const session = sessionQueries.getById(sessionId);
+        const session = sessionQueries.getById(sessionId, TEST_USER_ID);
         expect(session.type).toBe('mash');
     });
 
     it('update() should modify session', () => {
-        const updated = sessionQueries.update(sessionId, { notes: 'Updated notes' });
+        const updated = sessionQueries.update(sessionId, { notes: 'Updated notes' }, TEST_USER_ID);
         expect(updated.notes).toBe('Updated notes');
     });
 
     it('complete() should mark session as completed', () => {
-        const completed = sessionQueries.complete(sessionId);
+        const completed = sessionQueries.complete(sessionId, TEST_USER_ID);
         expect(completed.status).toBe('completed');
         expect(completed.finished_at).toBeTruthy();
     });
 
     it('delete() should remove session', () => {
-        sessionQueries.delete(sessionId);
-        const session = sessionQueries.getById(sessionId);
+        sessionQueries.delete(sessionId, TEST_USER_ID);
+        const session = sessionQueries.getById(sessionId, TEST_USER_ID);
         expect(session).toBeNull();
     });
 });
@@ -136,7 +142,7 @@ describe('temperatureQueries', () => {
     let sessionId;
 
     beforeAll(() => {
-        const session = sessionQueries.create({ type: 'mash' });
+        const session = sessionQueries.create({ type: 'mash' }, TEST_USER_ID);
         sessionId = session.id;
     });
 
@@ -180,7 +186,7 @@ describe('fractionQueries', () => {
     let sessionId;
 
     beforeAll(() => {
-        const session = sessionQueries.create({ type: 'distillation' });
+        const session = sessionQueries.create({ type: 'distillation' }, TEST_USER_ID);
         sessionId = session.id;
     });
 
@@ -217,7 +223,7 @@ describe('fermentationQueries', () => {
     let sessionId;
 
     beforeAll(() => {
-        const session = sessionQueries.create({ type: 'fermentation' });
+        const session = sessionQueries.create({ type: 'fermentation' }, TEST_USER_ID);
         sessionId = session.id;
     });
 

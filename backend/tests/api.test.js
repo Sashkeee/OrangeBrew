@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import { createServer } from 'http';
 import { initDatabase, closeDatabase, recipeQueries, sessionQueries } from '../db/database.js';
+import { addDefaultAdminIfNoneExists } from '../db/seedAuth.js';
 import { join } from 'path';
 import { existsSync, unlinkSync } from 'fs';
 
@@ -20,6 +21,12 @@ function createApp() {
     const app = express();
     app.use(express.json());
 
+    // Mock auth — все тесты работают от имени admin (id=1)
+    app.use((req, _res, next) => {
+        req.user = { id: 1, username: 'admin', role: 'admin' };
+        next();
+    });
+
     app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
     app.use('/api/recipes', recipesRouter);
     app.use('/api/sessions', sessionsRouter);
@@ -33,6 +40,7 @@ function createApp() {
 beforeAll(async () => {
     if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
     await initDatabase(TEST_DB);
+    await addDefaultAdminIfNoneExists(); // создаёт admin с id=1 (FK для recipes/sessions)
 
     const app = createApp();
     server = createServer(app);

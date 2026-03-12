@@ -13,7 +13,7 @@ export async function addDefaultAdminIfNoneExists() {
         const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
         db.prepare(`
-            INSERT INTO users (username, password, role, subscription_tier, subscription_status, subscription_expires_at)
+            INSERT INTO users (username, password_hash, role, subscription_tier, subscription_status, subscription_expires_at)
             VALUES (?, ?, 'admin', 'pro', 'active', ?)
         `).run('admin', hash, expiresAt);
 
