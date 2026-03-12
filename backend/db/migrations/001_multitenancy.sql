@@ -14,7 +14,7 @@ ALTER TABLE users ADD COLUMN consent_given_at TEXT;
 
 -- ─── devices: bind to owner, give per-device api key ──────
 ALTER TABLE devices ADD COLUMN user_id  INTEGER REFERENCES users(id) ON DELETE CASCADE;
-ALTER TABLE devices ADD COLUMN api_key  TEXT UNIQUE;
+ALTER TABLE devices ADD COLUMN api_key  TEXT;
 
 -- ─── recipes: isolate by user ─────────────────────────────
 ALTER TABLE recipes ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
@@ -62,6 +62,6 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_recipes_user        ON recipes(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user       ON brew_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_devices_user        ON devices(user_id);
-CREATE INDEX IF NOT EXISTS idx_devices_api_key     ON devices(api_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_api_key ON devices(api_key);
 CREATE INDEX IF NOT EXISTS idx_pairings_code       ON device_pairings(pairing_code);
 CREATE INDEX IF NOT EXISTS idx_pairings_user       ON device_pairings(user_id);
