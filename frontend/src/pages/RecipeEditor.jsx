@@ -108,10 +108,6 @@ const RecipeEditor = () => {
         try {
             setSaving(true);
             const updated = await recipesApi.update(id, recipe);
-            localStorage.setItem('currentRecipe', JSON.stringify({
-                ...updated,
-                steps: updated.mash_steps || [],
-            }));
             navigate('/brewing/recipes');
         } catch (e) {
             console.error('[RecipeEditor] Save failed:', e);
@@ -135,10 +131,6 @@ const RecipeEditor = () => {
                 type: 'brewing',
                 status: 'active'
             });
-            localStorage.setItem('currentRecipe', JSON.stringify({
-                ...updated,
-                steps: updated.mash_steps || [],
-            }));
             navigate(`/brewing/mash/${session.id}`);
         } catch (e) {
             alert('Ошибка сохранения: ' + e.message);

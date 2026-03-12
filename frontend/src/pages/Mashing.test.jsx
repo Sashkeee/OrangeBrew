@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Mashing from './Mashing';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
@@ -34,6 +34,29 @@ vi.mock('../hooks/useProcess', () => ({
         resume: vi.fn(),
         skip: vi.fn()
     }))
+}));
+
+// Mock API client — рецепт теперь загружается из API, не из localStorage
+vi.mock('../api/client.js', () => ({
+    sessionsApi: {
+        getById: vi.fn().mockResolvedValue({ id: 123, recipe_id: 42 }),
+        getTemperatures: vi.fn().mockResolvedValue([]),
+    },
+    recipesApi: {
+        getById: vi.fn().mockResolvedValue({
+            id: 42,
+            name: 'Test IPA',
+            mash_steps: [{ name: 'Test Step 1', temp: 65, duration: 60 }],
+            hop_additions: [],
+        }),
+    },
+    // DeviceSelector использует deviceApi
+    deviceApi: {
+        getAll: vi.fn().mockResolvedValue([]),
+    },
+    sensorsApi: {
+        getCurrent: vi.fn().mockResolvedValue({}),
+    },
 }));
 
 // Mock components to simplify tree
@@ -74,17 +97,10 @@ describe('Mashing Page', () => {
             skip: mockSkip
         });
 
-        // Mock localStorage
-        Storage.prototype.getItem = vi.fn((key) => {
-            if (key === 'currentRecipe') return JSON.stringify({
-                name: 'Test IPA',
-                mash_steps: [{ name: 'Test Step 1', temp: 65, duration: 60 }]
-            });
-            return null;
-        });
+        // localStorage больше не используется для передачи рецепта
     });
 
-    it('renders initial state correctly with safety check', () => {
+    it('renders initial state correctly with safety check', async () => {
         render(
             <MemoryRouter initialEntries={['/brewing/123']}>
                 <Routes>
@@ -93,12 +109,13 @@ describe('Mashing Page', () => {
             </MemoryRouter>
         );
 
-        expect(screen.getByText(/Затирание: Test IPA/)).toBeInTheDocument();
+        // Рецепт загружается асинхронно из API
+        await waitFor(() => expect(screen.getByText(/Затирание: Test IPA/)).toBeInTheDocument());
         const startBtn = screen.getByText(/СТАРТ ЗАТИРАНИЯ/);
         expect(startBtn).toBeDisabled();
     });
 
-    it('enables start button after safety check', () => {
+    it('enables start button after safety check', async () => {
         render(
             <MemoryRouter initialEntries={['/brewing/123']}>
                 <Routes>
@@ -106,6 +123,9 @@ describe('Mashing Page', () => {
                 </Routes>
             </MemoryRouter>
         );
+
+        // Ждём загрузки рецепта из API
+        await waitFor(() => expect(screen.getByText(/Затирание: Test IPA/)).toBeInTheDocument());
 
         const confirmBtn = screen.getByText('Confirm Safety');
         fireEvent.click(confirmBtn);
@@ -114,13 +134,13 @@ describe('Mashing Page', () => {
         expect(startBtn).not.toBeDisabled();
 
         fireEvent.click(startBtn);
-        expect(mockStart).toHaveBeenCalledWith(
+        await waitFor(() => expect(mockStart).toHaveBeenCalledWith(
             expect.objectContaining({ name: 'Test IPA' }),
             '123',
             'mash',
             'local_serial',
             null
-        );
+        ));
     });
 
     it('displays active state when running', async () => {

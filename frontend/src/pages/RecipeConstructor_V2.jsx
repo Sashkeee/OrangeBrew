@@ -214,7 +214,6 @@ const RecipeConstructor_V2 = () => {
         try {
             setSaving(true);
             const created = await recipesApi.create(recipe);
-            localStorage.setItem('currentRecipe', JSON.stringify({ ...created, steps: recipe.mash_steps }));
             if (start) {
                 const session = await sessionsApi.create({ recipe_id: created.id, type: 'brewing', status: 'active' });
                 navigate(`/brewing/mash/${session.id}`);

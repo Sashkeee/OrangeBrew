@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Boiling from './Boiling';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
@@ -31,6 +31,27 @@ vi.mock('../hooks/useProcess', () => ({
     }))
 }));
 
+// Mock API client — рецепт теперь загружается из API, не из localStorage
+vi.mock('../api/client.js', () => ({
+    sessionsApi: {
+        getById: vi.fn().mockResolvedValue({ id: 123, recipe_id: 42 }),
+        getTemperatures: vi.fn().mockResolvedValue([]),
+    },
+    recipesApi: {
+        getById: vi.fn().mockResolvedValue({
+            id: 42,
+            name: 'Test Recipe',
+            boil_time: 60,
+            hop_additions: [{ name: 'Citra', amount: 50, time: 10 }],
+            mash_steps: [],
+        }),
+    },
+    // DeviceSelector использует deviceApi
+    deviceApi: {
+        getAll: vi.fn().mockResolvedValue([]),
+    },
+}));
+
 // Mock components to simplify tree
 vi.mock('../components/ProcessChart', () => ({
     ProcessChart: () => <div data-testid="process-chart" />
@@ -55,18 +76,10 @@ describe('Boiling Page', () => {
             resume: vi.fn()
         });
 
-        // Mock localStorage
-        Storage.prototype.getItem = vi.fn((key) => {
-            if (key === 'currentRecipe') return JSON.stringify({
-                name: 'Test Recipe',
-                boil_time: 60,
-                hop_additions: [{ name: 'Citra', amount: 50, time: 10 }]
-            });
-            return null;
-        });
+        // localStorage больше не используется для передачи рецепта
     });
 
-    it('renders initial state correctly', () => {
+    it('renders initial state correctly', async () => {
         render(
             <MemoryRouter initialEntries={['/brewing/boil/123']}>
                 <Routes>
@@ -76,10 +89,10 @@ describe('Boiling Page', () => {
         );
 
         expect(screen.getByText('Кипячение')).toBeInTheDocument();
-        // Default time from recipe
-        expect(screen.getByText('60:00')).toBeInTheDocument();
         expect(screen.getByText('СТАРТ КИПЯЧЕНИЯ')).toBeInTheDocument();
-        expect(screen.getByText('Citra')).toBeInTheDocument();
+        // Рецепт загружается асинхронно — ждём появления данных
+        await waitFor(() => expect(screen.getByText('Citra')).toBeInTheDocument());
+        expect(screen.getByText('60:00')).toBeInTheDocument();
     });
 
     it('starts boiling process on button click', async () => {
@@ -91,15 +104,18 @@ describe('Boiling Page', () => {
             </MemoryRouter>
         );
 
+        // Ждём загрузки рецепта перед кликом
+        await waitFor(() => expect(screen.getByText('Citra')).toBeInTheDocument());
+
         const startBtn = screen.getByText('СТАРТ КИПЯЧЕНИЯ');
         fireEvent.click(startBtn);
 
-        expect(mockStart).toHaveBeenCalledWith(
+        await waitFor(() => expect(mockStart).toHaveBeenCalledWith(
             expect.objectContaining({ name: 'Test Recipe' }),
             '123',
             'boil',
             'local_serial'
-        );
+        ));
     });
 
     it('displays active state when running', async () => {

@@ -125,6 +125,17 @@ export const authApi = {
     me: () => request('/auth/me'),
 };
 
+// ─── Process ──────────────────────────────────────────────
+
+export const processApi = {
+    getStatus: () => request('/process/status'),
+    start: (data) => request('/process/start', { method: 'POST', body: data }),
+    stop: () => request('/process/stop', { method: 'POST' }),
+    pause: () => request('/process/pause', { method: 'POST' }),
+    resume: () => request('/process/resume', { method: 'POST' }),
+    skip: () => request('/process/skip', { method: 'POST' }),
+};
+
 // ─── Devices ──────────────────────────────────────────────
 
 export const deviceApi = {
