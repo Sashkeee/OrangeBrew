@@ -13,8 +13,9 @@ import { settingsQueries } from '../db/database.js'; // To save tunings
  * The ProcessManager tells PidManager which mode to use via setMode().
  */
 export default class PidManager {
-    constructor(serial) {
+    constructor(serial, userId) {
         this.serial = serial;
+        this.userId = userId;  // нужен для per-user маршрутизации команд нагревателю
 
         // Load initial tunings from DB if available, else defaults
         // Support both formats: nested pid object (from Settings page) and flat pid_p/pid_i/pid_d (legacy)
@@ -65,7 +66,7 @@ export default class PidManager {
         this.pid.setEnabled(enabled);
         console.log(`[PidManager] PID ${enabled ? 'ENABLED' : 'DISABLED'}`);
         if (!enabled && !this.tuner.tuning) {
-            setHeaterState(0);
+            setHeaterState(0, this.userId);
         }
     }
 
@@ -121,7 +122,7 @@ export default class PidManager {
 
     stopTuning() {
         this.tuner.reset();
-        setHeaterState(0);
+        setHeaterState(0, this.userId);
     }
 
     getTunerStatus() {
@@ -166,7 +167,7 @@ export default class PidManager {
         if (this.tuner.tuning) {
             const result = this.tuner.update(input);
             const powerToSend = Math.max(0, parseInt(result.power) || 0);
-            setHeaterState(powerToSend);
+            setHeaterState(powerToSend, this.userId);
 
             // Debug log every update during tuning
             const now = Date.now();
@@ -179,7 +180,7 @@ export default class PidManager {
                 if (result.error) {
                     console.error(`[PidManager] Tuning failed: ${result.error}`);
                     this.lastTuningResults = { error: result.error };
-                    setHeaterState(0);
+                    setHeaterState(0, this.userId);
                     return;
                 }
 
@@ -206,7 +207,7 @@ export default class PidManager {
                 // Apply to running PID
                 this.setTunings(result.results.Kp, result.results.Ki, result.results.Kd);
                 console.log(result.message);
-                setHeaterState(0); // Turn off after tuning
+                setHeaterState(0, this.userId); // Turn off after tuning
             }
             return;
         }
@@ -226,7 +227,7 @@ export default class PidManager {
             heaterPower = Math.round(Math.max(0, Math.min(100, output)));
         }
 
-        setHeaterState(heaterPower);
+        setHeaterState(heaterPower, this.userId);
 
         // Periodic log (every 30s)
         const now = Date.now();

@@ -13,9 +13,10 @@ export const PROCESS_STATUS = {
 };
 
 class ProcessManager extends EventEmitter {
-    constructor(pidManager) {
+    constructor(pidManager, userId) {
         super();
         this.pidManager = pidManager;
+        this.userId = userId;  // owner — используется в server.js для per-user broadcast
         this.reset();
 
         // Bind methods
@@ -159,7 +160,7 @@ class ProcessManager extends EventEmitter {
         }
         // Turn on pump automatically when process starts
         console.log('[ProcessManager] Turning pump ON');
-        setPumpState(true);
+        setPumpState(true, this.userId);
 
         // Start loop
         this.startLoop();

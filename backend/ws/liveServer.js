@@ -241,8 +241,12 @@ export function broadcastSensors(sensorData) {
     broadcastAll({ type: 'sensors', data: sensorData });
 }
 
-export function broadcastControl(controlState) {
-    broadcastAll({ type: 'control', data: controlState });
+export function broadcastControl(controlState, userId = null) {
+    if (userId !== null) {
+        broadcastToUser(userId, 'control', controlState);
+    } else {
+        broadcastAll({ type: 'control', data: controlState });
+    }
 }
 
 export function broadcastPhaseChange(phase, sessionType) {

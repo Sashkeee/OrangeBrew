@@ -15,6 +15,7 @@ import {
     onWsCommand,
     onHardwareData,
     sendToHardware,
+    sendToUserHardware,
     broadcastToAllHardware,
     getClientCount
 } from './ws/liveServer.js';
@@ -33,7 +34,7 @@ import sensorsRouter from './routes/sensors.js';
 import controlRouter from './routes/control.js';
 import createSettingsRouter from './routes/settings.js';
 import telegramRouter from './routes/telegram.js';
-import createProcessRouter from './routes/process.js';
+import processRouter from './routes/process.js';
 import usersRouter from './routes/users.js';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
@@ -106,24 +107,21 @@ app.use(['/api/telegram', '/telegram'], authenticate, telegramRouter);
 app.use(['/api/users', '/users'], authenticate, usersRouter);
 app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
 
-let processManager = null; // Defined here so we can mount the router early
-let processRouter = null;
+// Per-user ProcessManagers — Map<userId, ProcessManager>
+// Создаются лениво при первом обращении к /api/process
+const processManagers = new Map();
 
 app.use(['/api/process', '/process'], authenticate, (req, res, next) => {
-    if (!processManager) return res.status(503).json({ error: 'Process Manager not ready' });
-    // Create router once, then reuse
-    if (!processRouter) processRouter = createProcessRouter(processManager);
-    processRouter(req, res, next);
-});
+    req.processManager = getOrCreateProcessManager(req.user.id);
+    next();
+}, processRouter);
 
-let pidManager = null;
-let settingsRouterInstance = null;
+const settingsRouterInstance = createSettingsRouter();
 app.use(['/api/settings', '/settings'], authenticate, (req, res, next) => {
-    if (!settingsRouterInstance) {
-        settingsRouterInstance = createSettingsRouter({ pidManager });
-    }
-    settingsRouterInstance(req, res, next);
-});
+    // Инжектируем PidManager текущего пользователя (null если PM ещё не создан)
+    req.pidManager = processManagers.get(req.user.id)?.pidManager ?? null;
+    next();
+}, settingsRouterInstance);
 
 // Debug routes — protected in all environments (техдолг #2 из CLAUDE.md)
 app.post('/api/debug/mock/temps', authenticate, (req, res) => {
@@ -138,23 +136,26 @@ app.post('/api/debug/mock/simulation', authenticate, (req, res) => {
     res.json({ ok: true, enabled: req.body.enabled });
 });
 
-// PID Debug Routes
+// PID Debug Routes — используют per-user ProcessManager
 app.post('/api/debug/pid/enable', authenticate, (req, res) => {
-    if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
-    pidManager.setEnabled(req.body.enabled);
+    const pm = processManagers.get(req.user.id);
+    if (!pm) return res.status(503).json({ error: 'No ProcessManager for user — start a process first' });
+    pm.pidManager.setEnabled(req.body.enabled);
     res.json({ ok: true, enabled: req.body.enabled });
 });
 
 app.post('/api/debug/pid/target', authenticate, (req, res) => {
-    if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
-    pidManager.setTarget(req.body.target);
+    const pm = processManagers.get(req.user.id);
+    if (!pm) return res.status(503).json({ error: 'No ProcessManager for user — start a process first' });
+    pm.pidManager.setTarget(req.body.target);
     res.json({ ok: true, target: req.body.target });
 });
 
 app.post('/api/debug/pid/tunings', authenticate, (req, res) => {
-    if (!pidManager) return res.status(500).json({ error: 'PID Manager not initialized' });
+    const pm = processManagers.get(req.user.id);
+    if (!pm) return res.status(503).json({ error: 'No ProcessManager for user — start a process first' });
     const { kp, ki, kd } = req.body;
-    pidManager.setTunings(kp, ki, kd);
+    pm.pidManager.setTunings(kp, ki, kd);
     res.json({ ok: true, tunings: { kp, ki, kd } });
 });
 
@@ -182,48 +183,54 @@ async function main() {
 
     // ─── Serial / Mock Connection ─────────────────────────────
 
-    const sendCommand = (cmd) => {
-        // Route command to the correct device
-        const targetDeviceId = processManager?.state?.deviceId;
-
-        if (targetDeviceId && targetDeviceId !== 'local_serial') {
-            // Send to assigned WebSocket hardware
-            const sent = sendToHardware(targetDeviceId, cmd);
-            if (!sent) console.warn(`[Server] Failed to send command to device ${targetDeviceId} (disconnected?)`);
-        } else {
-            // IF IDLE or local_serial, we still want manual controls to work on connected ESPs!
-            // Try to broadcast to all connected WebSocket hardware first.
-            const broadcasted = broadcastToAllHardware(cmd);
-
-            // If no ESPs connected, fallback to local Serial (USB)
-            if (!broadcasted && serial) {
-                serial.write(JSON.stringify(cmd));
-            }
-        }
-    };
-
     if (CONNECTION_TYPE === 'mock') {
         console.log('[Server] Starting in MOCK mode (no physical hardware)');
         serial = new MockSerial();
-        setCommandSender(sendCommand);
         serial.on('ack', (ack) => {
             console.log(`[Mock] ACK: ${ack.cmd} → ${ack.ok ? 'OK' : 'FAIL'}`);
         });
-        pidManager = new PidManager(serial);
     } else {
         const portName = process.env.SERIAL_PORT || 'COM3';
         const baudRate = parseInt(process.env.BAUD_RATE) || 115200;
         console.log(`[Server] Serial mode starting on ${portName} at ${baudRate} baud`);
-
         serial = new RealSerial(portName, baudRate);
-        setCommandSender(sendCommand);
-        pidManager = new PidManager(serial);
         serial.start();
     }
 
-    // ─── Process Manager ──────────────────────────────────────
+    // ─── Per-User ProcessManager Factory ─────────────────────
+    // Вызывается из middleware /api/process при первом обращении пользователя.
+    // Каждый пользователь получает изолированный ProcessManager + PidManager.
 
-    processManager = new ProcessManager(pidManager);
+    function getOrCreateProcessManager(userId) {
+        if (processManagers.has(userId)) return processManagers.get(userId);
+
+        // Команды нагревателю/насосу идут только на устройства данного пользователя
+        const userCommandSender = (cmd) => {
+            // Приоритет: WiFi-устройство пользователя → local serial (fallback)
+            const sent = sendToUserHardware(userId, cmd);
+            if (!sent && serial) {
+                serial.write(JSON.stringify(cmd));
+            }
+        };
+
+        // Регистрируем per-user sender в control.js
+        setCommandSender(userId, userCommandSender);
+
+        // Создаём PidManager с userId — он передаёт его в setHeaterState
+        const userPid = new PidManager(serial, userId);
+
+        // Создаём ProcessManager с userId — он передаёт его в setPumpState
+        const pm = new ProcessManager(userPid, userId);
+
+        // Транслируем обновления только этому пользователю
+        pm.on('update', (state) => {
+            broadcastProcessState(state, userId);
+        });
+
+        processManagers.set(userId, pm);
+        console.log(`[Server] ProcessManager created for user ${userId}`);
+        return pm;
+    }
 
     /**
      * Maps raw sensor addresses to roles (boiler, column, etc.) based on settings.
@@ -282,33 +289,32 @@ async function main() {
         return mapped;
     }
 
-    // Broadcast updates
-    processManager.on('update', (state) => {
-        broadcastProcessState(state);
-    });
-
     // Global Serial error handler to prevent Node.js crashes if USB disconnects
     serial.on('error', (err) => {
         console.error('[Global Serial Error] Connection issue:', err.message);
     });
 
-    // Pass Serial sensor data (default device)
+    // Pass Serial sensor data (local USB / mock device)
     serial.on('data', (data) => {
         const deviceId = 'local_serial';
         updateSensorReadings(data);
         broadcastSensors({ deviceId, sensors: data.sensors });
         telegram.updateSensorData(data);
-        telegram.updateControlState(getControlState());
 
-        processManager.handleSensorData(deviceId, data);
+        // Роутим данные в тот PM, который контролирует local_serial
+        for (const pm of processManagers.values()) {
+            if (pm.state.deviceId === 'local_serial') {
+                pm.handleSensorData(deviceId, data);
+                break;
+            }
+        }
     });
 
-    // Pass WebSocket sensor data (remote devices)
+    // Pass WebSocket sensor data (WiFi ESP32 devices)
     let lastHwDataLog = 0;
     onHardwareData((deviceId, data, userId) => {
-        // If data is sensors_raw, we route it
         if (data.type === 'sensors_raw') {
-            // Use user-scoped sensor settings if userId is known; fall back to global
+            // Маппинг адресов сенсоров с user-scoped настройками
             const mappedData = mapSensors(deviceId, data, userId);
 
             // Periodic log
@@ -318,16 +324,17 @@ async function main() {
                 lastHwDataLog = now;
             }
 
-            // Update global latest readings for REST API
             updateSensorReadings(mappedData);
-
-            // Broadcast sensors to the owning user only
-            const enrichedData = { ...mappedData, sensors: data.sensors };
             broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
 
-            // Pass to process and pid managers
-            processManager.handleSensorData(deviceId, enrichedData);
-            if (pidManager) pidManager.update(enrichedData);
+            // Роутим только в PM владельца устройства
+            if (userId != null) {
+                const pm = processManagers.get(userId);
+                if (pm) {
+                    const enrichedData = { ...mappedData, sensors: data.sensors };
+                    pm.handleSensorData(deviceId, enrichedData);
+                }
+            }
         }
     });
 
@@ -361,8 +368,9 @@ async function main() {
             if (serial.stop) serial.stop();
         }
 
-        if (pidManager) {
-            pidManager.setEnabled(false);
+        for (const pm of processManagers.values()) {
+            pm.pidManager.setEnabled(false);
+            pm.stop();
         }
 
         telegram.shutdownTelegram();

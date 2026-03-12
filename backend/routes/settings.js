@@ -6,11 +6,9 @@ const router = Router();
 
 /**
  * Create settings router.
- * @param {Object} deps - Dependencies
- * @param {Object} deps.pidManager - PidManager instance (optional)
+ * pidManager берётся из req.pidManager, который инжектируется middleware в server.js.
  */
-export default function createSettingsRouter(deps = {}) {
-    const { pidManager } = deps;
+export default function createSettingsRouter() {
 
     // GET /api/settings — settings for current user (merged with global defaults)
     router.get('/', (req, res) => {
@@ -34,7 +32,8 @@ export default function createSettingsRouter(deps = {}) {
                 reloadTelegramConfig();
             }
 
-            // If PID settings were updated, apply to the running PidManager
+            // If PID settings were updated, apply to the running PidManager (injected by server.js)
+            const pidManager = req.pidManager;
             if (req.body.pid && pidManager) {
                 const pid = req.body.pid;
                 if (pid.kp !== undefined && pid.ki !== undefined && pid.kd !== undefined) {
