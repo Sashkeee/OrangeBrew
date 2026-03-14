@@ -766,3 +766,73 @@ export const recipeSearchQueries = {
         ).map(r => r.style);
     },
 };
+
+// ─── Recipe Trending & Similar ─────────────────────────────
+
+export const recipeTrendingQueries = {
+    /**
+     * Get trending public recipes scored by engagement.
+     * Score = likes * 2 + comments. Filters by recency window (days).
+     *
+     * @param {number} days  — look-back window (default 7)
+     * @param {number} limit — max results (default 10)
+     */
+    getTrending(days = 7, limit = 10) {
+        return queryAll(`
+            SELECT r.*, u.username AS author,
+                   (COALESCE(r.likes_count, 0) * 2 + COALESCE(r.comments_count, 0)) AS score
+            FROM recipes r
+            JOIN users u ON r.user_id = u.id
+            WHERE r.is_public = 1
+              AND (
+                r.created_at > datetime('now', ?)
+                OR r.likes_count > 0
+              )
+            ORDER BY score DESC, r.created_at DESC
+            LIMIT ?
+        `, [`-${days} days`, limit]);
+    },
+
+    /**
+     * Get similar public recipes by style.
+     * Falls back to top-rated if not enough style matches.
+     *
+     * @param {number} recipeId — recipe to find similar for
+     * @param {number} limit    — max results (default 5)
+     */
+    getSimilar(recipeId, limit = 5) {
+        const recipe = queryOne('SELECT id, style FROM recipes WHERE id = ?', [recipeId]);
+        if (!recipe) return [];
+
+        // Recipes with same style, public, excluding self
+        const similar = queryAll(`
+            SELECT r.*, u.username AS author
+            FROM recipes r
+            JOIN users u ON r.user_id = u.id
+            WHERE r.is_public = 1
+              AND r.style = ?
+              AND r.id != ?
+            ORDER BY r.likes_count DESC, r.created_at DESC
+            LIMIT ?
+        `, [recipe.style || '', recipeId, limit]);
+
+        // Fallback: fill remaining slots with top-rated (any style)
+        if (similar.length < limit) {
+            const remaining = limit - similar.length;
+            const exclude   = [recipeId, ...similar.map(r => r.id)];
+            const ph        = exclude.map(() => '?').join(', ');
+            const topRated  = queryAll(`
+                SELECT r.*, u.username AS author
+                FROM recipes r
+                JOIN users u ON r.user_id = u.id
+                WHERE r.is_public = 1
+                  AND r.id NOT IN (${ph})
+                ORDER BY r.likes_count DESC, r.created_at DESC
+                LIMIT ?
+            `, [...exclude, remaining]);
+            return [...similar, ...topRated];
+        }
+
+        return similar;
+    },
+};

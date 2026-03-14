@@ -15,7 +15,10 @@
  */
 
 import { Router } from 'express';
-import { recipeLikesQueries, recipeCommentsQueries, recipeQueries, recipeSearchQueries } from '../db/database.js';
+import {
+    recipeLikesQueries, recipeCommentsQueries,
+    recipeQueries, recipeSearchQueries, recipeTrendingQueries,
+} from '../db/database.js';
 
 const router = Router();
 
@@ -103,6 +106,55 @@ router.post('/:id/publish', (req, res) => {
     } catch (err) {
         console.error('[publish] toggle failed:', err);
         res.status(500).json({ error: 'Failed to update recipe visibility' });
+    }
+});
+
+// ─── Trending & Similar ───────────────────────────────────
+
+/**
+ * GET /api/recipes/trending — top recipes by engagement (likes*2 + comments).
+ * Query params: days (default 7, max 90), limit (default 10, max 50)
+ */
+router.get('/trending', (req, res) => {
+    const days  = Math.min(Math.max(parseInt(req.query.days,  10) || 7,  1), 90);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+
+    try {
+        const recipes = recipeTrendingQueries.getTrending(days, limit).map(r => ({
+            ...r,
+            ingredients:   JSON.parse(r.ingredients   || '[]'),
+            mash_steps:    JSON.parse(r.mash_steps    || '[]'),
+            hop_additions: JSON.parse(r.hop_additions || '[]'),
+        }));
+        res.json(recipes);
+    } catch (err) {
+        console.error('[trending] failed:', err);
+        res.status(500).json({ error: 'Failed to get trending recipes' });
+    }
+});
+
+/**
+ * GET /api/recipes/:id/similar — similar public recipes by style.
+ * Falls back to top-rated if style has no matches.
+ * Query param: limit (default 5, max 20)
+ */
+router.get('/:id/similar', (req, res) => {
+    const recipeId = parseInt(req.params.id, 10);
+    if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
+
+    try {
+        const recipes = recipeTrendingQueries.getSimilar(recipeId, limit).map(r => ({
+            ...r,
+            ingredients:   JSON.parse(r.ingredients   || '[]'),
+            mash_steps:    JSON.parse(r.mash_steps    || '[]'),
+            hop_additions: JSON.parse(r.hop_additions || '[]'),
+        }));
+        res.json(recipes);
+    } catch (err) {
+        console.error('[similar] failed:', err);
+        res.status(500).json({ error: 'Failed to get similar recipes' });
     }
 });
 

@@ -69,6 +69,10 @@ export const recipesApi = {
     getComments: (id, params = {}) => request(`/recipes/${id}/comments?${new URLSearchParams(params)}`),
     addComment: (id, text) => request(`/recipes/${id}/comments`, { method: 'POST', body: { text } }),
     deleteComment: (recipeId, commentId) => request(`/recipes/${recipeId}/comments/${commentId}`, { method: 'DELETE' }),
+
+    // Discovery
+    trending: (days = 7) => request(`/recipes/trending?days=${days}`),
+    similar:  (id)       => request(`/recipes/${id}/similar`),
 };
 
 // ─── Sessions ─────────────────────────────────────────────
