@@ -39,6 +39,7 @@ import usersRouter from './routes/users.js';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import beerxmlRouter from './routes/beerxml.js';
+import recipeSocialRouter from './routes/recipe-social.js';
 import { authenticate } from './middleware/auth.js';
 import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 
@@ -110,6 +111,9 @@ app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
 // Raw XML body support for BeerXML import (application/xml or text/xml)
 app.use(['/api/beerxml', '/beerxml'], express.text({ type: ['application/xml', 'text/xml'], limit: '5mb' }));
 app.use(['/api/beerxml', '/beerxml'], authenticate, beerxmlRouter);
+
+// Social features: likes + comments (mounted under /api/recipes)
+app.use(['/api/recipes', '/recipes'], authenticate, recipeSocialRouter);
 
 // Per-user ProcessManagers — Map<userId, ProcessManager>
 // Создаются лениво при первом обращении к /api/process

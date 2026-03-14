@@ -54,6 +54,19 @@ export const recipesApi = {
         request(`/recipes/${id}/scale`, { method: 'POST', body: { targetBatchSize } }),
     scaleAndSave: (id, targetBatchSize) =>
         request(`/recipes/${id}/scale-and-save`, { method: 'POST', body: { targetBatchSize } }),
+
+    // Public library
+    getPublic: (params = {}) => request(`/recipes/public?${new URLSearchParams(params)}`),
+    setPublic: (id, isPublic) => request(`/recipes/${id}/publish`, { method: 'POST', body: { isPublic } }),
+
+    // Social: likes
+    toggleLike: (id) => request(`/recipes/${id}/like`, { method: 'POST' }),
+    getLikes: (id) => request(`/recipes/${id}/likes`),
+
+    // Social: comments
+    getComments: (id, params = {}) => request(`/recipes/${id}/comments?${new URLSearchParams(params)}`),
+    addComment: (id, text) => request(`/recipes/${id}/comments`, { method: 'POST', body: { text } }),
+    deleteComment: (recipeId, commentId) => request(`/recipes/${recipeId}/comments/${commentId}`, { method: 'DELETE' }),
 };
 
 // ─── Sessions ─────────────────────────────────────────────
@@ -160,11 +173,27 @@ export const beerxmlApi = {
         });
     },
 
-    /** Export a single recipe. Returns raw XML string (caller handles download). */
-    exportOne: (id) => request(`/beerxml/export/${id}`),
+    /** Export a single recipe. Returns Blob (caller handles download). */
+    exportOne: (id) => {
+        const token = localStorage.getItem('orangebrew_token');
+        return fetch(`${API_BASE}/beerxml/export/${id}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }).then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.blob();
+        });
+    },
 
-    /** Export all recipes. Returns raw XML string. */
-    exportAll: () => request('/beerxml/export-all'),
+    /** Export all recipes. Returns Blob. */
+    exportAll: () => {
+        const token = localStorage.getItem('orangebrew_token');
+        return fetch(`${API_BASE}/beerxml/export-all`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }).then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.blob();
+        });
+    },
 };
 
 // ─── Devices ──────────────────────────────────────────────

@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Calendar, Loader, AlertTriangle, Plus, Pencil, Download, Upload } from 'lucide-react';
+import { ArrowLeft, Clock, Calendar, Loader, AlertTriangle, Plus, Pencil, Download, Upload, FileCode } from 'lucide-react';
 import { useRecipes } from '../hooks/useRecipes.js';
+import { beerxmlApi } from '../api/client.js';
+import BeerXmlImportModal from '../components/BeerXmlImportModal.jsx';
 
 const RecipeList = () => {
     const navigate = useNavigate();
-    const { recipes, loading, error, deleteRecipe } = useRecipes();
+    const { recipes, loading, error, deleteRecipe, refresh } = useRecipes();
+    const [showBeerXmlImport, setShowBeerXmlImport] = useState(false);
 
     const handleSelectRecipe = (recipe) => {
         // Save to localStorage for the Mashing page backward compat
@@ -58,6 +61,38 @@ const RecipeList = () => {
         }
     };
 
+    const handleExportBeerXml = async (recipeId, recipeName) => {
+        try {
+            const blob = await beerxmlApi.exportOne(recipeId);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${recipeName.replace(/[^a-zа-яё0-9]/gi, '_')}.xml`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            alert('Ошибка экспорта BeerXML: ' + err.message);
+        }
+    };
+
+    const handleExportAllBeerXml = async () => {
+        try {
+            const blob = await beerxmlApi.exportAll();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `orangebrew_all_${new Date().toISOString().slice(0, 10)}.xml`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            alert('Ошибка экспорта BeerXML: ' + err.message);
+        }
+    };
+
     const handleImport = () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -89,6 +124,13 @@ const RecipeList = () => {
 
     return (
         <div style={{ padding: '2rem 1rem', maxWidth: '1000px', margin: '0 auto' }}>
+
+            {showBeerXmlImport && (
+                <BeerXmlImportModal
+                    onClose={() => setShowBeerXmlImport(false)}
+                    onImported={() => { setShowBeerXmlImport(false); refresh(); }}
+                />
+            )}
             <header style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
                 <button
                     onClick={() => navigate('/brewing')}
@@ -105,10 +147,10 @@ const RecipeList = () => {
                 </button>
                 <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)', flex: 1 }}>Выбор рецепта</h1>
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button
                         onClick={handleExport}
-                        title="Экспорт"
+                        title="Экспорт JSON"
                         style={{
                             background: 'rgba(255,255,255,0.05)',
                             border: '1px solid #444',
@@ -121,7 +163,7 @@ const RecipeList = () => {
                     </button>
                     <button
                         onClick={handleImport}
-                        title="Импорт"
+                        title="Импорт JSON"
                         style={{
                             background: 'rgba(255,255,255,0.05)',
                             border: '1px solid #444',
@@ -131,6 +173,40 @@ const RecipeList = () => {
                         }}
                     >
                         <Upload size={18} />
+                    </button>
+                    <button
+                        onClick={handleExportAllBeerXml}
+                        title="Экспорт всех рецептов в BeerXML"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid #444',
+                            color: 'var(--text-secondary)',
+                            padding: '0.5rem',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.8rem'
+                        }}
+                    >
+                        <FileCode size={18} /> XML
+                    </button>
+                    <button
+                        onClick={() => setShowBeerXmlImport(true)}
+                        title="Импорт BeerXML"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid #444',
+                            color: 'var(--text-secondary)',
+                            padding: '0.5rem',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.8rem'
+                        }}
+                    >
+                        <Upload size={18} /> XML
                     </button>
                     <button
                         onClick={() => navigate('/brewing/recipes/new')}
@@ -235,6 +311,14 @@ const RecipeList = () => {
                             </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleExportBeerXml(recipe.id, recipe.name); }}
+                                aria-label="Экспорт в BeerXML"
+                                title="Экспорт в BeerXML"
+                                style={{ background: 'none', border: '1px solid #444', color: 'var(--text-secondary)', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                            >
+                                <FileCode size={14} />
+                            </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); navigate(`/brewing/recipes/${recipe.id}/edit`); }}
                                 aria-label="Редактировать рецепт"
