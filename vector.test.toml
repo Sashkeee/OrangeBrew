@@ -1,46 +1,72 @@
 # Vector log shipper — OrangeBrew Test
 # Collects Docker container logs, parses pino JSON, ships to Betterstack
 
-# ─── Source: Docker container logs ───────────────────────────────────────────
+# ─── Source ──────────────────────────────────────────────────────────────────
 [sources.docker_logs]
 type               = "docker_logs"
 include_containers = ["orangebrew-backend-test", "orangebrew-frontend-test"]
 
-# ─── Transform: parse pino JSON + enrich fields ──────────────────────────────
+# ─── Transform ───────────────────────────────────────────────────────────────
 [transforms.parse_and_enrich]
 type   = "remap"
 inputs = ["docker_logs"]
 source = '''
-# Always stamp with environment metadata
-.environment  = "test"
-.app          = "orangebrew"
-.container    = .container_name
+.environment = "test"
+.app         = "orangebrew"
+.container   = del(.container_name)
 
-# Try to parse the message as pino JSON (structured log from backend)
+# Remove noisy Docker metadata fields
+del(.container_created_at)
+del(.container_status)
+del(.source_type)
+del(.stream)
+del(.label)
+
+# Try to parse backend's pino JSON log from the message field
 parsed, err = parse_json(.message)
-if err == null {
-    # It's a pino JSON log — lift important fields to top level
-    if exists(parsed.level) {
-        .level    = to_string!(parsed.level)
-        .msg      = parsed.message || parsed.msg
-        .module   = parsed.module
-        .err      = parsed.err
-        .userId   = parsed.userId
-        # Betterstack timestamp field
+if err == null && is_object(parsed) {
+    # Pino uses numeric levels: 10=trace 20=debug 30=info 40=warn 50=error 60=fatal
+    if exists(parsed.level) && is_integer(parsed.level) {
+        level_num = to_int!(parsed.level)
+        if level_num >= 60 { .level = "fatal" }
+        else if level_num >= 50 { .level = "error" }
+        else if level_num >= 40 { .level = "warn" }
+        else if level_num >= 20 { .level = "debug" }
+        else { .level = "info" }
+
+        # Pino uses "msg" or "message" key
+        .msg = to_string(parsed.msg) ?? to_string(parsed.message) ?? ""
+
+        # Betterstack timestamp from pino's .time (unix ms)
         if exists(parsed.time) {
-            .dt = parsed.time
+            .dt = to_string!(parsed.time)
         }
-        # Merge remaining pino fields
-        . = merge(., parsed, deep: true)
+
+        # Lift useful fields
+        if exists(parsed.req) {
+            .http_method     = to_string(parsed.req.method) ?? ""
+            .http_url        = to_string(parsed.req.url) ?? ""
+            .http_remoteaddr = to_string(parsed.req.remoteAddress) ?? ""
+        }
+        if exists(parsed.res) {
+            .http_status = to_int(parsed.res.statusCode) ?? 0
+        }
+        if exists(parsed.module) { .module = to_string!(parsed.module) }
+        if exists(parsed.userId) { .userId = to_string!(parsed.userId) }
+        if exists(parsed.responseTime) { .response_time_ms = parsed.responseTime }
+    } else {
+        # JSON but not pino — store as-is
+        .level = "info"
+        .msg   = .message
     }
 } else {
-    # Plain text log (nginx, console output, etc.) — keep as-is
+    # Plain text log — keep message as-is
     .level = "info"
     .msg   = .message
 }
 '''
 
-# ─── Sink: Betterstack (Logtail) HTTP ingestion ──────────────────────────────
+# ─── Sink ─────────────────────────────────────────────────────────────────────
 [sinks.betterstack]
 type        = "http"
 inputs      = ["parse_and_enrich"]
@@ -48,21 +74,20 @@ uri         = "https://s2297886.eu-nbg-2.betterstackdata.com"
 compression = "gzip"
 
 [sinks.betterstack.encoding]
-codec          = "json"
-except_fields  = ["container_created_at", "container_status", "source_type", "stream"]
+codec = "json"
 
 [sinks.betterstack.framing]
 method = "newline_delimited"
-
-[sinks.betterstack.request.headers]
-Content-Type = "application/json"
 
 [sinks.betterstack.auth]
 strategy = "bearer"
 token    = "HWuVWvojze9W3bHHR1gAmsuj"
 
-# Retry on transient errors
+# NOTE: request.headers must come AFTER [sinks.betterstack.request] in TOML
 [sinks.betterstack.request]
-retry_attempts       = 5
+retry_attempts             = 5
 retry_initial_backoff_secs = 1
-timeout_secs         = 30
+timeout_secs               = 30
+
+[sinks.betterstack.request.headers]
+Content-Type = "application/json"
