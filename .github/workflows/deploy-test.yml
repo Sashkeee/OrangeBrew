@@ -38,13 +38,13 @@ jobs:
           push: true
           tags: ghcr.io/sashkeee/anti-orangebrew/frontend-test:latest
 
-      - name: Copy docker-compose via scp
+      - name: Copy deploy files via scp
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.test.yml,Caddyfile"
+          source: "docker-compose.test.yml,Caddyfile,vector.test.toml"
           target: "~/OrangeBrew"
 
       - name: Deploy to VPS
@@ -57,4 +57,4 @@ jobs:
             cd ~/OrangeBrew
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.test.yml pull
-            docker compose -f docker-compose.test.yml up -d
+            docker compose -f docker-compose.test.yml up -d --force-recreate vector
