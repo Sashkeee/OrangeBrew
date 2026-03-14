@@ -124,10 +124,6 @@ const RecipeConstructor = () => {
         try {
             setSaving(true);
             const created = await recipesApi.create(recipe);
-            localStorage.setItem('currentRecipe', JSON.stringify({
-                ...created,
-                steps: recipe.mash_steps,
-            }));
             navigate('/brewing/recipes');
         } catch (e) {
             console.error('[RecipeConstructor] Save failed:', e);
@@ -147,10 +143,6 @@ const RecipeConstructor = () => {
                 type: 'brewing',
                 status: 'active'
             });
-            localStorage.setItem('currentRecipe', JSON.stringify({
-                ...created,
-                steps: recipe.mash_steps,
-            }));
             navigate(`/brewing/mash/${session.id}`);
         } catch (e) {
             console.error('[RecipeConstructor] Save+start failed:', e);

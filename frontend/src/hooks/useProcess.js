@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import wsClient from '../api/wsClient.js';
-import { API_BASE } from '../utils/constants.js';
+import { processApi } from '../api/client.js';
 
-const API_PROCESS_URL = `${API_BASE}/process`;
-
-// Initial default state
 const DEFAULT_STATE = {
     status: 'IDLE',
     mode: null,
@@ -16,7 +13,7 @@ const DEFAULT_STATE = {
     startTime: null,
     elapsedTime: 0,
     recipeId: null,
-    sessionId: null
+    sessionId: null,
 };
 
 export const useProcess = () => {
@@ -24,94 +21,87 @@ export const useProcess = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    // Initial fetch of status
-    useEffect(() => {
-        fetchStatus();
-
-        // Listen for WebSocket updates
-        if (!wsClient.connected) {
-            wsClient.connect();
-        }
-
-        const unsub = wsClient.on('process', (msg) => {
-            const data = msg.data || msg;
+    const fetchStatus = useCallback(async () => {
+        try {
+            const data = await processApi.getStatus();
             setProcessState(data);
-        });
-
-        // Fallback poll every 2s
-        const poller = setInterval(fetchStatus, 2000);
-
-        return () => {
-            unsub();
-            clearInterval(poller);
-        };
+        } catch (e) {
+            console.error('[Process] Failed to fetch status:', e.message);
+        }
     }, []);
 
-    const fetchStatus = async () => {
-        try {
-            const token = localStorage.getItem('orangebrew_token');
-            const headers = {};
-            if (token) headers['Authorization'] = `Bearer ${token}`;
+    useEffect(() => {
+        // Начальная загрузка состояния
+        fetchStatus();
 
-            const res = await fetch(`${API_PROCESS_URL}/status`, { headers });
-            if (res.ok) {
-                const data = await res.json();
-                setProcessState(data);
-            }
-        } catch (e) {
-            console.error('Failed to fetch process status', e);
-        }
-    };
+        if (!wsClient.connected) wsClient.connect();
 
-    const sendCommand = async (action, payload = {}) => {
+        // ─── Polling: включается только когда WS не работает ───
+        let poller = null;
+
+        const startPolling = () => {
+            if (!poller) poller = setInterval(fetchStatus, 2000);
+        };
+
+        const stopPolling = () => {
+            if (poller) { clearInterval(poller); poller = null; }
+        };
+
+        // WS-обновления — основной канал
+        const unsubProcess = wsClient.on('process', (msg) => {
+            setProcessState(msg.data || msg);
+        });
+
+        // Управление polling по состоянию WS-соединения
+        const unsubConnection = wsClient.on('connection', ({ connected }) => {
+            if (connected) stopPolling();
+            else startPolling();
+        });
+
+        // Если WS уже не подключён в момент mount — включаем polling сразу
+        if (!wsClient.connected) startPolling();
+
+        return () => {
+            unsubProcess();
+            unsubConnection();
+            stopPolling();
+        };
+    }, [fetchStatus]);
+
+    const sendCommand = useCallback(async (action, payload = {}) => {
         setIsLoading(true);
         setError(null);
         try {
-            const token = localStorage.getItem('orangebrew_token');
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-
-            const res = await fetch(`${API_PROCESS_URL}/${action}`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Command failed');
-
+            const data = await processApi[action](payload);
             if (data.state) setProcessState(data.state);
             return data;
         } catch (e) {
             setError(e.message);
             console.error(`[Process] Command '${action}' failed:`, e.message);
-            throw e; // Re-throw so caller can handle
+            throw e;
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const start = useCallback((recipe, sessionId, mode, deviceId, sensorAddress) => sendCommand('start', { recipe, sessionId, mode, deviceId, sensorAddress }), []);
-    const stop = useCallback(() => sendCommand('stop'), []);
-    const pause = useCallback(() => sendCommand('pause'), []);
-    const resume = useCallback(() => sendCommand('resume'), []);
-    const skip = useCallback(() => sendCommand('skip'), []);
+    const start  = useCallback((recipe, sessionId, mode, deviceId, sensorAddress) =>
+        sendCommand('start', { recipe, sessionId, mode, deviceId, sensorAddress }), [sendCommand]);
+    const stop   = useCallback(() => sendCommand('stop'),   [sendCommand]);
+    const pause  = useCallback(() => sendCommand('pause'),  [sendCommand]);
+    const resume = useCallback(() => sendCommand('resume'), [sendCommand]);
+    const skip   = useCallback(() => sendCommand('skip'),   [sendCommand]);
 
     return {
         processState,
         status: processState.status,
-        currentStep: processState.steps && processState.steps[processState.currentStepIndex] ? processState.steps[processState.currentStepIndex] : null,
+        currentStep: processState.steps?.[processState.currentStepIndex] ?? null,
         activeStepIndex: processState.currentStepIndex,
         stepPhase: processState.stepPhase,
         remainingTime: processState.remainingTime,
         elapsedTime: processState.elapsedTime,
 
-        start,
-        stop,
-        pause,
-        resume,
-        skip,
-
+        start, stop, pause, resume, skip,
         isLoading,
-        error
+        error,
     };
 };

@@ -3,24 +3,24 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, Calendar, Loader, AlertTriangle, Plus, Pencil, Download, Upload } from 'lucide-react';
 import { useRecipes } from '../hooks/useRecipes.js';
+import { sessionsApi } from '../api/client.js';
 
 const RecipeList = () => {
     const navigate = useNavigate();
     const { recipes, loading, error, deleteRecipe } = useRecipes();
 
-    const handleSelectRecipe = (recipe) => {
-        // Save to localStorage for the Mashing page backward compat
-        localStorage.setItem('currentRecipe', JSON.stringify({
-            ...recipe,
-            steps: recipe.mash_steps || [],
-        }));
-        // ВАЖНО: передаём 'new', а не recipe.id.
-        // recipe.id — это ID рецепта, а не сессии.
-        // Передача recipe.id в sessionId приводила к тому, что Mashing/Boiling
-        // пытались загрузить историю температур из БД для несуществующей сессии
-        // (или, что хуже, для сессии с тем же числовым ID — чужие данные на графике).
-        // Настоящий sessionId будет создан бэкендом при вызове start().
-        navigate(`/brewing/mash/new`);
+    const handleSelectRecipe = async (recipe) => {
+        try {
+            // Создаём сессию сразу — Mashing загрузит рецепт из API по sessionId
+            const session = await sessionsApi.create({
+                recipe_id: recipe.id,
+                type: 'mash',
+            });
+            navigate(`/brewing/mash/${session.id}`);
+        } catch (e) {
+            console.error('[RecipeList] Failed to create session:', e);
+            alert('Не удалось начать варку: ' + e.message);
+        }
     };
 
     const handleDelete = async (e, id) => {

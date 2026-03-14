@@ -7,6 +7,7 @@ import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
 import { useProcess } from '../hooks/useProcess';
 
+import { sessionsApi, recipesApi } from '../api/client.js';
 import { PageHeader } from '../components/PageHeader';
 import { SafetyCheck } from '../components/SafetyCheck';
 import { StartButton } from '../components/StartButton';
@@ -34,19 +35,19 @@ const Mashing = () => {
         start, stop, pause, resume, skip, isLoading
     } = useProcess();
 
-    // Recipe
+    // Recipe — загружаем из API по sessionId
     const [recipeData, setRecipeData] = useState(null);
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem('currentRecipe');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                // Support both old 'steps' and new 'mash_steps' field names
-                const recipeSteps = parsed?.steps || parsed?.mash_steps || [];
-                if (recipeSteps.length > 0) setRecipeData({ ...parsed, steps: recipeSteps });
-            }
-        } catch (e) { console.warn('Could not load recipe', e); }
-    }, []);
+        if (!sessionId || sessionId === 'new') return;
+        sessionsApi.getById(sessionId)
+            .then(s => s?.recipe_id ? recipesApi.getById(s.recipe_id) : null)
+            .then(r => {
+                if (!r) return;
+                const recipeSteps = r.mash_steps || r.steps || [];
+                setRecipeData({ ...r, steps: recipeSteps });
+            })
+            .catch(e => console.warn('[Mashing] Could not load recipe', e));
+    }, [sessionId]);
 
     const steps = useMemo(() => recipeData?.steps?.map(s => ({
         name: s.name, temp: s.temp, duration: s.duration
@@ -90,19 +91,17 @@ const Mashing = () => {
     // Load history from DB
     useEffect(() => {
         if (!sessionId || sessionId === 'new') return;
-        import('../api/client.js').then(({ sessionsApi }) => {
-            sessionsApi.getTemperatures(sessionId, 5000).then(res => {
-                if (res && res.length > 0) {
-                    const formatted = res.map(row => ({
-                        time: new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                        temp: row.value,
-                        target: targetTemp,
-                        unix: new Date(row.timestamp).getTime()
-                    }));
-                    setHistory(formatted.reverse());
-                }
-            }).catch(console.error);
-        });
+        sessionsApi.getTemperatures(sessionId, 5000).then(res => {
+            if (res && res.length > 0) {
+                const formatted = res.map(row => ({
+                    time: new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                    temp: row.value,
+                    target: targetTemp,
+                    unix: new Date(row.timestamp).getTime()
+                }));
+                setHistory(formatted.reverse());
+            }
+        }).catch(console.error);
     }, [sessionId, targetTemp]);
 
     // Live Chart append
