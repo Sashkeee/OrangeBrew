@@ -115,6 +115,17 @@ export const settingsApi = {
     testConnection: () => request('/settings/test-connection', { method: 'POST' }),
 };
 
+// ─── Process ──────────────────────────────────────────────
+
+export const processApi = {
+    getStatus: () => request('/process/status'),
+    start:  (payload) => request('/process/start',  { method: 'POST', body: payload }),
+    stop:   (payload) => request('/process/stop',   { method: 'POST', body: payload }),
+    pause:  (payload) => request('/process/pause',  { method: 'POST', body: payload }),
+    resume: (payload) => request('/process/resume', { method: 'POST', body: payload }),
+    skip:   (payload) => request('/process/skip',   { method: 'POST', body: payload }),
+};
+
 // ─── Health ───────────────────────────────────────────────
 
 export const healthApi = {
