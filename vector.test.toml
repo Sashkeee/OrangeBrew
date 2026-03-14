@@ -1,0 +1,26 @@
+# Vector log shipper — OrangeBrew Test
+# Collects Docker container logs and ships to Betterstack (Logtail)
+
+[sources.docker_logs]
+type = "docker_logs"
+include_containers = ["orangebrew-backend-test", "orangebrew-frontend-test"]
+
+[transforms.add_fields]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+.environment = "test"
+.app = "orangebrew"
+'''
+
+[sinks.betterstack]
+type = "http"
+inputs = ["add_fields"]
+uri = "https://s2297886.eu-nbg-2.betterstackdata.com"
+encoding.codec = "json"
+framing.method = "newline_delimited"
+compression = "gzip"
+
+[sinks.betterstack.auth]
+strategy = "bearer"
+token = "HWuVWvojze9W3bHHR1gAmsuj"
