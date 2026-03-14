@@ -1,29 +1,68 @@
 # Vector log shipper — OrangeBrew Test
-# Collects Docker container logs and ships to Betterstack (Logtail)
+# Collects Docker container logs, parses pino JSON, ships to Betterstack
 
+# ─── Source: Docker container logs ───────────────────────────────────────────
 [sources.docker_logs]
-type = "docker_logs"
+type               = "docker_logs"
 include_containers = ["orangebrew-backend-test", "orangebrew-frontend-test"]
 
-[transforms.add_fields]
-type = "remap"
+# ─── Transform: parse pino JSON + enrich fields ──────────────────────────────
+[transforms.parse_and_enrich]
+type   = "remap"
 inputs = ["docker_logs"]
 source = '''
-.environment = "test"
-.app = "orangebrew"
+# Always stamp with environment metadata
+.environment  = "test"
+.app          = "orangebrew"
+.container    = .container_name
+
+# Try to parse the message as pino JSON (structured log from backend)
+parsed, err = parse_json(.message)
+if err == null {
+    # It's a pino JSON log — lift important fields to top level
+    if exists(parsed.level) {
+        .level    = to_string!(parsed.level)
+        .msg      = parsed.message || parsed.msg
+        .module   = parsed.module
+        .err      = parsed.err
+        .userId   = parsed.userId
+        # Betterstack timestamp field
+        if exists(parsed.time) {
+            .dt = parsed.time
+        }
+        # Merge remaining pino fields
+        . = merge(., parsed, deep: true)
+    }
+} else {
+    # Plain text log (nginx, console output, etc.) — keep as-is
+    .level = "info"
+    .msg   = .message
+}
 '''
 
+# ─── Sink: Betterstack (Logtail) HTTP ingestion ──────────────────────────────
 [sinks.betterstack]
-type = "http"
-inputs = ["add_fields"]
-uri = "https://s2297886.eu-nbg-2.betterstackdata.com"
-encoding.codec = "json"
-framing.method = "newline_delimited"
+type        = "http"
+inputs      = ["parse_and_enrich"]
+uri         = "https://s2297886.eu-nbg-2.betterstackdata.com"
 compression = "gzip"
+
+[sinks.betterstack.encoding]
+codec          = "json"
+except_fields  = ["container_created_at", "container_status", "source_type", "stream"]
+
+[sinks.betterstack.framing]
+method = "newline_delimited"
 
 [sinks.betterstack.request.headers]
 Content-Type = "application/json"
 
 [sinks.betterstack.auth]
 strategy = "bearer"
-token = "HWuVWvojze9W3bHHR1gAmsuj"
+token    = "HWuVWvojze9W3bHHR1gAmsuj"
+
+# Retry on transient errors
+[sinks.betterstack.request]
+retry_attempts       = 5
+retry_initial_backoff_secs = 1
+timeout_secs         = 30
