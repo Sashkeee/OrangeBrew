@@ -55,9 +55,11 @@ export const recipesApi = {
     scaleAndSave: (id, targetBatchSize) =>
         request(`/recipes/${id}/scale-and-save`, { method: 'POST', body: { targetBatchSize } }),
 
-    // Public library
+    // Public library + search
     getPublic: (params = {}) => request(`/recipes/public?${new URLSearchParams(params)}`),
     setPublic: (id, isPublic) => request(`/recipes/${id}/publish`, { method: 'POST', body: { isPublic } }),
+    search: (params = {}) => request(`/recipes/search?${new URLSearchParams(params)}`),
+    getStyles: () => request('/recipes/styles'),
 
     // Social: likes
     toggleLike: (id) => request(`/recipes/${id}/like`, { method: 'POST' }),

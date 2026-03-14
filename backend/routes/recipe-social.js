@@ -1,10 +1,12 @@
 /**
- * recipe-social.js — API endpoints for public library, likes, and comments.
+ * recipe-social.js — API endpoints for public library, search, likes, and comments.
  * Mounted at: /api/recipes (alongside existing recipes.js).
  *
  * Endpoints:
  *   GET    /api/recipes/public               — public recipe library
- *   POST   /api/recipes/:id/publish         — toggle is_public
+ *   GET    /api/recipes/search               — FTS5 full-text search
+ *   GET    /api/recipes/styles               — distinct styles for filter
+ *   POST   /api/recipes/:id/publish          — toggle is_public
  *   POST   /api/recipes/:id/like             — toggle like
  *   GET    /api/recipes/:id/likes            — like status for current user
  *   POST   /api/recipes/:id/comments         — add comment
@@ -13,7 +15,7 @@
  */
 
 import { Router } from 'express';
-import { recipeLikesQueries, recipeCommentsQueries, recipeQueries } from '../db/database.js';
+import { recipeLikesQueries, recipeCommentsQueries, recipeQueries, recipeSearchQueries } from '../db/database.js';
 
 const router = Router();
 
@@ -38,6 +40,45 @@ router.get('/public', (req, res) => {
     } catch (err) {
         console.error('[public] list failed:', err);
         res.status(500).json({ error: 'Failed to list public recipes' });
+    }
+});
+
+// ─── Search ───────────────────────────────────────────────
+
+/**
+ * GET /api/recipes/search — FTS5 search across public recipes.
+ * Query params: q (text), style, limit, offset
+ */
+router.get('/search', (req, res) => {
+    const q      = (req.query.q     || '').slice(0, 200);
+    const style  = req.query.style  || null;
+    const limit  = Math.min(parseInt(req.query.limit,  10) || 20, 50);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
+
+    try {
+        const recipes = recipeSearchQueries.searchPublic(q, style, limit, offset).map(r => ({
+            ...r,
+            ingredients:   JSON.parse(r.ingredients   || '[]'),
+            mash_steps:    JSON.parse(r.mash_steps    || '[]'),
+            hop_additions: JSON.parse(r.hop_additions || '[]'),
+        }));
+        res.json(recipes);
+    } catch (err) {
+        console.error('[search] failed:', err);
+        res.status(500).json({ error: 'Search failed' });
+    }
+});
+
+/**
+ * GET /api/recipes/styles — distinct styles for filter dropdown.
+ */
+router.get('/styles', (req, res) => {
+    try {
+        const styles = recipeSearchQueries.getPublicStyles();
+        res.json(styles);
+    } catch (err) {
+        console.error('[styles] failed:', err);
+        res.status(500).json({ error: 'Failed to get styles' });
     }
 });
 

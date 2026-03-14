@@ -679,3 +679,90 @@ export const recipeCommentsQueries = {
         return true;
     },
 };
+
+// ─── Recipe Search ─────────────────────────────────────────
+
+export const recipeSearchQueries = {
+    /**
+     * Full-text search across public recipes using FTS5.
+     * Falls back to LIKE if query is empty.
+     *
+     * @param {string} query      — search string (can be empty)
+     * @param {string} style      — filter by style (optional)
+     * @param {number} limit
+     * @param {number} offset
+     * @returns {recipes[]}
+     */
+    searchPublic(query = '', style = null, limit = 20, offset = 0) {
+        const hasQuery = query.trim().length > 0;
+
+        if (hasQuery) {
+            // FTS5 search — sanitise query: remove special chars except *
+            const ftsQuery = query.trim().replace(/[^а-яёa-z0-9\s\*]/gi, ' ').trim() + '*';
+            const styleClause = style ? 'AND r.style = ?' : '';
+            const params = style
+                ? [ftsQuery, style, limit, offset]
+                : [ftsQuery, limit, offset];
+
+            return queryAll(`
+                SELECT r.*, u.username as author
+                FROM recipes_fts fts
+                JOIN recipes r ON r.id = fts.rowid
+                JOIN users u ON r.user_id = u.id
+                WHERE recipes_fts MATCH ?
+                  AND r.is_public = 1
+                  ${styleClause}
+                ORDER BY r.likes_count DESC, r.created_at DESC
+                LIMIT ? OFFSET ?
+            `, params);
+        } else {
+            const styleClause = style ? 'AND r.style = ?' : '';
+            const params = style
+                ? [style, limit, offset]
+                : [limit, offset];
+
+            return queryAll(`
+                SELECT r.*, u.username as author
+                FROM recipes r
+                JOIN users u ON r.user_id = u.id
+                WHERE r.is_public = 1
+                  ${styleClause}
+                ORDER BY r.likes_count DESC, r.created_at DESC
+                LIMIT ? OFFSET ?
+            `, params);
+        }
+    },
+
+    /**
+     * Search within a user's OWN recipes (private + public).
+     */
+    searchOwn(userId, query = '', limit = 20, offset = 0) {
+        const hasQuery = query.trim().length > 0;
+
+        if (hasQuery) {
+            const ftsQuery = query.trim().replace(/[^а-яёa-z0-9\s\*]/gi, ' ').trim() + '*';
+            return queryAll(`
+                SELECT r.*
+                FROM recipes_fts fts
+                JOIN recipes r ON r.id = fts.rowid
+                WHERE recipes_fts MATCH ?
+                  AND r.user_id = ?
+                ORDER BY r.created_at DESC
+                LIMIT ? OFFSET ?
+            `, [ftsQuery, userId, limit, offset]);
+        } else {
+            return queryAll(
+                'SELECT * FROM recipes WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+                [userId, limit, offset]
+            );
+        }
+    },
+
+    /** Get distinct styles from public recipes for filter dropdown. */
+    getPublicStyles() {
+        return queryAll(
+            `SELECT DISTINCT style FROM recipes WHERE is_public = 1 AND style IS NOT NULL AND style != '' ORDER BY style`,
+            []
+        ).map(r => r.style);
+    },
+};
