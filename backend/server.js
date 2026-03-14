@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import logger from './utils/logger.js';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import path from 'path';
@@ -78,11 +80,21 @@ const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Request logging for debugging routing behind proxy
-app.use((req, res, next) => {
-    console.log(`[API] ${req.method} ${req.url}`);
-    next();
-});
+// Structured HTTP request logging (pino-http → stdout → Vector → Betterstack)
+app.use(pinoHttp({
+    logger,
+    // Skip health checks to reduce noise
+    autoLogging: {
+        ignore: (req) => req.url === '/health' || req.url === '/api/health',
+    },
+    customLogLevel: (req, res, err) => {
+        if (err || res.statusCode >= 500) return 'error';
+        if (res.statusCode >= 400) return 'warn';
+        return 'info';
+    },
+    customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+    customErrorMessage: (req, res, err) => `${req.method} ${req.url} ${res.statusCode} — ${err?.message}`,
+}));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
