@@ -16,10 +16,13 @@ source = '''
 [sinks.betterstack]
 type = "http"
 inputs = ["add_fields"]
-uri = "https://s2297886.eu-nbg-2.betterstackdata.com"
+uri = "https://in.logtail.com"
 encoding.codec = "json"
 framing.method = "newline_delimited"
 compression = "gzip"
+
+[sinks.betterstack.request.headers]
+Content-Type = "application/json"
 
 [sinks.betterstack.auth]
 strategy = "bearer"
