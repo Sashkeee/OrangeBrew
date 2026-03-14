@@ -38,6 +38,7 @@ import processRouter from './routes/process.js';
 import usersRouter from './routes/users.js';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
+import beerxmlRouter from './routes/beerxml.js';
 import { authenticate } from './middleware/auth.js';
 import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 
@@ -106,6 +107,9 @@ app.use(['/api/control', '/control'], authenticate, controlRouter);
 app.use(['/api/telegram', '/telegram'], authenticate, telegramRouter);
 app.use(['/api/users', '/users'], authenticate, usersRouter);
 app.use(['/api/devices', '/devices'], authenticate, devicesRouter);
+// Raw XML body support for BeerXML import (application/xml or text/xml)
+app.use(['/api/beerxml', '/beerxml'], express.text({ type: ['application/xml', 'text/xml'], limit: '5mb' }));
+app.use(['/api/beerxml', '/beerxml'], authenticate, beerxmlRouter);
 
 // Per-user ProcessManagers — Map<userId, ProcessManager>
 // Создаются лениво при первом обращении к /api/process
