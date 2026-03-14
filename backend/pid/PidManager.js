@@ -3,6 +3,9 @@ import PidTuner from './PidTuner.js';
 import { KalmanFilter } from './KalmanFilter.js';
 import { setHeaterState } from '../routes/control.js';
 import { settingsQueries } from '../db/database.js'; // To save tunings
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'PidManager' });
 
 /**
  * PidManager orchestrates the PID controller for brewing.
@@ -27,7 +30,7 @@ export default class PidManager {
         const i = parseFloat(pidSettings?.ki) || parseFloat(settings.pid_i) || 0.1;
         const d = parseFloat(pidSettings?.kd) || parseFloat(settings.pid_d) || 1.0;
 
-        console.log(`[PidManager] Loaded tunings from DB: P=${p} I=${i} D=${d}`);
+        log.info({ kp: p, ki: i, kd: d }, 'Loaded tunings from DB');
 
         this.pid = new PIDController(p, i, d, 1.0); // Kp, Ki, Kd, dt
         this.tuner = new PidTuner();
@@ -73,7 +76,7 @@ export default class PidManager {
 
         this.enabled = enabled;
         this.pid.setEnabled(enabled);
-        console.log(`[PidManager] PID ${enabled ? 'ENABLED' : 'DISABLED'}`);
+        log.info({ enabled }, `PID ${enabled ? 'ENABLED' : 'DISABLED'}`);
         if (!enabled && !this.tuner.tuning) {
             setHeaterState(0, this.userId);
         }
@@ -81,7 +84,7 @@ export default class PidManager {
 
     setTarget(target) {
         this.pid.setTarget(parseFloat(target));
-        console.log(`[PidManager] Target set to ${target}°C`);
+        log.info({ target }, 'Target set');
     }
 
     /**
@@ -90,7 +93,7 @@ export default class PidManager {
      */
     setSensorAddress(address) {
         this.sensorAddress = address;
-        console.log(`[PidManager] Sensor address: ${address || 'auto (mapped)'}`);
+        log.info({ address: address || 'auto' }, 'Sensor address set');
     }
 
     /**
@@ -103,9 +106,9 @@ export default class PidManager {
         if (mode === 'holding' && old === 'heating') {
             // Reset integral when transitioning to holding to prevent overshoot
             this.pid.resetIntegral();
-            console.log(`[PidManager] Mode: heating → holding (integral reset)`);
+            log.info({ from: 'heating', to: 'holding' }, 'Mode changed, integral reset');
         } else {
-            console.log(`[PidManager] Mode: ${mode}`);
+            log.info({ mode }, 'Mode set');
         }
     }
 
@@ -118,7 +121,7 @@ export default class PidManager {
 
     setTunings(kp, ki, kd) {
         this.pid.setTunings(parseFloat(kp), parseFloat(ki), parseFloat(kd));
-        console.log(`[PidManager] Tunings updated: P=${kp} I=${ki} D=${kd}`);
+        log.info({ kp, ki, kd }, 'Tunings updated');
     }
 
     // --- Tuning Methods ---
@@ -181,13 +184,13 @@ export default class PidManager {
             // Debug log every update during tuning
             const now = Date.now();
             if (!this._lastTuneLog || now - this._lastTuneLog > 3000) {
-                console.log(`[PidManager:TUNE] input=${input.toFixed(1)}°C → tuner.power=${result.power} → heater=${powerToSend}% state=${result.state || 'done'}`);
+                log.debug({ input: input.toFixed(1), tunerPower: result.power, heater: powerToSend, state: result.state || 'done' }, 'TUNE tick');
                 this._lastTuneLog = now;
             }
 
             if (result.done) {
                 if (result.error) {
-                    console.error(`[PidManager] Tuning failed: ${result.error}`);
+                    log.error({ error: result.error }, 'Tuning failed');
                     this.lastTuningResults = { error: result.error };
                     setHeaterState(0, this.userId);
                     return;
@@ -215,7 +218,7 @@ export default class PidManager {
 
                 // Apply to running PID
                 this.setTunings(result.results.Kp, result.results.Ki, result.results.Kd);
-                console.log(result.message);
+                log.info({ kp: result.results.Kp, ki: result.results.Ki, kd: result.results.Kd }, result.message);
                 setHeaterState(0, this.userId); // Turn off after tuning
             }
             return;
@@ -251,7 +254,7 @@ export default class PidManager {
             const rawStr = this.lastRawInput.toFixed(2);
             const filtStr = filteredInput.toFixed(2);
             const filterInfo = this.kalmanEnabled && rawStr !== filtStr ? ` (raw=${rawStr})` : '';
-            console.log(`[PidManager] ${this.mode.toUpperCase()}: input=${filtStr}°C${filterInfo} target=${this.pid.target}°C → heater=${heaterPower}%`);
+            log.debug({ mode: this.mode, input: filtStr, raw: this.lastRawInput?.toFixed(2), target: this.pid.target, heater: heaterPower }, 'PID tick');
             this._lastPidLog = now;
         }
     }
@@ -275,7 +278,7 @@ export default class PidManager {
             if (q !== undefined) settingsQueries.set('kalman_q', newQ);
             if (r !== undefined) settingsQueries.set('kalman_r', newR);
         }
-        console.log(`[PidManager] Kalman updated: enabled=${this.kalmanEnabled} q=${this.kalman.q} r=${this.kalman.r}`);
+        log.info({ enabled: this.kalmanEnabled, q: this.kalman.q, r: this.kalman.r }, 'Kalman updated');
     }
 
     getKalmanStatus() {

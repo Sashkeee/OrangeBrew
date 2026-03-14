@@ -219,7 +219,7 @@ function getOrCreateProcessManager(userId) {
     });
 
     processManagers.set(userId, pm);
-    console.log(`[Server] ProcessManager created for user ${userId}`);
+    logger.info({ module: 'Server', userId }, 'ProcessManager created');
     return pm;
 }
 
@@ -239,15 +239,15 @@ async function main() {
     // ─── Serial / Mock Connection ─────────────────────────────
 
     if (CONNECTION_TYPE === 'mock') {
-        console.log('[Server] Starting in MOCK mode (no physical hardware)');
+        logger.info({ module: 'Server', mode: 'mock' }, 'Starting in MOCK mode (no physical hardware)');
         serial = new MockSerial();
         serial.on('ack', (ack) => {
-            console.log(`[Mock] ACK: ${ack.cmd} → ${ack.ok ? 'OK' : 'FAIL'}`);
+            logger.debug({ module: 'Mock', cmd: ack.cmd, ok: ack.ok }, 'ACK');
         });
     } else {
         const portName = process.env.SERIAL_PORT || 'COM3';
         const baudRate = parseInt(process.env.BAUD_RATE) || 115200;
-        console.log(`[Server] Serial mode starting on ${portName} at ${baudRate} baud`);
+        logger.info({ module: 'Server', mode: 'serial', port: portName, baud: baudRate }, 'Starting in Serial mode');
         serial = new RealSerial(portName, baudRate);
         serial.start();
     }
@@ -271,7 +271,7 @@ async function main() {
                 sensorSettings = JSON.parse(sensorSettings);
             }
         } catch (e) {
-            console.warn('[mapSensors] Failed to load sensor settings:', e.message);
+            logger.warn({ module: 'mapSensors', err: e.message }, 'Failed to load sensor settings');
             sensorSettings = {};
         }
         sensorSettings = sensorSettings || {};
@@ -311,7 +311,7 @@ async function main() {
 
     // Global Serial error handler to prevent Node.js crashes if USB disconnects
     serial.on('error', (err) => {
-        console.error('[Global Serial Error] Connection issue:', err.message);
+        logger.error({ module: 'Serial', err: err.message }, 'Serial connection error');
     });
 
     // Pass Serial sensor data (local USB / mock device)
@@ -340,7 +340,7 @@ async function main() {
             // Periodic log
             const now = Date.now();
             if (now - lastHwDataLog > 30000) {
-                console.log(`[Server] WiFi data from '${deviceId}' (user=${userId}): boiler=${mappedData.boiler}°C, sensors=${data.sensors?.length || 0}`);
+                logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, sensors: data.sensors?.length || 0 }, 'WiFi sensor data received');
                 lastHwDataLog = now;
             }
 
@@ -365,22 +365,13 @@ async function main() {
     // ─── Start ────────────────────────────────────────────────
 
     server.listen(PORT, () => {
-        console.log(`
-╔══════════════════════════════════════════════╗
-║         🍺 OrangeBrew Backend v0.1.0         ║
-╠══════════════════════════════════════════════╣
-║  REST API:   http://localhost:${PORT}/api       ║
-║  WebSocket:  ws://localhost:${PORT}/ws          ║
-║  Health:     http://localhost:${PORT}/api/health ║
-║  Mode:       ${CONNECTION_TYPE.padEnd(31)}║
-╚══════════════════════════════════════════════╝
-`);
+        logger.info({ module: 'Server', port: PORT, mode: CONNECTION_TYPE }, 'OrangeBrew Backend started');
     });
 
     // ─── Graceful Shutdown ────────────────────────────────────
 
     const shutdown = (signal) => {
-        console.log(`\n[Server] Received ${signal}. Shutting down gracefully...`);
+        logger.info({ module: 'Server', signal }, 'Shutting down gracefully...');
 
         if (serial) {
             // serial.handleCommand({ cmd: 'emergencyStop' }); // Old mock method
@@ -398,7 +389,7 @@ async function main() {
         closeDatabase();
 
         server.close(() => {
-            console.log('[Server] Goodbye! 🍻');
+            logger.info({ module: 'Server' }, 'Goodbye!');
             process.exit(0);
         });
 
@@ -411,6 +402,6 @@ async function main() {
 }
 
 main().catch((err) => {
-    console.error('[Server] Fatal error:', err);
+    logger.error({ module: 'Server', err }, 'Fatal startup error');
     process.exit(1);
 });

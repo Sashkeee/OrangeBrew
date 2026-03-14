@@ -2,6 +2,9 @@ import { EventEmitter } from 'events';
 import telegram from './telegram.js';
 import { temperatureQueries, sessionQueries } from '../db/database.js';
 import { setPumpState } from '../routes/control.js';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'ProcessManager' });
 
 // Status constants
 export const PROCESS_STATUS = {
@@ -50,7 +53,7 @@ class ProcessManager extends EventEmitter {
         }
 
         this.lastTempLogTime = 0;
-        console.log('[ProcessManager] Reset to IDLE');
+        log.info('Reset to IDLE');
         this.emit('update', this.state);
     }
 
@@ -108,7 +111,7 @@ class ProcessManager extends EventEmitter {
                 });
                 finalSessionId = newSession.id;
             } catch (err) {
-                console.warn('[ProcessManager] Failed to create session with recipe_id (likely FK missing). Retrying without recipe_id...');
+                log.warn({ err }, 'Failed to create session with recipe_id (likely FK missing). Retrying without recipe_id...');
                 try {
                     const fallbackSession = sessionQueries.create({
                         recipe_id: null,
@@ -118,7 +121,7 @@ class ProcessManager extends EventEmitter {
                     });
                     finalSessionId = fallbackSession.id;
                 } catch (e2) {
-                    console.error('[ProcessManager] Fatal: Could not create session in DB', e2);
+                    log.error({ err: e2 }, 'Fatal: Could not create session in DB');
                     finalSessionId = Date.now().toString(); // Fallback, though it might fail FK constraint later
                 }
             }
@@ -141,17 +144,18 @@ class ProcessManager extends EventEmitter {
             notifiedEvents: []
         };
 
-        console.log(`[ProcessManager] ===== START ${mode.toUpperCase()} =====`);
-        console.log(`[ProcessManager] Recipe: ${recipe.name}`);
-        console.log(`[ProcessManager] Device: ${deviceId}`);
-        console.log(`[ProcessManager] Sensor: ${sensorAddress || 'auto (first/mapped)'}`);
-        console.log(`[ProcessManager] Session: ${finalSessionId}`);
-        console.log(`[ProcessManager] Steps (${steps.length}):`);
-        steps.forEach((s, i) => console.log(`[ProcessManager]   ${i}: ${s.name} - ${s.temp}°C / ${s.duration}min`));
+        log.info({
+            mode,
+            recipe: recipe.name,
+            deviceId,
+            sensorAddress: sensorAddress || 'auto',
+            sessionId: finalSessionId,
+            steps: steps.map((s, i) => `${i}: ${s.name} ${s.temp}°C/${s.duration}min`),
+        }, `START ${mode.toUpperCase()}`);
 
         // Initialize hardware
         const initialTemp = this.state.steps[0].temp;
-        console.log(`[ProcessManager] Enabling PID, target: ${initialTemp}°C, mode: heating`);
+        log.info({ target: initialTemp, mode: 'heating' }, 'Enabling PID');
         if (this.pidManager && this.pidManager.setEnabled) {
             if (this.pidManager.setSensorAddress) this.pidManager.setSensorAddress(sensorAddress);
             this.pidManager.setTarget(initialTemp);
@@ -159,7 +163,7 @@ class ProcessManager extends EventEmitter {
             this.pidManager.setEnabled(true);
         }
         // Turn on pump automatically when process starts
-        console.log('[ProcessManager] Turning pump ON');
+        log.info('Turning pump ON');
         setPumpState(true, this.userId);
 
         // Start loop
@@ -183,7 +187,7 @@ class ProcessManager extends EventEmitter {
             try {
                 sessionQueries.cancel(oldSessionId);
             } catch (err) {
-                console.error('[ProcessManager] Failed to cancel session in DB', err);
+                log.error({ err }, 'Failed to cancel session in DB');
             }
         }
     }
@@ -248,7 +252,7 @@ class ProcessManager extends EventEmitter {
         if (this.state.deviceId && deviceId !== this.state.deviceId) {
             // Don't spam logs - only log once per minute
             if (!this._lastDeviceMismatchLog || Date.now() - this._lastDeviceMismatchLog > 60000) {
-                console.warn(`[ProcessManager] Device mismatch: expected '${this.state.deviceId}', got '${deviceId}'. Ignoring.`);
+                log.warn({ expected: this.state.deviceId, got: deviceId }, 'Device mismatch, ignoring sensor data');
                 this._lastDeviceMismatchLog = Date.now();
             }
             return;
@@ -279,7 +283,7 @@ class ProcessManager extends EventEmitter {
         }
 
         if (currentTemp === undefined) {
-            console.warn('[ProcessManager] No boiler temperature in data:', Object.keys(data));
+            log.warn({ dataKeys: Object.keys(data) }, 'No boiler temperature in sensor data');
             return;
         }
 
@@ -293,7 +297,7 @@ class ProcessManager extends EventEmitter {
         const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
-            console.log(`[ProcessManager] Target ${currentStep.temp}°C reached (current: ${currentTemp}°C) → HOLDING for ${currentStep.duration}min`);
+            log.info({ target: currentStep.temp, current: currentTempFloat, holdMin: currentStep.duration }, 'Target reached → HOLDING');
             this.state.stepPhase = 'holding';
             this.state.status = PROCESS_STATUS.HOLDING;
             this.state.remainingTime = currentStep.duration * 60;
@@ -318,7 +322,7 @@ class ProcessManager extends EventEmitter {
                 temperatureQueries.insert(this.state.sessionId, 'boiler', currentTemp);
                 this.lastTempLogTime = now;
             } catch (err) {
-                console.error('[ProcessManager] Failed to log temperature:', err);
+                log.error({ err }, 'Failed to log temperature to DB');
             }
         }
 
@@ -379,7 +383,7 @@ class ProcessManager extends EventEmitter {
     advanceStep() {
         const nextIndex = this.state.currentStepIndex + 1;
         if (nextIndex >= this.state.steps.length) {
-            console.log('[ProcessManager] All steps complete → finishing');
+            log.info('All steps complete → finishing');
             this.complete();
         } else {
             this.state.currentStepIndex = nextIndex;
@@ -387,7 +391,7 @@ class ProcessManager extends EventEmitter {
             this.state.status = PROCESS_STATUS.HEATING;
             const nextStep = this.state.steps[nextIndex];
 
-            console.log(`[ProcessManager] Advancing to step ${nextIndex + 1}: ${nextStep.name} (${nextStep.temp}°C / ${nextStep.duration}min)`);
+            log.info({ step: nextIndex + 1, name: nextStep.name, temp: nextStep.temp, duration: nextStep.duration }, 'Advancing to next step');
 
             // Set new target and switch PID to heating mode
             if (this.pidManager && this.pidManager.setEnabled) {
@@ -422,7 +426,7 @@ class ProcessManager extends EventEmitter {
             try {
                 sessionQueries.complete(this.state.sessionId);
             } catch (err) {
-                console.error('[ProcessManager] Failed to complete session in DB', err);
+                log.error({ err }, 'Failed to complete session in DB');
             }
         }
 
