@@ -321,6 +321,13 @@ class ProcessManager extends EventEmitter {
                 console.error('[ProcessManager] Failed to log temperature:', err);
             }
         }
+
+        // Forward sensor data to PID controller.
+        // For WiFi devices data arrives here (not via serial 'data' event),
+        // so we must explicitly feed it to PidManager to compute heater output.
+        if (this.pidManager) {
+            this.pidManager.update(data);
+        }
     }
 
     // Called every second by loop

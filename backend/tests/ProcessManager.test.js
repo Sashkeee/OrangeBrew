@@ -37,6 +37,7 @@ describe('ProcessManager', () => {
             setMode: vi.fn(),
             resetIntegral: vi.fn(),
             setSensorAddress: vi.fn(),
+            update: vi.fn(),
             target: 0,
             enabled: false
         };
