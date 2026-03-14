@@ -1,5 +1,6 @@
 import PIDController from './PIDController.js';
 import PidTuner from './PidTuner.js';
+import { KalmanFilter } from './KalmanFilter.js';
 import { setHeaterState } from '../routes/control.js';
 import { settingsQueries } from '../db/database.js'; // To save tunings
 
@@ -34,6 +35,14 @@ export default class PidManager {
         this.enabled = false;
         this.mode = 'heating'; // 'heating' | 'holding'
         this.sensorAddress = null; // Specific sensor address to track
+
+        // Kalman filter for sensor noise reduction
+        const kalmanQ = parseFloat(settingsQueries.get('kalman_q')) || 0.01;
+        const kalmanR = parseFloat(settingsQueries.get('kalman_r')) || 0.05;
+        this.kalman = new KalmanFilter({ processNoise: kalmanQ, measurementNoise: kalmanR });
+        this.kalmanEnabled = true;
+        this.lastRawInput = null;
+        this.lastFilteredInput = null;
 
         // Listen to sensor updates
         if (this.serial) {
@@ -217,13 +226,20 @@ export default class PidManager {
         // because setHeaterState() handles hardware communication independently.
         if (!this.enabled) return;
 
+        // Apply Kalman filter to reduce sensor noise before PID computation.
+        // UI always receives raw sensor data — filtering only affects PID input.
+        // PidTuner uses its own EMA and is NOT affected by this filter.
+        this.lastRawInput = input;
+        const filteredInput = this.kalmanEnabled ? this.kalman.update(input) : input;
+        this.lastFilteredInput = filteredInput;
+
         let heaterPower;
         if (this.mode === 'heating') {
             // Heating mode: full power with ramp-down near target
-            heaterPower = this.pid.computeHeating(input, 5);
+            heaterPower = this.pid.computeHeating(filteredInput, 5);
         } else {
             // Holding mode: classic PID for temperature maintenance
-            const output = this.pid.compute(input);
+            const output = this.pid.compute(filteredInput);
             heaterPower = Math.round(Math.max(0, Math.min(100, output)));
         }
 
@@ -232,9 +248,45 @@ export default class PidManager {
         // Periodic log (every 30s)
         const now = Date.now();
         if (!this._lastPidLog || now - this._lastPidLog > 30000) {
-            console.log(`[PidManager] ${this.mode.toUpperCase()}: input=${input.toFixed(1)}°C target=${this.pid.target}°C → heater=${heaterPower}%`);
+            const rawStr = this.lastRawInput.toFixed(2);
+            const filtStr = filteredInput.toFixed(2);
+            const filterInfo = this.kalmanEnabled && rawStr !== filtStr ? ` (raw=${rawStr})` : '';
+            console.log(`[PidManager] ${this.mode.toUpperCase()}: input=${filtStr}°C${filterInfo} target=${this.pid.target}°C → heater=${heaterPower}%`);
             this._lastPidLog = now;
         }
+    }
+
+    /**
+     * Update Kalman filter parameters on-the-fly.
+     * Called by settings route when POST /api/settings/kalman is received.
+     * @param {{ enabled?: boolean, q?: number, r?: number }} params
+     */
+    updateKalman({ enabled, q, r } = {}) {
+        if (enabled !== undefined) this.kalmanEnabled = Boolean(enabled);
+        if (q !== undefined || r !== undefined) {
+            const newQ = q !== undefined ? parseFloat(q) : this.kalman.q;
+            const newR = r !== undefined ? parseFloat(r) : this.kalman.r;
+            this.kalman = new KalmanFilter({
+                processNoise: newQ,
+                measurementNoise: newR,
+                initialError: this.kalman._initialError
+            });
+            // Persist to DB so values survive restarts
+            if (q !== undefined) settingsQueries.set('kalman_q', newQ);
+            if (r !== undefined) settingsQueries.set('kalman_r', newR);
+        }
+        console.log(`[PidManager] Kalman updated: enabled=${this.kalmanEnabled} q=${this.kalman.q} r=${this.kalman.r}`);
+    }
+
+    getKalmanStatus() {
+        return {
+            enabled: this.kalmanEnabled,
+            q: this.kalman.q,
+            r: this.kalman.r,
+            gain: this.kalman.gain,
+            rawInput: this.lastRawInput,
+            filteredInput: this.lastFilteredInput
+        };
     }
 
     getStatus() {

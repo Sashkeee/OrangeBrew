@@ -48,6 +48,29 @@ export default function createSettingsRouter() {
         }
     });
 
+    // GET /api/settings/kalman — get Kalman filter status
+    router.get('/kalman', (req, res) => {
+        const pidManager = req.pidManager;
+        if (!pidManager) return res.json({ enabled: false, q: 0.01, r: 0.05, gain: null, rawInput: null, filteredInput: null });
+        res.json(pidManager.getKalmanStatus());
+    });
+
+    // POST /api/settings/kalman — update Kalman filter parameters
+    router.post('/kalman', (req, res) => {
+        try {
+            const { enabled, q, r } = req.body;
+            const pidManager = req.pidManager;
+            if (pidManager) pidManager.updateKalman({ enabled, q, r });
+
+            // Persist enabled flag to DB (q/r are persisted inside updateKalman)
+            if (enabled !== undefined) settingsQueries.set('kalman_enabled', enabled, req.user.id);
+
+            res.json({ ok: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     // POST /api/settings/test-connection — test ESP32 connection
     router.post('/test-connection', (req, res) => {
         // Will be implemented when serial manager is connected

@@ -44,6 +44,16 @@ export const recipesApi = {
     create: (data) => request('/recipes', { method: 'POST', body: data }),
     update: (id, data) => request(`/recipes/${id}`, { method: 'PUT', body: data }),
     delete: (id) => request(`/recipes/${id}`, { method: 'DELETE' }),
+
+    // Import / Export (JSON)
+    exportAll: () => request('/recipes/export'),
+    importJson: (recipes) => request('/recipes/import', { method: 'POST', body: { recipes } }),
+
+    // Scaling
+    scale: (id, targetBatchSize) =>
+        request(`/recipes/${id}/scale`, { method: 'POST', body: { targetBatchSize } }),
+    scaleAndSave: (id, targetBatchSize) =>
+        request(`/recipes/${id}/scale-and-save`, { method: 'POST', body: { targetBatchSize } }),
 };
 
 // ─── Sessions ─────────────────────────────────────────────
@@ -123,6 +133,38 @@ export const authApi = {
         body: data,
     }),
     me: () => request('/auth/me'),
+};
+
+// ─── BeerXML ──────────────────────────────────────────────
+
+export const beerxmlApi = {
+    /**
+     * Import a .xml File object. Sends as multipart/form-data.
+     * Returns { ok, imported, failed, recipes, errors? }
+     */
+    import: (file) => {
+        const token = localStorage.getItem('orangebrew_token');
+        const formData = new FormData();
+        formData.append('file', file);
+        return fetch(`${API_BASE}/beerxml/import`, {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: formData,
+            // Do NOT set Content-Type — browser adds multipart boundary automatically
+        }).then(async res => {
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: res.statusText }));
+                throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            return res.json();
+        });
+    },
+
+    /** Export a single recipe. Returns raw XML string (caller handles download). */
+    exportOne: (id) => request(`/beerxml/export/${id}`),
+
+    /** Export all recipes. Returns raw XML string. */
+    exportAll: () => request('/beerxml/export-all'),
 };
 
 // ─── Devices ──────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { recipeQueries } from '../db/database.js';
+import { scaleRecipe } from '../utils/scaleRecipe.js';
 
 const router = Router();
 
@@ -64,6 +65,45 @@ router.post('/import', (req, res) => {
         res.json({ ok: true, imported, skipped, total: recipes.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Scaling ──────────────────────────────────────────────
+
+// POST /api/recipes/:id/scale — preview scaled recipe (does NOT save)
+router.post('/:id/scale', (req, res) => {
+    try {
+        const recipe = recipeQueries.getById(req.params.id, req.user.id);
+        if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+
+        const targetBatchSize = parseFloat(req.body.targetBatchSize);
+        if (!targetBatchSize || targetBatchSize <= 0) {
+            return res.status(400).json({ error: 'targetBatchSize must be a positive number' });
+        }
+
+        const scaled = scaleRecipe(parseRecipe(recipe), targetBatchSize);
+        res.json({ recipe: scaled });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// POST /api/recipes/:id/scale-and-save — scale and persist as a new recipe
+router.post('/:id/scale-and-save', (req, res) => {
+    try {
+        const recipe = recipeQueries.getById(req.params.id, req.user.id);
+        if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+
+        const targetBatchSize = parseFloat(req.body.targetBatchSize);
+        if (!targetBatchSize || targetBatchSize <= 0) {
+            return res.status(400).json({ error: 'targetBatchSize must be a positive number' });
+        }
+
+        const scaled = scaleRecipe(parseRecipe(recipe), targetBatchSize);
+        const saved  = recipeQueries.create(scaled, req.user.id);
+        res.status(201).json({ recipe: parseRecipe(saved) });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
     }
 });
 

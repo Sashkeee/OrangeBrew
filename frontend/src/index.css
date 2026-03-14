@@ -72,3 +72,125 @@ button {
 .text-mono {
   font-family: var(--font-mono);
 }
+
+/* ─── Buttons ──────────────────────────────────────────── */
+
+.btn {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--primary-color); color: #000; }
+.btn-secondary { background: var(--surface-lighter); color: var(--text-primary); border: 1px solid var(--border-color); }
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.btn-icon:hover { color: var(--text-primary); background: var(--surface-lighter); }
+
+/* ─── Modal ─────────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--card-shadow);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ─── BeerXML Import ────────────────────────────────────── */
+
+.beerxml-dropzone {
+  border: 2px dashed var(--border-color);
+  border-radius: 10px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.beerxml-dropzone:hover,
+.beerxml-dropzone.dragging {
+  border-color: var(--primary-color);
+  background: var(--primary-glow);
+  color: var(--text-primary);
+}
+
+.beerxml-uploading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.beerxml-result {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+.beerxml-result.success {
+  background: rgba(76, 175, 80, 0.12);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  color: #81c784;
+}
+.beerxml-result.error {
+  background: rgba(244, 67, 54, 0.12);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  color: #e57373;
+}
+
+/* ─── Spinner ───────────────────────────────────────────── */
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
