@@ -16,7 +16,7 @@ source = '''
 [sinks.betterstack]
 type = "http"
 inputs = ["add_fields"]
-uri = "https://in.logtail.com"
+uri = "https://s2297886.eu-nbg-2.betterstackdata.com"
 encoding.codec = "json"
 framing.method = "newline_delimited"
 compression = "gzip"
