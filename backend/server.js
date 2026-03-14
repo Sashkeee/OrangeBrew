@@ -188,6 +188,41 @@ app.post('/api/debug/pid/tunings', authenticate, (req, res) => {
 
 let serial = null;
 
+// ─── Per-User ProcessManager Factory ──────────────────────
+// Вызывается из middleware /api/process при первом обращении пользователя.
+// Каждый пользователь получает изолированный ProcessManager + PidManager.
+// serial инициализируется в main() до первого HTTP-запроса, поэтому closure корректна.
+function getOrCreateProcessManager(userId) {
+    if (processManagers.has(userId)) return processManagers.get(userId);
+
+    // Команды нагревателю/насосу идут только на устройства данного пользователя
+    const userCommandSender = (cmd) => {
+        // Приоритет: WiFi-устройство пользователя → local serial (fallback)
+        const sent = sendToUserHardware(userId, cmd);
+        if (!sent && serial) {
+            serial.write(JSON.stringify(cmd));
+        }
+    };
+
+    // Регистрируем per-user sender в control.js
+    setCommandSender(userId, userCommandSender);
+
+    // Создаём PidManager с userId — он передаёт его в setHeaterState
+    const userPid = new PidManager(serial, userId);
+
+    // Создаём ProcessManager с userId — он передаёт его в setPumpState
+    const pm = new ProcessManager(userPid, userId);
+
+    // Транслируем обновления только этому пользователю
+    pm.on('update', (state) => {
+        broadcastProcessState(state, userId);
+    });
+
+    processManagers.set(userId, pm);
+    console.log(`[Server] ProcessManager created for user ${userId}`);
+    return pm;
+}
+
 
 async function main() {
     // Database (async — sql.js loads WASM)
@@ -215,41 +250,6 @@ async function main() {
         console.log(`[Server] Serial mode starting on ${portName} at ${baudRate} baud`);
         serial = new RealSerial(portName, baudRate);
         serial.start();
-    }
-
-    // ─── Per-User ProcessManager Factory ─────────────────────
-    // Вызывается из middleware /api/process при первом обращении пользователя.
-    // Каждый пользователь получает изолированный ProcessManager + PidManager.
-
-    function getOrCreateProcessManager(userId) {
-        if (processManagers.has(userId)) return processManagers.get(userId);
-
-        // Команды нагревателю/насосу идут только на устройства данного пользователя
-        const userCommandSender = (cmd) => {
-            // Приоритет: WiFi-устройство пользователя → local serial (fallback)
-            const sent = sendToUserHardware(userId, cmd);
-            if (!sent && serial) {
-                serial.write(JSON.stringify(cmd));
-            }
-        };
-
-        // Регистрируем per-user sender в control.js
-        setCommandSender(userId, userCommandSender);
-
-        // Создаём PidManager с userId — он передаёт его в setHeaterState
-        const userPid = new PidManager(serial, userId);
-
-        // Создаём ProcessManager с userId — он передаёт его в setPumpState
-        const pm = new ProcessManager(userPid, userId);
-
-        // Транслируем обновления только этому пользователю
-        pm.on('update', (state) => {
-            broadcastProcessState(state, userId);
-        });
-
-        processManagers.set(userId, pm);
-        console.log(`[Server] ProcessManager created for user ${userId}`);
-        return pm;
     }
 
     /**

@@ -18,7 +18,8 @@
 
 import pino from 'pino';
 
-const isDev = process.env.NODE_ENV !== 'production';
+// LOG_FORMAT=json forces JSON output even in development (e.g. in Docker + Vector)
+const isDev = process.env.NODE_ENV !== 'production' && process.env.LOG_FORMAT !== 'json';
 
 const logger = pino({
     level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),

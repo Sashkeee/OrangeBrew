@@ -9,6 +9,7 @@ services:
       - DB_PATH=/app/data/orangebrew.db
       - CONNECTION_TYPE=mock
       - NODE_ENV=development
+      - LOG_FORMAT=json
     volumes:
       - orangebrew-data-test:/app/data
     restart: unless-stopped
