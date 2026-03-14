@@ -44,6 +44,16 @@ export const recipesApi = {
     create: (data) => request('/recipes', { method: 'POST', body: data }),
     update: (id, data) => request(`/recipes/${id}`, { method: 'PUT', body: data }),
     delete: (id) => request(`/recipes/${id}`, { method: 'DELETE' }),
+
+    // Import / Export (JSON)
+    exportAll: () => request('/recipes/export'),
+    importJson: (recipes) => request('/recipes/import', { method: 'POST', body: { recipes } }),
+
+    // Scaling
+    scale: (id, targetBatchSize) =>
+        request(`/recipes/${id}/scale`, { method: 'POST', body: { targetBatchSize } }),
+    scaleAndSave: (id, targetBatchSize) =>
+        request(`/recipes/${id}/scale-and-save`, { method: 'POST', body: { targetBatchSize } }),
 };
 
 // ─── Sessions ─────────────────────────────────────────────
