@@ -28,11 +28,17 @@ if err == null && is_object(parsed) {
     # Pino uses numeric levels: 10=trace 20=debug 30=info 40=warn 50=error 60=fatal
     if exists(parsed.level) && is_integer(parsed.level) {
         level_num = to_int!(parsed.level)
-        if level_num >= 60 { .level = "fatal" }
-        else if level_num >= 50 { .level = "error" }
-        else if level_num >= 40 { .level = "warn" }
-        else if level_num >= 20 { .level = "debug" }
-        else { .level = "info" }
+        if level_num >= 60 {
+            .level = "fatal"
+        } else if level_num >= 50 {
+            .level = "error"
+        } else if level_num >= 40 {
+            .level = "warn"
+        } else if level_num >= 20 {
+            .level = "debug"
+        } else {
+            .level = "info"
+        }
 
         # Pino uses "msg" or "message" key
         .msg = to_string(parsed.msg) ?? to_string(parsed.message) ?? ""
