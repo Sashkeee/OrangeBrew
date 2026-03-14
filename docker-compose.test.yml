@@ -35,6 +35,7 @@ services:
   vector:
     image: timberio/vector:0.43.1-alpine
     container_name: orangebrew-vector-test
+    command: ["--config", "/etc/vector/vector.toml"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./vector.test.toml:/etc/vector/vector.toml:ro
