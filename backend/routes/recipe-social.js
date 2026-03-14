@@ -1,0 +1,156 @@
+/**
+ * recipe-social.js — API endpoints for public library, likes, and comments.
+ * Mounted at: /api/recipes (alongside existing recipes.js).
+ *
+ * Endpoints:
+ *   GET    /api/recipes/public               — public recipe library
+ *   POST   /api/recipes/:id/publish         — toggle is_public
+ *   POST   /api/recipes/:id/like             — toggle like
+ *   GET    /api/recipes/:id/likes            — like status for current user
+ *   POST   /api/recipes/:id/comments         — add comment
+ *   GET    /api/recipes/:id/comments         — list comments (paginated)
+ *   DELETE /api/recipes/:id/comments/:cid    — soft-delete comment (author only)
+ */
+
+import { Router } from 'express';
+import { recipeLikesQueries, recipeCommentsQueries, recipeQueries } from '../db/database.js';
+
+const router = Router();
+
+// ─── Public Library ───────────────────────────────────────
+
+/**
+ * GET /api/recipes/public — returns all public recipes (sorted by likes desc).
+ * Includes author username, likes_count, comments_count.
+ */
+router.get('/public', (req, res) => {
+    const limit  = Math.min(parseInt(req.query.limit,  10) || 50, 100);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
+
+    try {
+        const recipes = recipeQueries.getPublic(limit, offset).map(r => ({
+            ...r,
+            ingredients:   JSON.parse(r.ingredients   || '[]'),
+            mash_steps:    JSON.parse(r.mash_steps    || '[]'),
+            hop_additions: JSON.parse(r.hop_additions || '[]'),
+        }));
+        res.json(recipes);
+    } catch (err) {
+        console.error('[public] list failed:', err);
+        res.status(500).json({ error: 'Failed to list public recipes' });
+    }
+});
+
+/**
+ * POST /api/recipes/:id/publish — toggle is_public for own recipe.
+ * Body: { isPublic: boolean }
+ * Returns updated recipe.
+ */
+router.post('/:id/publish', (req, res) => {
+    const recipeId = parseInt(req.params.id, 10);
+    if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
+
+    const { isPublic } = req.body;
+    if (typeof isPublic !== 'boolean') {
+        return res.status(400).json({ error: 'isPublic (boolean) required' });
+    }
+
+    try {
+        const recipe = recipeQueries.setPublic(recipeId, req.user.id, isPublic);
+        if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+        res.json(recipe);
+    } catch (err) {
+        console.error('[publish] toggle failed:', err);
+        res.status(500).json({ error: 'Failed to update recipe visibility' });
+    }
+});
+
+// ─── Likes ────────────────────────────────────────────────
+
+/** POST /api/recipes/:id/like — Toggle like. Returns { liked, count } */
+router.post('/:id/like', (req, res) => {
+    const recipeId = parseInt(req.params.id, 10);
+    if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
+
+    try {
+        const result = recipeLikesQueries.toggle(recipeId, req.user.id);
+        res.json(result);
+    } catch (err) {
+        console.error('[like] toggle failed:', err);
+        res.status(500).json({ error: 'Failed to toggle like' });
+    }
+});
+
+/** GET /api/recipes/:id/likes — Returns { count, isLiked } */
+router.get('/:id/likes', (req, res) => {
+    const recipeId = parseInt(req.params.id, 10);
+    if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
+
+    try {
+        const result = recipeLikesQueries.getStatus(recipeId, req.user.id);
+        res.json(result);
+    } catch (err) {
+        console.error('[like] getStatus failed:', err);
+        res.status(500).json({ error: 'Failed to get like status' });
+    }
+});
+
+// ─── Comments ─────────────────────────────────────────────
+
+/** POST /api/recipes/:id/comments — Add comment. Returns { comment } */
+router.post('/:id/comments', (req, res) => {
+    const recipeId = parseInt(req.params.id, 10);
+    if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
+
+    const { text } = req.body;
+    if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'text is required' });
+    }
+    const trimmed = text.trim();
+    if (trimmed.length < 1 || trimmed.length > 1000) {
+        return res.status(400).json({ error: 'Comment must be 1–1000 characters' });
+    }
+
+    try {
+        const comment = recipeCommentsQueries.create(recipeId, req.user.id, trimmed);
+        res.status(201).json({ comment });
+    } catch (err) {
+        console.error('[comments] create failed:', err);
+        res.status(500).json({ error: 'Failed to create comment' });
+    }
+});
+
+/** GET /api/recipes/:id/comments — List comments. Returns { comments, total } */
+router.get('/:id/comments', (req, res) => {
+    const recipeId = parseInt(req.params.id, 10);
+    if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
+
+    const limit  = Math.min(parseInt(req.query.limit,  10) || 50, 100);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
+
+    try {
+        const result = recipeCommentsQueries.getByRecipe(recipeId, limit, offset);
+        res.json(result);
+    } catch (err) {
+        console.error('[comments] list failed:', err);
+        res.status(500).json({ error: 'Failed to list comments' });
+    }
+});
+
+/** DELETE /api/recipes/:id/comments/:cid — Soft-delete (author only) */
+router.delete('/:id/comments/:cid', (req, res) => {
+    const commentId = parseInt(req.params.cid, 10);
+    if (!commentId) return res.status(400).json({ error: 'Invalid comment id' });
+
+    try {
+        const result = recipeCommentsQueries.softDelete(commentId, req.user.id);
+        if (result === null) return res.status(404).json({ error: 'Comment not found' });
+        if (result === false) return res.status(403).json({ error: 'Not your comment' });
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('[comments] delete failed:', err);
+        res.status(500).json({ error: 'Failed to delete comment' });
+    }
+});
+
+export default router;

@@ -233,6 +233,26 @@ export const recipeQueries = {
     },
 
     delete: (id, userId) => runSql('DELETE FROM recipes WHERE id = ? AND user_id = ?', [id, userId]),
+
+    /** Returns all public recipes with author username, likes_count, comments_count. */
+    getPublic: (limit = 50, offset = 0) => queryAll(
+        `SELECT r.*, u.username as author
+         FROM recipes r
+         JOIN users u ON r.user_id = u.id
+         WHERE r.is_public = 1
+         ORDER BY r.likes_count DESC, r.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+    ),
+
+    /** Toggle is_public for a recipe owned by userId. Returns updated recipe. */
+    setPublic: (id, userId, isPublic) => {
+        runSql(
+            `UPDATE recipes SET is_public = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
+            [isPublic ? 1 : 0, id, userId]
+        );
+        return recipeQueries.getById(id, userId);
+    },
 };
 
 // ─── Sessions ─────────────────────────────────────────────
@@ -576,4 +596,86 @@ export const paymentQueries = {
     getById: (id) => queryOne('SELECT * FROM payments WHERE id = ?', [id]),
 
     getByYookassaId: (yookassaId) => queryOne('SELECT * FROM payments WHERE yookassa_id = ?', [yookassaId]),
+};
+
+// ─── Recipe Likes ──────────────────────────────────────────
+
+export const recipeLikesQueries = {
+    /**
+     * Toggle like for a recipe. Returns { liked, count }.
+     */
+    toggle(recipeId, userId) {
+        const existing = queryOne(
+            'SELECT id FROM recipe_likes WHERE recipe_id = ? AND user_id = ?',
+            [recipeId, userId]
+        );
+        if (existing) {
+            runSql('DELETE FROM recipe_likes WHERE recipe_id = ? AND user_id = ?', [recipeId, userId]);
+        } else {
+            runSql('INSERT INTO recipe_likes (recipe_id, user_id) VALUES (?, ?)', [recipeId, userId]);
+        }
+        const { likes_count } = queryOne('SELECT likes_count FROM recipes WHERE id = ?', [recipeId]);
+        return { liked: !existing, count: likes_count };
+    },
+
+    /** Returns { count, isLiked } for a given recipe + user. */
+    getStatus(recipeId, userId) {
+        const { likes_count } = queryOne('SELECT likes_count FROM recipes WHERE id = ?', [recipeId]) || { likes_count: 0 };
+        const isLiked = !!queryOne(
+            'SELECT 1 FROM recipe_likes WHERE recipe_id = ? AND user_id = ?',
+            [recipeId, userId]
+        );
+        return { count: likes_count, isLiked };
+    },
+};
+
+// ─── Recipe Comments ───────────────────────────────────────
+
+export const recipeCommentsQueries = {
+    /** Returns paginated comments with username. */
+    getByRecipe(recipeId, limit = 50, offset = 0) {
+        const comments = queryAll(
+            `SELECT c.id, c.recipe_id, c.user_id, u.username, c.text, c.created_at
+             FROM recipe_comments c
+             JOIN users u ON c.user_id = u.id
+             WHERE c.recipe_id = ? AND c.is_deleted = 0
+             ORDER BY c.created_at ASC
+             LIMIT ? OFFSET ?`,
+            [recipeId, limit, offset]
+        );
+        const { total } = queryOne(
+            'SELECT COUNT(*) as total FROM recipe_comments WHERE recipe_id = ? AND is_deleted = 0',
+            [recipeId]
+        );
+        return { comments, total };
+    },
+
+    /** Creates a comment. Returns the created comment with username. */
+    create(recipeId, userId, text) {
+        const { lastId } = runSql(
+            'INSERT INTO recipe_comments (recipe_id, user_id, text) VALUES (?, ?, ?)',
+            [recipeId, userId, text]
+        );
+        return queryOne(
+            `SELECT c.id, c.recipe_id, c.user_id, u.username, c.text, c.created_at
+             FROM recipe_comments c JOIN users u ON c.user_id = u.id
+             WHERE c.id = ?`,
+            [lastId]
+        );
+    },
+
+    /** Soft-deletes a comment. Only the author can delete (checked in route). */
+    softDelete(commentId, userId) {
+        const comment = queryOne(
+            'SELECT id, user_id FROM recipe_comments WHERE id = ? AND is_deleted = 0',
+            [commentId]
+        );
+        if (!comment) return null;
+        if (comment.user_id !== userId) return false;
+        runSql(
+            'UPDATE recipe_comments SET is_deleted = 1, updated_at = datetime(\'now\') WHERE id = ?',
+            [commentId]
+        );
+        return true;
+    },
 };
