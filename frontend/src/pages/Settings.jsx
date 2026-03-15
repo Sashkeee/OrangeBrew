@@ -9,7 +9,7 @@ import {
     Usb, Radio, Bot, Eye, Moon, Sun, Globe, Gauge,
     Zap, Droplets, Timer, Database, Download, Upload, Trash2, Users
 } from 'lucide-react';
-import { settingsApi } from '../api/client.js';
+import { settingsApi, sensorsApi } from '../api/client.js';
 import PidTuningPanel from '../components/PidTuningPanel';
 import UsersSettings from '../components/UsersSettings';
 import DeviceManagement from '../components/DeviceManagement';
@@ -103,6 +103,54 @@ const SettingsPage = () => {
     const [hasChanges, setHasChanges] = useState(false);
     const [saved, setSaved] = useState(false);
     const [expandedSensors, setExpandedSensors] = useState({});
+
+    // ── Sensor auto-discovery state ─────────────────────────
+    const [discoveredSensors, setDiscoveredSensors] = useState([]);
+    const [sensorsDirty, setSensorsDirty] = useState(false);
+    const [sensorsSaving, setSensorsSaving] = useState(false);
+    const [sensorsSaved, setSensorsSaved] = useState(false);
+
+    const loadDiscovered = useCallback(async () => {
+        try {
+            const list = await sensorsApi.getDiscovered();
+            setDiscoveredSensors(list);
+        } catch { /* API may not be available */ }
+    }, []);
+
+    useEffect(() => {
+        if (activeSection !== 'sensors') return;
+        loadDiscovered();
+        const timer = setInterval(loadDiscovered, 5000); // refresh every 5s
+        return () => clearInterval(timer);
+    }, [activeSection, loadDiscovered]);
+
+    const updateDiscoveredSensor = (address, key, value) => {
+        setDiscoveredSensors(prev => prev.map(s =>
+            s.address === address ? { ...s, [key]: value } : s
+        ));
+        setSensorsDirty(true);
+        setSensorsSaved(false);
+    };
+
+    const handleSaveSensors = async () => {
+        setSensorsSaving(true);
+        try {
+            await sensorsApi.updateConfig(discoveredSensors.map(s => ({
+                address: s.address,
+                name: s.name || '',
+                color: s.color || '#FF6B35',
+                offset: parseFloat(s.offset) || 0,
+                enabled: s.enabled !== false,
+            })));
+            setSensorsDirty(false);
+            setSensorsSaved(true);
+            setTimeout(() => setSensorsSaved(false), 3000);
+        } catch (e) {
+            console.error('[Settings] Sensor save failed', e);
+        } finally {
+            setSensorsSaving(false);
+        }
+    };
 
     const fetchSettings = useCallback(async () => {
         try {
@@ -214,7 +262,27 @@ const SettingsPage = () => {
         transition: 'border-color 0.2s',
     };
 
-    const selectStyle = { ...inputStyle, appearance: 'none', cursor: 'pointer' };
+    const selectStyle = { ...inputStyle, appearance: 'none', cursor: 'pointer', paddingRight: '2rem' };
+
+    // Обёртка для <select> с кастомной стрелкой (иначе appearance:none убирает стрелку)
+    const SelectField = ({ value, onChange, width = '160px', children }) => (
+        <div style={{ position: 'relative', width }}>
+            <select
+                value={value}
+                onChange={onChange}
+                style={{ ...selectStyle, width: '100%' }}
+            >
+                {children}
+            </select>
+            <ChevronDown
+                size={14}
+                style={{
+                    position: 'absolute', right: '0.6rem', top: '50%',
+                    transform: 'translateY(-50%)', color: '#888', pointerEvents: 'none',
+                }}
+            />
+        </div>
+    );
 
     const labelStyle = {
         fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.03em',
@@ -264,13 +332,14 @@ const SettingsPage = () => {
                         <div style={{ borderTop: '1px solid #333', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
                             <h3 style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>Локальное подключение (Serial)</h3>
                             <SettingRow label="Тип подключения" description="Способ связи с основным контроллером">
-
-                                <select value={settings.hardware.connectionType} onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
-                                    style={{ ...selectStyle, width: '160px' }}>
+                                <SelectField
+                                    value={settings.hardware.connectionType}
+                                    onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
+                                >
                                     <option value="serial">USB Serial</option>
-                                    <option value="wifi">WiFi</option>
+                                    <option value="wifi">WiFi (WebSocket)</option>
                                     <option value="mock">Эмуляция</option>
-                                </select>
+                                </SelectField>
                             </SettingRow>
 
                             {settings.hardware.connectionType === 'serial' && (
@@ -280,10 +349,12 @@ const SettingsPage = () => {
                                             style={{ ...inputStyle, width: '160px' }} placeholder="COM3" />
                                     </SettingRow>
                                     <SettingRow label="Скорость (бод)" description="Скорость Serial">
-                                        <select value={settings.hardware.baudRate} onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
-                                            style={{ ...selectStyle, width: '160px' }}>
+                                        <SelectField
+                                            value={settings.hardware.baudRate}
+                                            onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
+                                        >
                                             {[9600, 19200, 38400, 57600, 115200].map(r => <option key={r} value={r}>{r}</option>)}
-                                        </select>
+                                        </SelectField>
                                     </SettingRow>
                                 </>
                             )}
@@ -312,6 +383,11 @@ const SettingsPage = () => {
                                     onChange={e => updateSetting('hardware', 'watchdogTimeout', parseInt(e.target.value))}
                                     style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
                             </SettingRow>
+
+                            <div style={{ marginTop: '1rem', padding: '0.7rem 1rem', background: 'rgba(255,152,0,0.07)', borderRadius: '6px', border: '1px solid rgba(255,152,0,0.25)', fontSize: '0.75rem', color: '#ffb74d', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                                <span>Тип подключения применяется при <b>запуске сервера</b>. После сохранения перезапустите контейнер: <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.3)', padding: '0 4px', borderRadius: '3px' }}>docker compose restart backend</code></span>
+                            </div>
 
                             <div style={{ marginTop: '1.5rem', padding: '1rem', background: wsConnected ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.08)', borderRadius: '6px', border: `1px solid ${wsConnected ? 'rgba(76,175,80,0.2)' : 'rgba(255,152,0,0.2)'}` }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -344,45 +420,177 @@ const SettingsPage = () => {
             case 'sensors':
                 return (
                     <div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Калибровка DS18B20 датчиков. Смещение применяется к показаниям.</div>
-                        {Object.entries(settings.sensors).map(([id, sensor]) => (
-                            <div key={id} style={{ marginBottom: '0.5rem', border: '1px solid #333', borderRadius: '6px', overflow: 'hidden' }}>
-                                <button onClick={() => setExpandedSensors(p => ({ ...p, [id]: !p[id] }))}
-                                    style={{
-                                        width: '100%', display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem 1rem',
-                                        background: 'rgba(255,255,255,0.02)', border: 'none', cursor: 'pointer', color: 'var(--text-primary)', textAlign: 'left',
-                                    }}>
-                                    <Toggle value={sensor.enabled} onChange={(v) => { updateSensorSetting(id, 'enabled', v); }} />
-                                    <Thermometer size={16} color={sensor.enabled ? '#03a9f4' : '#555'} />
-                                    <span style={{ flex: 1, fontWeight: 'bold', fontSize: '0.85rem', opacity: sensor.enabled ? 1 : 0.4 }}>{sensor.name}</span>
-                                    <span style={{ fontSize: '0.7rem', color: '#666', fontFamily: 'var(--font-mono)' }}>{sensor.address}</span>
-                                    {expandedSensors[id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                                </button>
-                                <AnimatePresence>
-                                    {expandedSensors[id] && (
-                                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} style={{ overflow: 'hidden' }}>
-                                            <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.8rem' }}>
-                                                <div>
-                                                    <label style={labelStyle}>Имя</label>
-                                                    <input value={sensor.name} onChange={e => updateSensorSetting(id, 'name', e.target.value)} style={inputStyle} />
-                                                </div>
-                                                <div>
-                                                    <label style={labelStyle}>Адрес 1-Wire</label>
-                                                    <input value={sensor.address} onChange={e => updateSensorSetting(id, 'address', e.target.value)} style={inputStyle} />
-                                                </div>
-                                                <div>
-                                                    <label style={labelStyle}>Смещение (°C)</label>
-                                                    <input type="number" step="0.1" value={sensor.offset} onChange={e => updateSensorSetting(id, 'offset', parseFloat(e.target.value))}
-                                                        style={{ ...inputStyle, textAlign: 'center' }} />
-                                                </div>
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
+                            <div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                    Датчики DS18B20 на шине OneWire. Дайте каждому имя и цвет для отображения на графиках.
+                                </div>
+                                {discoveredSensors.length > 0 && (
+                                    <div style={{ fontSize: '0.75rem', color: '#03a9f4', marginTop: '0.3rem' }}>
+                                        🔍 Обнаружено на шине: <b>{discoveredSensors.filter(s => s.lastSeen).length}</b>
+                                        {discoveredSensors.filter(s => !s.lastSeen).length > 0 &&
+                                            ` · офлайн: ${discoveredSensors.filter(s => !s.lastSeen).length}`}
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                            <button
+                                onClick={handleSaveSensors}
+                                disabled={!sensorsDirty || sensorsSaving}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                    padding: '0.5rem 1rem', borderRadius: '6px',
+                                    background: sensorsSaved ? 'rgba(76,175,80,0.2)' : sensorsDirty ? 'rgba(3,169,244,0.15)' : 'rgba(255,255,255,0.05)',
+                                    border: `1px solid ${sensorsSaved ? '#4caf50' : sensorsDirty ? '#03a9f4' : '#333'}`,
+                                    color: sensorsSaved ? '#4caf50' : sensorsDirty ? '#03a9f4' : '#666',
+                                    cursor: sensorsDirty ? 'pointer' : 'default',
+                                    fontSize: '0.8rem', fontWeight: 'bold', transition: 'all 0.2s',
+                                }}
+                            >
+                                {sensorsSaved ? <><CheckCircle size={14} /> Сохранено</> : sensorsSaving ? 'Сохраняю...' : <><Save size={14} /> Сохранить датчики</>}
+                            </button>
+                        </div>
+
+                        {/* No sensors yet */}
+                        {discoveredSensors.length === 0 && (
+                            <div style={{
+                                padding: '2rem', textAlign: 'center',
+                                background: 'rgba(255,255,255,0.02)', border: '1px dashed #333', borderRadius: '8px',
+                                color: 'var(--text-secondary)', fontSize: '0.85rem',
+                            }}>
+                                <Thermometer size={32} color="#555" style={{ marginBottom: '0.8rem' }} />
+                                <div>Датчики не обнаружены</div>
+                                <div style={{ fontSize: '0.75rem', marginTop: '0.3rem', color: '#555' }}>
+                                    Подключите ESP32 с датчиками DS18B20 — они появятся автоматически
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Sensor list */}
+                        {discoveredSensors.map((sensor, idx) => {
+                            const isOnline = sensor.lastSeen && (Date.now() - sensor.lastSeen < 30000);
+                            const accentColor = sensor.color || '#FF6B35';
+                            const expanded = expandedSensors[sensor.address];
+                            return (
+                                <div key={sensor.address} style={{
+                                    marginBottom: '0.6rem',
+                                    border: `1px solid ${expanded ? accentColor + '60' : '#333'}`,
+                                    borderRadius: '8px', overflow: 'hidden',
+                                    transition: 'border-color 0.2s',
+                                }}>
+                                    {/* Row header */}
+                                    <button
+                                        onClick={() => setExpandedSensors(p => ({ ...p, [sensor.address]: !p[sensor.address] }))}
+                                        style={{
+                                            width: '100%', display: 'flex', alignItems: 'center', gap: '0.8rem',
+                                            padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.02)',
+                                            border: 'none', cursor: 'pointer', color: 'var(--text-primary)', textAlign: 'left',
+                                        }}
+                                    >
+                                        {/* Enable toggle */}
+                                        <Toggle
+                                            value={sensor.enabled !== false}
+                                            onChange={v => updateDiscoveredSensor(sensor.address, 'enabled', v)}
+                                        />
+                                        {/* Color dot */}
+                                        <div style={{
+                                            width: '12px', height: '12px', borderRadius: '50%',
+                                            background: accentColor, flexShrink: 0,
+                                        }} />
+                                        {/* Name */}
+                                        <span style={{
+                                            flex: 1, fontWeight: 'bold', fontSize: '0.85rem',
+                                            opacity: sensor.enabled !== false ? 1 : 0.4,
+                                        }}>
+                                            {sensor.name || <span style={{ color: '#666' }}>Без имени</span>}
+                                        </span>
+                                        {/* Temp */}
+                                        {sensor.temp != null && (
+                                            <span style={{ fontSize: '0.9rem', color: accentColor, fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                                                {sensor.temp.toFixed(1)}°C
+                                            </span>
+                                        )}
+                                        {/* Status badge */}
+                                        <span style={{
+                                            fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '4px',
+                                            background: isOnline ? 'rgba(76,175,80,0.15)' : 'rgba(100,100,100,0.15)',
+                                            border: `1px solid ${isOnline ? '#4caf50' : '#555'}`,
+                                            color: isOnline ? '#4caf50' : '#666',
+                                        }}>
+                                            {isOnline ? 'онлайн' : 'офлайн'}
+                                        </span>
+                                        {/* Address */}
+                                        <span style={{ fontSize: '0.65rem', color: '#555', fontFamily: 'var(--font-mono)' }}>
+                                            {sensor.address}
+                                        </span>
+                                        {expanded ? <ChevronDown size={14} color="#666" /> : <ChevronRight size={14} color="#555" />}
+                                    </button>
+
+                                    {/* Expanded edit panel */}
+                                    <AnimatePresence>
+                                        {expanded && (
+                                            <motion.div
+                                                initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                                                style={{ overflow: 'hidden' }}
+                                            >
+                                                <div style={{
+                                                    padding: '1rem', background: 'rgba(0,0,0,0.25)',
+                                                    display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.8rem',
+                                                    alignItems: 'end',
+                                                }}>
+                                                    <div>
+                                                        <label style={labelStyle}>Название датчика</label>
+                                                        <input
+                                                            value={sensor.name || ''}
+                                                            placeholder="Например: Куб, Колонна..."
+                                                            onChange={e => updateDiscoveredSensor(sensor.address, 'name', e.target.value)}
+                                                            style={inputStyle}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label style={labelStyle}>Цвет на графике</label>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                            <input
+                                                                type="color"
+                                                                value={sensor.color || '#FF6B35'}
+                                                                onChange={e => updateDiscoveredSensor(sensor.address, 'color', e.target.value)}
+                                                                style={{
+                                                                    width: '42px', height: '38px',
+                                                                    padding: '2px', border: '1px solid #444',
+                                                                    borderRadius: '6px', background: 'transparent',
+                                                                    cursor: 'pointer',
+                                                                }}
+                                                            />
+                                                            <input
+                                                                value={sensor.color || '#FF6B35'}
+                                                                onChange={e => updateDiscoveredSensor(sensor.address, 'color', e.target.value)}
+                                                                style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label style={labelStyle}>Смещение (°C)</label>
+                                                        <input
+                                                            type="number" step="0.1"
+                                                            value={sensor.offset ?? 0}
+                                                            onChange={e => updateDiscoveredSensor(sensor.address, 'offset', parseFloat(e.target.value) || 0)}
+                                                            style={{ ...inputStyle, textAlign: 'center' }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div style={{ padding: '0.4rem 1rem 0.7rem', background: 'rgba(0,0,0,0.25)', fontSize: '0.7rem', color: '#555' }}>
+                                                    Адрес 1-Wire: <span style={{ fontFamily: 'var(--font-mono)', color: '#888' }}>{sensor.address}</span>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            );
+                        })}
+
+                        {/* Calibration tip */}
                         <div style={{ marginTop: '1rem', padding: '0.8rem', background: 'rgba(3,169,244,0.08)', borderRadius: '6px', border: '1px solid rgba(3,169,244,0.2)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            💡 Для калибровки: поместите датчик в ледяную воду (0°C) или кипящую (100°C), запишите показания и установите нужное смещение.
+                            💡 Для калибровки: поместите датчик в ледяную воду (0°C) или кипящую (100°C), запишите показания и установите смещение = (ожидаемое − показание).
                         </div>
                     </div>
                 );

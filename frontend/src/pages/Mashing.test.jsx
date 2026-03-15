@@ -7,7 +7,12 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 vi.mock('../hooks/useSensors', () => ({
     useSensors: vi.fn(() => ({
         sensors: { boiler: { value: 65 } },
-        rawSensors: []
+        rawSensors: [],
+        namedSensors: [],
+        sensorConfig: [],
+        reloadConfig: vi.fn(),
+        connected: true,
+        error: null,
     }))
 }));
 
@@ -56,6 +61,8 @@ vi.mock('../api/client.js', () => ({
     },
     sensorsApi: {
         getCurrent: vi.fn().mockResolvedValue({}),
+        getConfig: vi.fn().mockResolvedValue([]),
+        getDiscovered: vi.fn().mockResolvedValue([]),
     },
 }));
 
