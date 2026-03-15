@@ -680,7 +680,7 @@ void setup() {
 
     // Датчики
     tempSensors.begin();
-    tempSensors.setWaitForConversion(false);
+    tempSensors.setWaitForConversion(true);  // блокирующий режим — ждём завершения конвертации всех датчиков
     int sensorCount = tempSensors.getDeviceCount();
     Serial.printf ("  DS18B20  : %d датчик(ов) на шине\n", sensorCount);
     if (sensorCount > 0) {
