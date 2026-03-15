@@ -113,7 +113,19 @@ const SettingsPage = () => {
     const loadDiscovered = useCallback(async () => {
         try {
             const list = await sensorsApi.getDiscovered();
-            setDiscoveredSensors(list);
+            setDiscoveredSensors(prev => {
+                if (prev.length === 0) return list; // первая загрузка — берём всё с сервера
+                // При обновлении сохраняем локальные правки (имя, цвет, смещение, enabled),
+                // обновляем только живые данные (температура, онлайн-статус)
+                const merged = list.map(fresh => {
+                    const local = prev.find(s => s.address === fresh.address);
+                    if (!local) return fresh;
+                    return { ...fresh, name: local.name, color: local.color, offset: local.offset, enabled: local.enabled };
+                });
+                // Добавляем офлайн-датчики которых нет в свежем списке
+                prev.forEach(s => { if (!merged.find(m => m.address === s.address)) merged.push(s); });
+                return merged;
+            });
         } catch { /* API may not be available */ }
     }, []);
 
