@@ -25,7 +25,7 @@ const Mashing = () => {
     const navigate = useNavigate();
     const { sessionId } = useParams();
 
-    const { sensors, rawSensors } = useSensors();
+    const { sensors, rawSensors, namedSensors } = useSensors();
     const { control, setHeater, setPump } = useControl();
 
     // New backend process hook
@@ -68,11 +68,17 @@ const Mashing = () => {
     const [selectedSensorAddress, setSelectedSensorAddress] = useState(null);
 
 
-    // Derived - use selected sensor's temp if available, fallback to mapped boiler
+    // Derived - use selected named sensor temp if available, fallback to mapped boiler
+    const selectedNamedSensor = namedSensors.find(s => s.address === selectedSensorAddress);
+    const sensorColor = selectedNamedSensor?.color || 'var(--primary-color)';
+
     const temperature = (() => {
-        if (selectedSensorAddress && rawSensors.length > 0) {
-            const selected = rawSensors.find(s => s.address === selectedSensorAddress);
-            if (selected && selected.temp !== undefined) return selected.temp;
+        if (selectedSensorAddress) {
+            // Try namedSensors first (already has applied calibration from useSensors)
+            if (selectedNamedSensor && selectedNamedSensor.temp != null) return selectedNamedSensor.temp;
+            // Fallback to rawSensors
+            const rawSelected = rawSensors.find(s => s.address === selectedSensorAddress);
+            if (rawSelected && rawSelected.temp !== undefined) return rawSelected.temp;
         }
         return sensors.boiler?.value || 20;
     })();
@@ -349,8 +355,8 @@ const Mashing = () => {
                                 <AreaChart data={history}>
                                     <defs>
                                         <linearGradient id="color-temp" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="var(--primary-color)" stopOpacity={0.4} />
-                                            <stop offset="95%" stopColor="var(--primary-color)" stopOpacity={0} />
+                                            <stop offset="5%" stopColor={sensorColor} stopOpacity={0.4} />
+                                            <stop offset="95%" stopColor={sensorColor} stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -366,10 +372,10 @@ const Mashing = () => {
                                         labelStyle={{ color: '#aaa', marginBottom: '0.3rem' }}
                                     />
                                     <Area
-                                        type="monotone" dataKey="temp" stroke="var(--primary-color)" strokeWidth={2}
+                                        type="monotone" dataKey="temp" stroke={sensorColor} strokeWidth={2}
                                         fillOpacity={1} fill="url(#color-temp)" dot={false}
-                                        activeDot={{ r: 4, fill: "var(--primary-color)", stroke: '#1e1e1e', strokeWidth: 2 }}
-                                        name="Температура" isAnimationActive={false}
+                                        activeDot={{ r: 4, fill: sensorColor, stroke: '#1e1e1e', strokeWidth: 2 }}
+                                        name={selectedNamedSensor?.name || 'Температура'} isAnimationActive={false}
                                     />
                                     {/* Using Area with a transparent fill or just a Line for 'target' so it's a dashed line */}
                                     <Line
@@ -490,7 +496,7 @@ const Mashing = () => {
                             {!isStarted && (
                                 <>
                                     <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />
-                                    <SensorSelector rawSensors={rawSensors} value={selectedSensorAddress} onChange={setSelectedSensorAddress} />
+                                    <SensorSelector namedSensors={namedSensors} rawSensors={rawSensors} value={selectedSensorAddress} onChange={setSelectedSensorAddress} />
                                     <SafetyCheck checked={isHeaterCovered} onChange={setIsHeaterCovered} />
                                 </>
                             )}

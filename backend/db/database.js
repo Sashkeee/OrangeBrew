@@ -578,6 +578,62 @@ export const pairingQueries = {
     },
 };
 
+// ─── Named Sensors ────────────────────────────────────────
+
+const SENSOR_DEFAULT_COLORS = [
+    '#FF6B35', '#03a9f4', '#4caf50', '#ff9800', '#e91e63',
+    '#9c27b0', '#00bcd4', '#8bc34a', '#ff5722', '#607d8b',
+];
+
+export const sensorQueries = {
+    /**
+     * Get all configured sensors for a user.
+     * @param {number} userId
+     */
+    getAll: (userId) => queryAll(
+        'SELECT * FROM sensors WHERE user_id = ? ORDER BY id ASC',
+        [userId]
+    ),
+
+    /**
+     * Get sensor by address for a user.
+     */
+    getByAddress: (userId, address) => queryOne(
+        'SELECT * FROM sensors WHERE user_id = ? AND address = ?',
+        [userId, address]
+    ),
+
+    /**
+     * Upsert a sensor config. Returns the sensor row.
+     */
+    upsert: (userId, address, { name = '', color, offset = 0, enabled = 1 } = {}) => {
+        // Assign a default color based on current count if not provided
+        if (!color) {
+            const count = queryOne('SELECT COUNT(*) as cnt FROM sensors WHERE user_id = ?', [userId])?.cnt || 0;
+            color = SENSOR_DEFAULT_COLORS[count % SENSOR_DEFAULT_COLORS.length];
+        }
+        runSql(
+            `INSERT INTO sensors (user_id, address, name, color, offset, enabled)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id, address) DO UPDATE SET
+               name    = excluded.name,
+               color   = excluded.color,
+               offset  = excluded.offset,
+               enabled = excluded.enabled`,
+            [userId, address, name, color, offset, enabled ? 1 : 0]
+        );
+        return queryOne('SELECT * FROM sensors WHERE user_id = ? AND address = ?', [userId, address]);
+    },
+
+    /**
+     * Delete a sensor config.
+     */
+    delete: (userId, address) => runSql(
+        'DELETE FROM sensors WHERE user_id = ? AND address = ?',
+        [userId, address]
+    ),
+};
+
 // ─── Payments ─────────────────────────────────────────────
 
 export const paymentQueries = {

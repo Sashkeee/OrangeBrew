@@ -3,40 +3,49 @@ import { Thermometer, ChevronDown } from 'lucide-react';
 
 /**
  * Dropdown to select which temperature sensor to use for the process.
- * Shows available sensor addresses with their current temperatures.
- * 
- * @param {{ rawSensors: Array<{address: string, temp: number}>, value: string|null, onChange: (address: string) => void }} props
+ * Uses namedSensors (array of {address, name, color, temp, enabled}) from useSensors.
  */
-export default function SensorSelector({ rawSensors = [], value, onChange, label = "Датчик температуры" }) {
-    // Auto-select first sensor if none selected
+export default function SensorSelector({ namedSensors = [], rawSensors = [], value, onChange, label = 'Датчик температуры' }) {
+    const sensors = namedSensors.length > 0
+        ? namedSensors
+        : rawSensors.map((s, i) => ({
+            address: s.address,
+            temp: s.temp,
+            name: 'Датчик ' + (i + 1),
+            color: '#FF6B35',
+            enabled: true,
+        }));
+
+    const enabledSensors = sensors.filter(s => s.enabled !== false);
+
     React.useEffect(() => {
-        if (!value && rawSensors.length > 0) {
-            onChange(rawSensors[0].address);
+        if (!value && enabledSensors.length > 0) {
+            onChange(enabledSensors[0].address);
         }
-    }, [rawSensors, value]);
+    }, [enabledSensors.length, value]);
 
-    const selectedSensor = rawSensors.find(s => s.address === value);
+    const selectedSensor = enabledSensors.find(s => s.address === value) || sensors.find(s => s.address === value);
 
-    if (rawSensors.length === 0) {
+    const labelStyle = {
+        display: 'block',
+        fontSize: '0.75rem',
+        color: 'var(--text-secondary)',
+        marginBottom: '0.4rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+    };
+
+    if (enabledSensors.length === 0) {
         return (
             <div style={{ marginBottom: '1rem' }}>
-                <label style={{
-                    display: 'block',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '0.4rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                }}>
-                    {label}
-                </label>
+                <label style={labelStyle}>{label}</label>
                 <div style={{
                     padding: '0.8rem 1rem',
                     background: 'rgba(255,255,255,0.03)',
                     border: '1px solid #333',
                     borderRadius: '8px',
                     color: '#666',
-                    fontSize: '0.85rem'
+                    fontSize: '0.85rem',
                 }}>
                     Нет подключённых датчиков
                 </div>
@@ -44,59 +53,65 @@ export default function SensorSelector({ rawSensors = [], value, onChange, label
         );
     }
 
+    const accentColor = selectedSensor?.color || 'var(--primary-color)';
+
     return (
         <div style={{ marginBottom: '1rem' }}>
-            <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                color: 'var(--text-secondary)',
-                marginBottom: '0.4rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-            }}>
-                {label}
-            </label>
+            <label style={labelStyle}>{label}</label>
             <div style={{ position: 'relative' }}>
+                {selectedSensor && (
+                    <div style={{
+                        position: 'absolute',
+                        left: '1rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        background: accentColor,
+                    }} />
+                )}
+                <Thermometer
+                    size={14}
+                    style={{ position: 'absolute', left: '1.9rem', top: '50%', transform: 'translateY(-50%)', color: accentColor }}
+                />
                 <select
                     value={value || ''}
                     onChange={(e) => onChange(e.target.value)}
                     style={{
                         width: '100%',
-                        padding: '0.8rem 1rem 0.8rem 2.5rem',
+                        padding: '0.8rem 2.5rem 0.8rem 3.5rem',
                         background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid var(--primary-color)',
+                        border: '1px solid ' + accentColor,
                         borderRadius: '8px',
                         color: '#fff',
                         appearance: 'none',
                         cursor: 'pointer',
                         fontSize: '0.9rem',
                         outline: 'none',
-                        transition: 'border-color 0.2s'
+                        transition: 'border-color 0.2s',
                     }}
                 >
-                    {rawSensors.map((s, i) => (
+                    {enabledSensors.map((s) => (
                         <option key={s.address} value={s.address}>
-                            Датчик {i + 1}: {s.temp?.toFixed(1) ?? '?'}°C ({s.address.slice(-5)})
+                            {s.name}{s.temp != null ? ' \u2014 ' + s.temp.toFixed(1) + '\u00b0C' : ''}
                         </option>
                     ))}
                 </select>
-                <Thermometer
-                    size={16}
-                    style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary-color)' }}
-                />
                 <ChevronDown
                     size={16}
                     style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#666', pointerEvents: 'none' }}
                 />
             </div>
             {selectedSensor && (
-                <div style={{ fontSize: '0.7rem', color: 'var(--primary-color)', marginTop: '0.3rem' }}>
-                    Текущая температура: {selectedSensor.temp?.toFixed(1) ?? '?'}°C
+                <div style={{ fontSize: '0.7rem', color: accentColor, marginTop: '0.3rem' }}>
+                    {selectedSensor.temp != null ? 'Температура: ' + selectedSensor.temp.toFixed(1) + '\u00b0C' : 'Датчик не виден'}
+                    {' \u00b7 '}{selectedSensor.address}
                 </div>
             )}
-            {rawSensors.length > 1 && (
+            {sensors.length > 1 && (
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                    Подключено датчиков: {rawSensors.length}
+                    Доступно: {enabledSensors.length} из {sensors.length} датчиков
                 </div>
             )}
         </div>
