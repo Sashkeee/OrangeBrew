@@ -237,16 +237,33 @@ async function main() {
     telegram.initTelegram();
 
     // ─── Serial / Mock Connection ─────────────────────────────
+    // Priority: CONNECTION_TYPE env var → settings_v2 DB → 'mock' fallback
+    let connectionMode = CONNECTION_TYPE;
+    if (!process.env.CONNECTION_TYPE) {
+        // Env not explicitly set — check DB settings (global, user_id=null)
+        try {
+            const hwSettings = settingsQueries.get('hardware', null);
+            if (hwSettings && hwSettings.connectionType) {
+                connectionMode = hwSettings.connectionType;
+                logger.info({ module: 'Server', source: 'db', mode: connectionMode }, 'Connection type loaded from DB settings');
+            }
+        } catch { /* ignore — DB may not have setting yet */ }
+    }
 
-    if (CONNECTION_TYPE === 'mock') {
+    if (connectionMode === 'mock') {
         logger.info({ module: 'Server', mode: 'mock' }, 'Starting in MOCK mode (no physical hardware)');
         serial = new MockSerial();
         serial.on('ack', (ack) => {
             logger.debug({ module: 'Mock', cmd: ack.cmd, ok: ack.ok }, 'ACK');
         });
+    } else if (connectionMode === 'wifi') {
+        // WiFi-only mode: no local serial, hardware connects via WebSocket
+        logger.info({ module: 'Server', mode: 'wifi' }, 'Starting in WiFi-only mode (no local serial)');
+        serial = { on: () => {}, write: () => {}, stop: () => {} }; // no-op stub
     } else {
-        const portName = process.env.SERIAL_PORT || 'COM3';
-        const baudRate = parseInt(process.env.BAUD_RATE) || 115200;
+        // 'serial' or any other value → real serial port
+        const portName = process.env.SERIAL_PORT || settingsQueries.get('hardware', null)?.serialPort || 'COM3';
+        const baudRate = parseInt(process.env.BAUD_RATE) || settingsQueries.get('hardware', null)?.baudRate || 115200;
         logger.info({ module: 'Server', mode: 'serial', port: portName, baud: baudRate }, 'Starting in Serial mode');
         serial = new RealSerial(portName, baudRate);
         serial.start();

@@ -262,7 +262,27 @@ const SettingsPage = () => {
         transition: 'border-color 0.2s',
     };
 
-    const selectStyle = { ...inputStyle, appearance: 'none', cursor: 'pointer' };
+    const selectStyle = { ...inputStyle, appearance: 'none', cursor: 'pointer', paddingRight: '2rem' };
+
+    // Обёртка для <select> с кастомной стрелкой (иначе appearance:none убирает стрелку)
+    const SelectField = ({ value, onChange, width = '160px', children }) => (
+        <div style={{ position: 'relative', width }}>
+            <select
+                value={value}
+                onChange={onChange}
+                style={{ ...selectStyle, width: '100%' }}
+            >
+                {children}
+            </select>
+            <ChevronDown
+                size={14}
+                style={{
+                    position: 'absolute', right: '0.6rem', top: '50%',
+                    transform: 'translateY(-50%)', color: '#888', pointerEvents: 'none',
+                }}
+            />
+        </div>
+    );
 
     const labelStyle = {
         fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.03em',
@@ -312,13 +332,14 @@ const SettingsPage = () => {
                         <div style={{ borderTop: '1px solid #333', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
                             <h3 style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>Локальное подключение (Serial)</h3>
                             <SettingRow label="Тип подключения" description="Способ связи с основным контроллером">
-
-                                <select value={settings.hardware.connectionType} onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
-                                    style={{ ...selectStyle, width: '160px' }}>
+                                <SelectField
+                                    value={settings.hardware.connectionType}
+                                    onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
+                                >
                                     <option value="serial">USB Serial</option>
-                                    <option value="wifi">WiFi</option>
+                                    <option value="wifi">WiFi (WebSocket)</option>
                                     <option value="mock">Эмуляция</option>
-                                </select>
+                                </SelectField>
                             </SettingRow>
 
                             {settings.hardware.connectionType === 'serial' && (
@@ -328,10 +349,12 @@ const SettingsPage = () => {
                                             style={{ ...inputStyle, width: '160px' }} placeholder="COM3" />
                                     </SettingRow>
                                     <SettingRow label="Скорость (бод)" description="Скорость Serial">
-                                        <select value={settings.hardware.baudRate} onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
-                                            style={{ ...selectStyle, width: '160px' }}>
+                                        <SelectField
+                                            value={settings.hardware.baudRate}
+                                            onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
+                                        >
                                             {[9600, 19200, 38400, 57600, 115200].map(r => <option key={r} value={r}>{r}</option>)}
-                                        </select>
+                                        </SelectField>
                                     </SettingRow>
                                 </>
                             )}
@@ -360,6 +383,11 @@ const SettingsPage = () => {
                                     onChange={e => updateSetting('hardware', 'watchdogTimeout', parseInt(e.target.value))}
                                     style={{ ...inputStyle, width: '80px', textAlign: 'center' }} />
                             </SettingRow>
+
+                            <div style={{ marginTop: '1rem', padding: '0.7rem 1rem', background: 'rgba(255,152,0,0.07)', borderRadius: '6px', border: '1px solid rgba(255,152,0,0.25)', fontSize: '0.75rem', color: '#ffb74d', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                                <span>Тип подключения применяется при <b>запуске сервера</b>. После сохранения перезапустите контейнер: <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.3)', padding: '0 4px', borderRadius: '3px' }}>docker compose restart backend</code></span>
+                            </div>
 
                             <div style={{ marginTop: '1.5rem', padding: '1rem', background: wsConnected ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.08)', borderRadius: '6px', border: `1px solid ${wsConnected ? 'rgba(76,175,80,0.2)' : 'rgba(255,152,0,0.2)'}` }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
