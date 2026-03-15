@@ -269,6 +269,8 @@ void startPortal(const String& errorHint = "") {
 
 // ─── WI-FI ПОДКЛЮЧЕНИЕ ────────────────────────────────────
 bool connectWiFi(const String& ssid, const String& pass) {
+    WiFi.disconnect(true);
+    delay(100);
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), pass.c_str());
     Serial.printf("[WiFi] Подключаюсь к «%s»", ssid.c_str());
@@ -539,6 +541,14 @@ void setup() {
     Serial.printf ("  SDK      : %s\n", ESP.getSdkVersion());
     Serial.printf ("  MAC      : %s\n", WiFi.macAddress().c_str());
 
+    // Отключаем автоподключение WiFi — иначе SDK сам лезет в сеть из своей flash,
+    // конфликтуя с нашим connectWiFi(). persistent(false) — не сохраняем ничего в SDK-flash.
+    WiFi.persistent(false);
+    WiFi.setAutoConnect(false);
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(true);
+    delay(100);
+
     pinMode(HEATER_PIN, OUTPUT);
     pinMode(PUMP_PIN,   OUTPUT);
     pinMode(LED_PIN,    OUTPUT);
@@ -548,6 +558,9 @@ void setup() {
     digitalWrite(LED_PIN,    HIGH); // LED off (активный LOW)
 
     fsInit();
+
+    // DS18B20 нужно ~100 мс после подачи питания перед первым сканированием шины
+    delay(100);
 
     // Датчики
     tempSensors.begin();
