@@ -550,6 +550,11 @@ export const pairingQueries = {
         [code]
     ),
 
+    getByCodeAny: (code) => queryOne(
+        `SELECT * FROM device_pairings WHERE pairing_code = ?`,
+        [code]
+    ),
+
     /**
      * Mark a pairing as used when device completes pairing.
      * @param {number} id - Pairing record id

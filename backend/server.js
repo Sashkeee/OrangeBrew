@@ -316,6 +316,7 @@ async function main() {
 
     // Pass Serial sensor data (local USB / mock device)
     serial.on('data', (data) => {
+        if (data.type !== 'sensors') return; // ignore control/ack events from MockSerial
         const deviceId = 'local_serial';
         updateSensorReadings(data);
         broadcastSensors({ deviceId, sensors: data.sensors });

@@ -66,6 +66,7 @@ export function initWebSocket(server) {
                 if (msg.type === 'auth') {
                     const device = deviceQueries.getByApiKey(msg.api_key);
                     if (!device) {
+                        console.log(`[WS] Unknown api_key attempt: ${msg.api_key} (deviceId: ${msg.deviceId || 'unknown'})`);
                         ws.close(4001, 'Unknown api_key');
                         return;
                     }
