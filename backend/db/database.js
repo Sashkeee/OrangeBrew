@@ -500,8 +500,10 @@ export const deviceQueries = {
             INSERT INTO devices (id, name, role, user_id, api_key, status, last_seen)
             VALUES (?, ?, ?, ?, ?, 'online', datetime('now'))
             ON CONFLICT(id) DO UPDATE SET
-                status   = 'online',
-                last_seen = datetime('now')
+                status    = 'online',
+                last_seen = datetime('now'),
+                api_key   = COALESCE(excluded.api_key, api_key),
+                user_id   = COALESCE(excluded.user_id, user_id)
         `, [id, name, role, userId, apiKey]);
         return deviceQueries.getById(id);
     },
