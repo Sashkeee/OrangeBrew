@@ -21,8 +21,8 @@ import {
     broadcastToAllHardware,
     getClientCount
 } from './ws/liveServer.js';
-import { settingsQueries } from './db/database.js';
-import { updateSensorReadings } from './routes/sensors.js';
+import { settingsQueries, sensorQueries } from './db/database.js';
+import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
 import { RealSerial } from './serial/realSerial.js';
@@ -237,71 +237,99 @@ async function main() {
     telegram.initTelegram();
 
     // ─── Serial / Mock Connection ─────────────────────────────
+    // Priority: CONNECTION_TYPE env var → settings_v2 DB → 'mock' fallback
+    let connectionMode = CONNECTION_TYPE;
+    if (!process.env.CONNECTION_TYPE) {
+        // Env not explicitly set — check DB settings (global, user_id=null)
+        try {
+            const hwSettings = settingsQueries.get('hardware', null);
+            if (hwSettings && hwSettings.connectionType) {
+                connectionMode = hwSettings.connectionType;
+                logger.info({ module: 'Server', source: 'db', mode: connectionMode }, 'Connection type loaded from DB settings');
+            }
+        } catch { /* ignore — DB may not have setting yet */ }
+    }
 
-    if (CONNECTION_TYPE === 'mock') {
+    if (connectionMode === 'mock') {
         logger.info({ module: 'Server', mode: 'mock' }, 'Starting in MOCK mode (no physical hardware)');
         serial = new MockSerial();
         serial.on('ack', (ack) => {
             logger.debug({ module: 'Mock', cmd: ack.cmd, ok: ack.ok }, 'ACK');
         });
+    } else if (connectionMode === 'wifi') {
+        // WiFi-only mode: no local serial, hardware connects via WebSocket
+        logger.info({ module: 'Server', mode: 'wifi' }, 'Starting in WiFi-only mode (no local serial)');
+        serial = { on: () => {}, write: () => {}, stop: () => {} }; // no-op stub
     } else {
-        const portName = process.env.SERIAL_PORT || 'COM3';
-        const baudRate = parseInt(process.env.BAUD_RATE) || 115200;
+        // 'serial' or any other value → real serial port
+        const portName = process.env.SERIAL_PORT || settingsQueries.get('hardware', null)?.serialPort || 'COM3';
+        const baudRate = parseInt(process.env.BAUD_RATE) || settingsQueries.get('hardware', null)?.baudRate || 115200;
         logger.info({ module: 'Server', mode: 'serial', port: portName, baud: baudRate }, 'Starting in Serial mode');
         serial = new RealSerial(portName, baudRate);
         serial.start();
     }
 
     /**
-     * Maps raw sensor addresses to roles (boiler, column, etc.) based on settings.
-     * Uses user-scoped settings first, falls back to global.
+     * Maps raw sensor addresses to named roles (boiler, column, etc.).
+     * Uses new `sensors` table (per-user, address-based) first.
+     * Falls back to old settings_v2 'sensors' config for backward compat.
+     * Also applies calibration offset.
      * @param {string} deviceId
-     * @param {object} rawData
+     * @param {object} rawData  — must have rawData.sensors = [{address, temp}]
      * @param {number|null} userId
      */
     function mapSensors(deviceId, rawData, userId = null) {
-        if (!rawData || !rawData.sensors) return rawData;
-
-        let sensorSettings;
-        try {
-            // Try user settings first, then global fallback
-            sensorSettings = (userId !== null ? settingsQueries.get('sensors', userId) : null)
-                ?? settingsQueries.get('sensors', null);
-            if (typeof sensorSettings === 'string') {
-                sensorSettings = JSON.parse(sensorSettings);
-            }
-        } catch (e) {
-            logger.warn({ module: 'mapSensors', err: e.message }, 'Failed to load sensor settings');
-            sensorSettings = {};
-        }
-        sensorSettings = sensorSettings || {};
+        if (!rawData || !rawData.sensors || !Array.isArray(rawData.sensors)) return rawData;
 
         const mapped = {
             type: 'sensors',
             deviceId,
             sensors: rawData.sensors,
-            boiler: undefined,
-            column: undefined
         };
 
-        // 1. Try to find by specific address in settings
-        for (const [role, config] of Object.entries(sensorSettings)) {
-            if (config && config.enabled && config.address) {
-                const found = rawData.sensors.find(s => s.address === config.address);
-                if (found) {
-                    // ESP шлёт { address, temp }, не { address, value }
-                    const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
-                    mapped[role] = rawTemp + parseFloat(config.offset || 0);
+        // ── 1. New address-based config (sensors table) ─────────────────
+        if (userId !== null) {
+            try {
+                const configs = sensorQueries.getAll(userId);
+                for (const cfg of configs) {
+                    if (!cfg.enabled) continue;
+                    const found = rawData.sensors.find(s => s.address === cfg.address);
+                    if (found) {
+                        const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
+                        mapped[cfg.address] = rawTemp + parseFloat(cfg.offset || 0);
+                    }
+                }
+            } catch (e) {
+                logger.warn({ module: 'mapSensors', err: e.message }, 'Failed to load sensor configs');
+            }
+        }
+
+        // ── 2. Legacy role-based config (settings_v2 'sensors') ─────────
+        // Keep for backward compat — maps boiler/column/dephleg/output/ambient
+        let legacySettings = null;
+        try {
+            legacySettings = (userId !== null ? settingsQueries.get('sensors', userId) : null)
+                ?? settingsQueries.get('sensors', null);
+            if (typeof legacySettings === 'string') legacySettings = JSON.parse(legacySettings);
+        } catch { /* ignore */ }
+
+        if (legacySettings && typeof legacySettings === 'object') {
+            for (const [role, config] of Object.entries(legacySettings)) {
+                if (mapped[role] !== undefined) continue; // already set
+                if (config && config.enabled && config.address) {
+                    const found = rawData.sensors.find(s => s.address === config.address);
+                    if (found) {
+                        const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
+                        mapped[role] = rawTemp + parseFloat(config.offset || 0);
+                    }
                 }
             }
         }
 
-        // 2. Fallback: If boiler is still undefined, take the first available sensor
+        // ── 3. Fallback: boiler = first sensor, column = second ──────────
         if (mapped.boiler === undefined && rawData.sensors.length > 0) {
             mapped.boiler = parseFloat(rawData.sensors[0].temp ?? rawData.sensors[0].value ?? 0);
         }
-
-        // 3. Fallback: If column is still undefined, take the second sensor
         if (mapped.column === undefined && rawData.sensors.length > 1) {
             mapped.column = parseFloat(rawData.sensors[1].temp ?? rawData.sensors[1].value ?? 0);
         }
@@ -316,6 +344,7 @@ async function main() {
 
     // Pass Serial sensor data (local USB / mock device)
     serial.on('data', (data) => {
+        if (data.type !== 'sensors') return; // ignore control/ack events from MockSerial
         const deviceId = 'local_serial';
         updateSensorReadings(data);
         broadcastSensors({ deviceId, sensors: data.sensors });
@@ -331,29 +360,38 @@ async function main() {
     });
 
     // Pass WebSocket sensor data (WiFi ESP32 devices)
+    // ESP32 may send type:'sensors' or type:'sensors_raw' — handle both
     let lastHwDataLog = 0;
     onHardwareData((deviceId, data, userId) => {
-        if (data.type === 'sensors_raw') {
-            // Маппинг адресов сенсоров с user-scoped настройками
-            const mappedData = mapSensors(deviceId, data, userId);
+        const hasSensors = Array.isArray(data.sensors) && data.sensors.length > 0;
+        const isSensorMsg = data.type === 'sensors_raw' || data.type === 'sensors' || hasSensors;
+        if (!isSensorMsg) return;
 
-            // Periodic log
-            const now = Date.now();
-            if (now - lastHwDataLog > 30000) {
-                logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, sensors: data.sensors?.length || 0 }, 'WiFi sensor data received');
-                lastHwDataLog = now;
-            }
+        // Track discovered sensors (per-user, in-memory)
+        if (hasSensors && userId != null) {
+            updateDiscoveredSensors(userId, data.sensors);
+        }
 
-            updateSensorReadings(mappedData);
-            broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
+        // Маппинг адресов сенсоров с user-scoped настройками
+        const mappedData = mapSensors(deviceId, data, userId);
 
-            // Роутим только в PM владельца устройства
-            if (userId != null) {
-                const pm = processManagers.get(userId);
-                if (pm) {
-                    const enrichedData = { ...mappedData, sensors: data.sensors };
-                    pm.handleSensorData(deviceId, enrichedData);
-                }
+        // Periodic log
+        const now = Date.now();
+        if (now - lastHwDataLog > 30000) {
+            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, sensors: data.sensors?.length || 0 }, 'WiFi sensor data received');
+            lastHwDataLog = now;
+        }
+
+        updateSensorReadings(mappedData);
+        // Include raw sensors array in broadcast so frontend can show individual sensors
+        broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
+
+        // Роутим только в PM владельца устройства
+        if (userId != null) {
+            const pm = processManagers.get(userId);
+            if (pm) {
+                const enrichedData = { ...mappedData, sensors: data.sensors };
+                pm.handleSensorData(deviceId, enrichedData);
             }
         }
     });

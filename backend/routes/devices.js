@@ -85,10 +85,10 @@ router.get('/pair/status', (req, res) => {
         const { code } = req.query;
         if (!code) return res.status(400).json({ error: 'code is required' });
 
-        const pairing = pairingQueries.getByCode(code);
+        const pairing = pairingQueries.getByCodeAny(code);
 
         if (!pairing) {
-            return res.status(404).json({ error: 'Pairing code not found or expired' });
+            return res.status(404).json({ error: 'Pairing code not found' });
         }
 
         // Verify ownership
@@ -96,9 +96,15 @@ router.get('/pair/status', (req, res) => {
             return res.status(403).json({ error: 'Forbidden' });
         }
 
+        // Pairing completed — device connected and received api_key
         if (pairing.used_at && pairing.device_id) {
             const device = deviceQueries.getById(pairing.device_id);
             return res.json({ status: 'paired', device });
+        }
+
+        // Code expired without device connecting
+        if (pairing.expires_at < new Date().toISOString()) {
+            return res.status(410).json({ error: 'Pairing code expired' });
         }
 
         res.json({ status: 'pending', expires_at: pairing.expires_at });

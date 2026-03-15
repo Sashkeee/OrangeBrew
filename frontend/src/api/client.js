@@ -113,6 +113,21 @@ export const usersApi = {
 export const sensorsApi = {
     getCurrent: () => request('/sensors'),
     getHistory: (minutes = 10) => request(`/sensors/history?minutes=${minutes}`),
+
+    /** Sensors currently visible on the OneWire bus (merged with saved config) */
+    getDiscovered: () => request('/sensors/discovered'),
+
+    /** Saved named sensor configs for the current user */
+    getConfig: () => request('/sensors/config'),
+
+    /**
+     * Save sensor configs.
+     * @param {Array<{address, name, color, offset, enabled}>} sensors
+     */
+    updateConfig: (sensors) => request('/sensors/config', { method: 'PUT', body: { sensors } }),
+
+    /** Remove a sensor config by address */
+    deleteConfig: (address) => request(`/sensors/config/${encodeURIComponent(address)}`, { method: 'DELETE' }),
 };
 
 // ─── Control ──────────────────────────────────────────────
