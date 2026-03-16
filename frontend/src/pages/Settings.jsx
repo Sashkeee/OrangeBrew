@@ -15,6 +15,69 @@ import UsersSettings from '../components/UsersSettings';
 import DeviceManagement from '../components/DeviceManagement';
 
 
+// ── Reusable sub-components (outside SettingsPage to keep stable React identity) ──
+
+const inputStyle = {
+    width: '100%', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.04)',
+    border: '1px solid #444', borderRadius: '6px', color: 'var(--text-primary)',
+    fontFamily: 'var(--font-mono)', fontSize: '0.85rem', outline: 'none',
+    transition: 'border-color 0.2s',
+};
+
+const selectStyle = { ...inputStyle, appearance: 'none', cursor: 'pointer', paddingRight: '2rem' };
+
+const labelStyle = {
+    fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.03em',
+    marginBottom: '0.3rem', display: 'block',
+};
+
+const SelectField = ({ value, onChange, width = '160px', children }) => (
+    <div style={{ position: 'relative', width }}>
+        <select
+            value={value}
+            onChange={onChange}
+            style={{ ...selectStyle, width: '100%' }}
+        >
+            {children}
+        </select>
+        <ChevronDown
+            size={14}
+            style={{
+                position: 'absolute', right: '0.6rem', top: '50%',
+                transform: 'translateY(-50%)', color: '#888', pointerEvents: 'none',
+            }}
+        />
+    </div>
+);
+
+const SettingRow = ({ label, description, children }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: '1rem' }}>
+        <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.9rem' }}>{label}</div>
+            {description && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{description}</div>}
+        </div>
+        <div style={{ minWidth: '160px', display: 'flex', justifyContent: 'flex-end' }}>{children}</div>
+    </div>
+);
+
+const toggleStyle = (active) => ({
+    position: 'relative', width: '44px', height: '24px', borderRadius: '12px',
+    background: active ? 'var(--accent-green)' : 'rgba(255,255,255,0.1)',
+    border: 'none', cursor: 'pointer', transition: 'background 0.3s', flexShrink: 0,
+});
+
+const toggleDotStyle = (active) => ({
+    position: 'absolute', top: '3px', left: active ? '23px' : '3px',
+    width: '18px', height: '18px', borderRadius: '50%', background: '#fff',
+    transition: 'left 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+});
+
+const Toggle = ({ value, onChange }) => (
+    <button style={toggleStyle(value)} onClick={() => onChange(!value)}>
+        <div style={toggleDotStyle(value)} />
+    </button>
+);
+
 // Дефолтные настройки
 const DEFAULT_SETTINGS = {
     // Железо
@@ -265,69 +328,6 @@ const SettingsPage = () => {
         };
         input.click();
     };
-
-    // Стили
-    const inputStyle = {
-        width: '100%', padding: '0.6rem 0.8rem', background: 'rgba(255,255,255,0.04)',
-        border: '1px solid #444', borderRadius: '6px', color: 'var(--text-primary)',
-        fontFamily: 'var(--font-mono)', fontSize: '0.85rem', outline: 'none',
-        transition: 'border-color 0.2s',
-    };
-
-    const selectStyle = { ...inputStyle, appearance: 'none', cursor: 'pointer', paddingRight: '2rem' };
-
-    // Обёртка для <select> с кастомной стрелкой (иначе appearance:none убирает стрелку)
-    const SelectField = ({ value, onChange, width = '160px', children }) => (
-        <div style={{ position: 'relative', width }}>
-            <select
-                value={value}
-                onChange={onChange}
-                style={{ ...selectStyle, width: '100%' }}
-            >
-                {children}
-            </select>
-            <ChevronDown
-                size={14}
-                style={{
-                    position: 'absolute', right: '0.6rem', top: '50%',
-                    transform: 'translateY(-50%)', color: '#888', pointerEvents: 'none',
-                }}
-            />
-        </div>
-    );
-
-    const labelStyle = {
-        fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '0.03em',
-        marginBottom: '0.3rem', display: 'block',
-    };
-
-    const toggleStyle = (active) => ({
-        position: 'relative', width: '44px', height: '24px', borderRadius: '12px',
-        background: active ? 'var(--accent-green)' : 'rgba(255,255,255,0.1)',
-        border: 'none', cursor: 'pointer', transition: 'background 0.3s', flexShrink: 0,
-    });
-
-    const toggleDotStyle = (active) => ({
-        position: 'absolute', top: '3px', left: active ? '23px' : '3px',
-        width: '18px', height: '18px', borderRadius: '50%', background: '#fff',
-        transition: 'left 0.3s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-    });
-
-    const Toggle = ({ value, onChange }) => (
-        <button style={toggleStyle(value)} onClick={() => onChange(!value)}>
-            <div style={toggleDotStyle(value)} />
-        </button>
-    );
-
-    const SettingRow = ({ label, description, children }) => (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: '1rem' }}>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.9rem' }}>{label}</div>
-                {description && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{description}</div>}
-            </div>
-            <div style={{ minWidth: '160px', display: 'flex', justifyContent: 'flex-end' }}>{children}</div>
-        </div>
-    );
 
     // Рендер секций
     const renderSection = () => {
