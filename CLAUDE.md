@@ -70,7 +70,7 @@ OrangeBrew/
 │   │   ├── mockSerial.js      # Эмулятор ESP32 (multi-device: createDevice/writeToDevice)
 │   │   └── realSerial.js      # @deprecated — USB Serial (не используется, сохранён для справки)
 │   ├── routes/
-│   │   ├── auth.js            # POST /auth/login, /auth/logout, /auth/register, GET /auth/me
+│   │   ├── auth.js            # POST /auth/login (username+password), /auth/logout, /auth/register, GET /auth/me
 │   │   ├── recipes.js         # CRUD рецептов + экспорт/импорт JSON + масштабирование
 │   │   ├── sessions.js        # CRUD сессий варки + temperature/fractions/fermentation
 │   │   ├── sensors.js         # GET показаний + /discovered + /config (CRUD именованных датчиков)
@@ -298,12 +298,30 @@ Sub-компоненты (`SelectField`, `SettingRow`, `Toggle`) и объект
 
 ## REST API (ключевые роуты)
 
-```
-POST   /auth/login
-POST   /auth/logout
-POST   /auth/register
-GET    /auth/me
+### Аутентификация
 
+**`POST /auth/login`** — вход с username + password
+```json
+Request:  { "username": "string", "password": "string" }
+Response: { "token": "jwt", "user": { "id", "username", "email", "role", "subscription_tier" } }
+```
+⚠️ **Важно:** используется `username`, **не email**. Email требуется при регистрации, но для входа нужен username.
+
+**`POST /auth/register`** — регистрация
+```json
+Request:  { "username": "string", "email": "string", "password": "string", "consent": boolean }
+Response: { "token": "jwt", "user": {...}, "message": "Registration successful. Trial period: 14 days." }
+```
+
+**`POST /auth/logout`** — выход (терминирует сессию)
+
+**`GET /auth/me`** — информация текущего пользователя (requires JWT)
+
+---
+
+### Остальные маршруты
+
+```
 GET    /api/recipes
 POST   /api/recipes
 GET    /api/recipes/:id
