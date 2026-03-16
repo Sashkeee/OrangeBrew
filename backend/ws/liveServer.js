@@ -161,6 +161,7 @@ function setupUiClient(ws, userId) {
 function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', role = 'unassigned') {
     hardwareClients.set(deviceId, { ws, userId });
     ws.deviceId = deviceId;
+    deviceQueries.updateStatus(deviceId, 'online');
 
     console.log(`[WS] Hardware connected: ${deviceId} (user=${userId}, name=${name}). Total HW: ${hardwareClients.size}`);
 
