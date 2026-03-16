@@ -41,6 +41,21 @@ button {
   font-family: var(--font-main);
 }
 
+/* Dark theme for native select dropdowns */
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background: var(--surface-color);
+  color: var(--text-primary);
+}
+
+select option:checked {
+  background: var(--primary-color);
+  color: #000;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
