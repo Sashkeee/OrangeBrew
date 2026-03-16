@@ -1,4 +1,9 @@
 test.orangebrew.ru {
+    # Backend Auth (CRITICAL: must come before catch-all)
+    handle /auth/* {
+        reverse_proxy localhost:3001
+    }
+
     # Backend API (Preserve /api prefix)
     handle /api/* {
         reverse_proxy localhost:3001
@@ -9,7 +14,7 @@ test.orangebrew.ru {
         reverse_proxy localhost:3001
     }
 
-    # Frontend Test
+    # Frontend Test (catch-all, must be last)
     handle {
         reverse_proxy localhost:8081
     }
@@ -20,6 +25,11 @@ www.orangebrew.ru {
 }
 
 orangebrew.ru {
+    # Backend Auth (CRITICAL: must come before catch-all)
+    handle /auth/* {
+        reverse_proxy localhost:3000
+    }
+
     # Backend API (Preserve /api prefix)
     handle /api/* {
         reverse_proxy localhost:3000
@@ -30,7 +40,7 @@ orangebrew.ru {
         reverse_proxy localhost:3000
     }
 
-    # Frontend Prod
+    # Frontend Prod (catch-all, must be last)
     handle {
         reverse_proxy localhost:8080
     }
