@@ -21,6 +21,7 @@ const uiClients = new Map();
 const hardwareClients = new Map();
 
 let wss = null;
+let pingInterval = null;
 
 // ─── Init ──────────────────────────────────────────────────
 
@@ -86,6 +87,32 @@ export function initWebSocket(server) {
         });
     });
 
+    // ── Ping all clients every 30s to keep connections alive through proxies ──
+    pingInterval = setInterval(() => {
+        for (const [ws] of uiClients) {
+            if (ws.isAlive === false) {
+                uiClients.delete(ws);
+                ws.terminate();
+                continue;
+            }
+            ws.isAlive = false;
+            ws.ping();
+        }
+        for (const [deviceId, entry] of hardwareClients) {
+            if (entry.ws.isAlive === false) {
+                hardwareClients.delete(deviceId);
+                deviceQueries.updateStatus(deviceId, 'offline');
+                entry.ws.terminate();
+                console.log(`[WS] Hardware ping timeout: ${deviceId}`);
+                continue;
+            }
+            entry.ws.isAlive = false;
+            entry.ws.ping();
+        }
+    }, 30_000);
+
+    wss.on('close', () => clearInterval(pingInterval));
+
     console.log('[WS] WebSocket server initialized on /ws');
 }
 
@@ -130,6 +157,8 @@ async function handlePairingMessage(ws, msg) {
 // ─── Client setup ──────────────────────────────────────────
 
 function setupUiClient(ws, userId) {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
     uiClients.set(ws, { userId });
     console.log(`[WS] UI client connected (userId=${userId}). Total UI: ${uiClients.size}`);
 
@@ -159,6 +188,8 @@ function setupUiClient(ws, userId) {
 }
 
 function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', role = 'unassigned') {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
     hardwareClients.set(deviceId, { ws, userId });
     ws.deviceId = deviceId;
     deviceQueries.updateStatus(deviceId, 'online');
@@ -166,6 +197,7 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
     console.log(`[WS] Hardware connected: ${deviceId} (user=${userId}, name=${name}). Total HW: ${hardwareClients.size}`);
 
     ws.on('message', (raw) => {
+        ws.isAlive = true;
         try {
             const msg = JSON.parse(raw.toString());
             handleHardwareMessage(deviceId, msg);
