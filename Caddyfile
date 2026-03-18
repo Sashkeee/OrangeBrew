@@ -45,3 +45,30 @@ orangebrew.ru {
         reverse_proxy localhost:8080
     }
 }
+
+# QA CheatSheet
+qacheatsheet.ru, cheatsheet.ru, qa.orangebrew.ru {
+    reverse_proxy localhost:8082
+}
+
+www.qacheatsheet.ru, www.cheatsheet.ru {
+    redir https://qacheatsheet.ru{uri}
+}
+
+# Messenger (Chat)
+chat.orangebrew.ru {
+    # Socket.io, API, and Uploads are all on the same backend port (3002)
+    handle /api/* {
+        reverse_proxy localhost:3002
+    }
+    handle /socket.io/* {
+        reverse_proxy localhost:3002
+    }
+    handle /uploads/* {
+        reverse_proxy localhost:3002
+    }
+    # Frontend (8083)
+    handle {
+        reverse_proxy localhost:8083
+    }
+}
