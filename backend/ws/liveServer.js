@@ -5,6 +5,9 @@ import url from 'url';
 import { getSensorReadings } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
 import { deviceQueries, pairingQueries } from '../db/database.js';
+import logger from '../utils/logger.js';
+
+const hwLog = logger.child({ module: 'ESP32' });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
 
@@ -227,6 +230,19 @@ function handleUiMessage(ws, userId, msg) {
 }
 
 function handleHardwareMessage(deviceId, msg) {
+    // Логи с устройства → Pino → Betterstack (читаемы через /логи)
+    if (msg.type === 'device_log') {
+        const meta  = hardwareClients.get(deviceId);
+        const level = ['info', 'warn', 'error', 'debug'].includes(msg.level) ? msg.level : 'info';
+        hwLog[level]({
+            deviceId,
+            userId:  meta?.userId ?? null,
+            uptime:  msg.uptime ?? null,
+            source:  'device',
+        }, msg.msg ?? '');
+        return; // не передавать дальше в onHardwareDataHandler
+    }
+
     if (onHardwareDataHandler) {
         const meta = hardwareClients.get(deviceId);
         onHardwareDataHandler(deviceId, msg, meta?.userId);
