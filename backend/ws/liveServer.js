@@ -369,3 +369,17 @@ export function getClientCount() {
 export function getHardwareCount() {
     return hardwareClients.size;
 }
+
+/**
+ * Gracefully close all WebSocket connections.
+ * Call this BEFORE closeDatabase() during shutdown.
+ */
+export function closeWebSocket() {
+    if (!wss) return;
+    for (const client of wss.clients) {
+        try { client.terminate(); } catch { /* ignore */ }
+    }
+    wss.close();
+    uiClients.clear();
+    hardwareClients.clear();
+}

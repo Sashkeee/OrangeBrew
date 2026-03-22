@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { initDatabase, closeDatabase } from './db/database.js';
 import {
     initWebSocket,
+    closeWebSocket,
     broadcastSensors,
     broadcastProcessState,
     onWsCommand,
@@ -25,7 +26,9 @@ import { settingsQueries, sensorQueries } from './db/database.js';
 import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
-import { RealSerial } from './serial/realSerial.js';
+import { mapSensors } from './utils/sensorMapper.js';
+// @deprecated — RealSerial (USB Serial) больше не используется, ESP подключаются по WiFi/WebSocket
+// import { RealSerial } from './serial/realSerial.js';
 import PidManager from './pid/PidManager.js';
 import telegram from './services/telegram.js';
 import ProcessManager from './services/ProcessManager.js';
@@ -261,81 +264,13 @@ async function main() {
         logger.info({ module: 'Server', mode: 'wifi' }, 'Starting in WiFi-only mode (no local serial)');
         serial = { on: () => {}, write: () => {}, stop: () => {} }; // no-op stub
     } else {
-        // 'serial' or any other value → real serial port
-        const portName = process.env.SERIAL_PORT || settingsQueries.get('hardware', null)?.serialPort || 'COM3';
-        const baudRate = parseInt(process.env.BAUD_RATE) || settingsQueries.get('hardware', null)?.baudRate || 115200;
-        logger.info({ module: 'Server', mode: 'serial', port: portName, baud: baudRate }, 'Starting in Serial mode');
-        serial = new RealSerial(portName, baudRate);
-        serial.start();
+        // 'serial' and other values → deprecated, fallback to wifi mode
+        logger.warn({ module: 'Server', requested: connectionMode }, 'Serial mode is deprecated — falling back to WiFi-only mode');
+        serial = { on: () => {}, write: () => {}, stop: () => {} }; // no-op stub
     }
 
-    /**
-     * Maps raw sensor addresses to named roles (boiler, column, etc.).
-     * Uses new `sensors` table (per-user, address-based) first.
-     * Falls back to old settings_v2 'sensors' config for backward compat.
-     * Also applies calibration offset.
-     * @param {string} deviceId
-     * @param {object} rawData  — must have rawData.sensors = [{address, temp}]
-     * @param {number|null} userId
-     */
-    function mapSensors(deviceId, rawData, userId = null) {
-        if (!rawData || !rawData.sensors || !Array.isArray(rawData.sensors)) return rawData;
-
-        const mapped = {
-            type: 'sensors',
-            deviceId,
-            sensors: rawData.sensors,
-        };
-
-        // ── 1. New address-based config (sensors table) ─────────────────
-        if (userId !== null) {
-            try {
-                const configs = sensorQueries.getAll(userId);
-                for (const cfg of configs) {
-                    if (!cfg.enabled) continue;
-                    const found = rawData.sensors.find(s => s.address === cfg.address);
-                    if (found) {
-                        const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
-                        mapped[cfg.address] = rawTemp + parseFloat(cfg.offset || 0);
-                    }
-                }
-            } catch (e) {
-                logger.warn({ module: 'mapSensors', err: e.message }, 'Failed to load sensor configs');
-            }
-        }
-
-        // ── 2. Legacy role-based config (settings_v2 'sensors') ─────────
-        // Keep for backward compat — maps boiler/column/dephleg/output/ambient
-        let legacySettings = null;
-        try {
-            legacySettings = (userId !== null ? settingsQueries.get('sensors', userId) : null)
-                ?? settingsQueries.get('sensors', null);
-            if (typeof legacySettings === 'string') legacySettings = JSON.parse(legacySettings);
-        } catch { /* ignore */ }
-
-        if (legacySettings && typeof legacySettings === 'object') {
-            for (const [role, config] of Object.entries(legacySettings)) {
-                if (mapped[role] !== undefined) continue; // already set
-                if (config && config.enabled && config.address) {
-                    const found = rawData.sensors.find(s => s.address === config.address);
-                    if (found) {
-                        const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
-                        mapped[role] = rawTemp + parseFloat(config.offset || 0);
-                    }
-                }
-            }
-        }
-
-        // ── 3. Fallback: boiler = first sensor, column = second ──────────
-        if (mapped.boiler === undefined && rawData.sensors.length > 0) {
-            mapped.boiler = parseFloat(rawData.sensors[0].temp ?? rawData.sensors[0].value ?? 0);
-        }
-        if (mapped.column === undefined && rawData.sensors.length > 1) {
-            mapped.column = parseFloat(rawData.sensors[1].temp ?? rawData.sensors[1].value ?? 0);
-        }
-
-        return mapped;
-    }
+    // mapSensors dependencies — passed to utils/sensorMapper.js
+    const sensorMapperDeps = { sensorQueries, settingsQueries, logger };
 
     // Global Serial error handler to prevent Node.js crashes if USB disconnects
     serial.on('error', (err) => {
@@ -373,7 +308,7 @@ async function main() {
         }
 
         // Маппинг адресов сенсоров с user-scoped настройками
-        const mappedData = mapSensors(deviceId, data, userId);
+        const mappedData = mapSensors(deviceId, data, userId, sensorMapperDeps);
 
         // Periodic log
         const now = Date.now();
@@ -424,6 +359,9 @@ async function main() {
 
         telegram.shutdownTelegram();
 
+        // Правильный порядок: сначала WS (ESP32 отключится),
+        // потом DB — иначе последние пакеты датчиков крашат db.prepare(null)
+        closeWebSocket();
         closeDatabase();
 
         server.close(() => {

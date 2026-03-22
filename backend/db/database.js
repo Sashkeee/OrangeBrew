@@ -108,14 +108,17 @@ export function closeDatabase() {
 // ─── Helpers ──────────────────────────────────────────────
 
 function queryAll(sql, params = []) {
+    if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
     return db.prepare(sql).all(params);
 }
 
 function queryOne(sql, params = []) {
+    if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
     return db.prepare(sql).get(params) || null;
 }
 
 function runSql(sql, params = []) {
+    if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
     const info = db.prepare(sql).run(params);
     return { changes: info.changes, lastId: info.lastInsertRowid };
 }
