@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Calendar, Loader, AlertTriangle, Plus, Pencil, Download, Upload, FileCode } from 'lucide-react';
+import { ArrowLeft, Clock, Calendar, Loader, AlertTriangle, Plus, Pencil, Download, Upload, FileCode, Eye, Library } from 'lucide-react';
 import { useRecipes } from '../hooks/useRecipes.js';
 import { sessionsApi, beerxmlApi } from '../api/client.js';
 import BeerXmlImportModal from '../components/BeerXmlImportModal.jsx';
@@ -147,6 +147,23 @@ const RecipeList = () => {
                 <h1 style={{ margin: 0, fontSize: '1.8rem', color: 'var(--primary-color)', flex: 1 }}>Выбор рецепта</h1>
 
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => navigate('/brewing/library')}
+                        title="Библиотека публичных рецептов"
+                        style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid #444',
+                            color: 'var(--text-secondary)',
+                            padding: '0.5rem',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.8rem'
+                        }}
+                    >
+                        <Library size={18} /> Библиотека
+                    </button>
                     <button
                         onClick={handleExport}
                         title="Экспорт JSON"
@@ -310,6 +327,14 @@ const RecipeList = () => {
                             </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); navigate(`/brewing/recipes/${recipe.id}`); }}
+                                aria-label="Детали рецепта"
+                                title="Детали, лайки, комментарии"
+                                style={{ background: 'none', border: '1px solid #444', color: 'var(--text-secondary)', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                            >
+                                <Eye size={14} />
+                            </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleExportBeerXml(recipe.id, recipe.name); }}
                                 aria-label="Экспорт в BeerXML"

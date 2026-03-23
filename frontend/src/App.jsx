@@ -7,6 +7,8 @@ import RecipeList from './pages/RecipeList';
 import RecipeConstructor from './pages/RecipeConstructor';
 import RecipeConstructor_V2 from './pages/RecipeConstructor_V2';
 import RecipeEditor from './pages/RecipeEditor';
+import RecipeDetail from './pages/RecipeDetail';
+import PublicLibrary from './pages/PublicLibrary';
 import Mashing from './pages/Mashing';
 import Boiling from './pages/Boiling';
 import Fermentation from './pages/Fermentation';
@@ -15,6 +17,7 @@ import Rectification from './pages/Rectification';
 import SettingsPage from './pages/Settings';
 import History from './pages/History';
 import IngredientsReference from './pages/IngredientsReference';
+import HopsReference from './pages/HopsReference';
 import Calculators from './pages/Calculators';
 import LogoShowcase from './pages/LogoShowcase';
 import { ConnectionIndicator } from './components/ConnectionIndicator';
@@ -50,10 +53,13 @@ function AppRoutes() {
               <Route path="/brewing/recipes/new" element={<RecipeConstructor />} />
               <Route path="/brewing/recipes/new-v2" element={<RecipeConstructor_V2 />} />
               <Route path="/brewing/recipes/:id/edit" element={<RecipeEditor />} />
+              <Route path="/brewing/recipes/:id" element={<RecipeDetail />} />
+              <Route path="/brewing/library" element={<PublicLibrary />} />
               <Route path="/brewing/mash/:sessionId" element={<Mashing />} />
               <Route path="/brewing/boil/:sessionId" element={<Boiling />} />
               <Route path="/brewing/history" element={<History />} />
               <Route path="/brewing/ingredients" element={<IngredientsReference />} />
+              <Route path="/brewing/hops" element={<HopsReference />} />
               <Route path="/calculators" element={<Calculators />} />
               <Route path="/fermentation" element={<Fermentation />} />
               <Route path="/distillation" element={<Distillation />} />
