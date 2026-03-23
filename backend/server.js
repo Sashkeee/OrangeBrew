@@ -112,8 +112,9 @@ app.get(['/api/health', '/health'], (req, res) => {
     });
 });
 
-// Auth route (public) — с rate limiting для защиты от брутфорса
-app.use(['/api/auth', '/auth'], authLimiter, authRouter);
+// Auth route (public) — rate limiting только на проде
+const isProd = process.env.NODE_ENV === 'production';
+app.use(['/api/auth', '/auth'], ...(isProd ? [authLimiter] : []), authRouter);
 
 // Protected API routes
 app.use(['/api/recipes', '/recipes'], authenticate, recipesRouter);
