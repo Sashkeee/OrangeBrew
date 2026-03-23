@@ -7,7 +7,7 @@ import {
 import { recipesApi } from '../api/client.js';
 import { useRecipeLikes } from '../hooks/useRecipeLikes.js';
 import { useRecipeComments } from '../hooks/useRecipeComments.js';
-import { useAuth } from '../contexts/AuthContext.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 // ── Styles (module scope) ────────────────────────────────────
 const rowStyle = {

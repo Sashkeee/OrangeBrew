@@ -8,7 +8,7 @@ import { useRecipe } from '../hooks/useRecipes.js';
 import { useRecipeLikes } from '../hooks/useRecipeLikes.js';
 import { useRecipeComments } from '../hooks/useRecipeComments.js';
 import { recipesApi, sessionsApi } from '../api/client.js';
-import { useAuth } from '../contexts/AuthContext.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 // ── Styles (module scope) ────────────────────────────────────
 const sectionStyle = {
