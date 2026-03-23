@@ -56,7 +56,7 @@ www.qacheatsheet.ru, www.cheatsheet.ru {
 }
 
 # Messenger (Chat)
-chat.orangebrew.ru {
+chat.orangebrew.ru, messenger.orangebrew.ru {
     # Socket.io, API, and Uploads are all on the same backend port (3002)
     handle /api/* {
         reverse_proxy localhost:3002

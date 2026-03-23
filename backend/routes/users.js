@@ -112,6 +112,9 @@ router.delete('/:id', requireAdmin, (req, res) => {
         if (id === req.user.id) return res.status(400).json({ error: 'Нельзя удалить самого себя' });
 
         const db = getDb();
+        const user = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+        if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+
         db.prepare('DELETE FROM users WHERE id = ?').run(id);
         res.json({ message: 'Пользователь удален' });
     } catch (err) {

@@ -59,3 +59,4 @@ jobs:
             docker compose -f docker-compose.test.yml pull
             # Force-recreate ALL containers: backend/frontend use new images, vector picks up config changes
             docker compose -f docker-compose.test.yml up -d --force-recreate
+            caddy reload --config ~/OrangeBrew/Caddyfile
