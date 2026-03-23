@@ -213,6 +213,7 @@ export const recipeQueries = {
     },
 
     update: (id, recipe, userId) => {
+        const numId = parseInt(id, 10);
         const fields = [];
         const values = [];
         for (const [key, value] of Object.entries(recipe)) {
@@ -226,13 +227,14 @@ export const recipeQueries = {
             }
         }
 
-        if (fields.length === 0) return recipeQueries.getById(id, userId);
+        if (fields.length === 0) return recipeQueries.getById(numId, userId);
 
         fields.push("updated_at = datetime('now')");
-        values.push(id, userId);
+        values.push(numId, userId);
 
-        runSql(`UPDATE recipes SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, values);
-        return recipeQueries.getById(id, userId);
+        const { changes } = runSql(`UPDATE recipes SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, values);
+        if (changes === 0) return null;
+        return recipeQueries.getById(numId, userId);
     },
 
     delete: (id, userId) => runSql('DELETE FROM recipes WHERE id = ? AND user_id = ?', [id, userId]),
