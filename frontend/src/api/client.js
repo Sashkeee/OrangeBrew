@@ -158,6 +158,10 @@ export const processApi = {
     pause:  (payload) => request('/process/pause',  { method: 'POST', body: payload }),
     resume: (payload) => request('/process/resume', { method: 'POST', body: payload }),
     skip:   (payload) => request('/process/skip',   { method: 'POST', body: payload }),
+
+    tuneStart:  (payload) => request('/process/tune-start',  { method: 'POST', body: payload }),
+    tuneStop:   ()        => request('/process/tune-stop',   { method: 'POST' }),
+    tuneStatus: ()        => request('/process/tune-status'),
 };
 
 // ─── Health ───────────────────────────────────────────────

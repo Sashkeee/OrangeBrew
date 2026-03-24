@@ -306,6 +306,8 @@ async function main() {
         // Track discovered sensors (per-user, in-memory)
         if (hasSensors && userId != null) {
             updateDiscoveredSensors(userId, data.sensors);
+        } else if (hasSensors && userId == null) {
+            logger.warn({ module: 'Server', deviceId }, 'Sensor data received from device with null user_id — discovered sensors not updated. Check device pairing.');
         }
 
         // Маппинг адресов сенсоров с user-scoped настройками

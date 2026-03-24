@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Square, Settings as SettingsIcon, AlertCircle, LineChart as ChartIcon, CheckCircle } from 'lucide-react';
-import { API_BASE } from '../utils/constants';
+import { processApi } from '../api/client';
 import { useSensors } from '../hooks/useSensors';
 import { ProcessChart } from './ProcessChart';
 import SensorSelector from './SensorSelector';
@@ -49,19 +49,14 @@ export default function PidTuningPanel({ onTuningComplete }) {
     useEffect(() => {
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`${API_BASE}/process/tune-status`);
-                if (res.ok) {
-                    const data = await res.json();
-
-                    setStatus(prev => {
-                        // If it just finished (was tuning, now not tuning)
-                        if (prev?.tuning && !data.tuning && data.state === 'DONE') {
-                            setSuccessMsg('Калибровка успешно завершена! Настройки применены.');
-                            if (onTuningComplete) onTuningComplete(); // Tell parent to reload settings
-                        }
-                        return data;
-                    });
-                }
+                const data = await processApi.tuneStatus();
+                setStatus(prev => {
+                    if (prev?.tuning && !data.tuning && data.state === 'DONE') {
+                        setSuccessMsg('Калибровка успешно завершена! Настройки применены.');
+                        if (onTuningComplete) onTuningComplete();
+                    }
+                    return data;
+                });
             } catch (err) {
                 console.error("Failed to fetch tuning status:", err);
             }
@@ -81,15 +76,7 @@ export default function PidTuningPanel({ onTuningComplete }) {
         chartDataRef.current = [];
 
         try {
-            const res = await fetch(`${API_BASE}/process/tune-start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target: targetTemp, sensorAddress: selectedSensorAddress }),
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || 'Failed to start tuning');
-            }
+            await processApi.tuneStart({ target: targetTemp, sensorAddress: selectedSensorAddress });
         } catch (err) {
             setError(err.message);
         } finally {
@@ -100,7 +87,7 @@ export default function PidTuningPanel({ onTuningComplete }) {
     const handleStopTuning = async () => {
         setLoading(true);
         try {
-            await fetch(`${API_BASE}/process/tune-stop`, { method: 'POST' });
+            await processApi.tuneStop();
         } catch (err) {
             setError(err.message);
         } finally {

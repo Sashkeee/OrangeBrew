@@ -160,7 +160,7 @@ const SECTIONS = [
 
 const SettingsPage = () => {
     const navigate = useNavigate();
-    const { connected: wsConnected } = useSensors();
+    const { connected: wsConnected, rawSensors } = useSensors();
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [activeSection, setActiveSection] = useState('hardware');
     const [hasChanges, setHasChanges] = useState(false);
@@ -342,34 +342,16 @@ const SettingsPage = () => {
                         </div>
 
                         <div style={{ borderTop: '1px solid #333', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
-                            <h3 style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>Локальное подключение (Serial)</h3>
+                            <h3 style={{ fontSize: '0.9rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>Тип подключения</h3>
                             <SettingRow label="Тип подключения" description="Способ связи с основным контроллером">
                                 <SelectField
                                     value={settings.hardware.connectionType}
                                     onChange={e => updateSetting('hardware', 'connectionType', e.target.value)}
                                 >
-                                    <option value="serial">USB Serial</option>
                                     <option value="wifi">WiFi (WebSocket)</option>
                                     <option value="mock">Эмуляция</option>
                                 </SelectField>
                             </SettingRow>
-
-                            {settings.hardware.connectionType === 'serial' && (
-                                <>
-                                    <SettingRow label="COM-порт" description="Порт подключения ESP32">
-                                        <input value={settings.hardware.serialPort} onChange={e => updateSetting('hardware', 'serialPort', e.target.value)}
-                                            style={{ ...inputStyle, width: '160px' }} placeholder="COM3" />
-                                    </SettingRow>
-                                    <SettingRow label="Скорость (бод)" description="Скорость Serial">
-                                        <SelectField
-                                            value={settings.hardware.baudRate}
-                                            onChange={e => updateSetting('hardware', 'baudRate', parseInt(e.target.value))}
-                                        >
-                                            {[9600, 19200, 38400, 57600, 115200].map(r => <option key={r} value={r}>{r}</option>)}
-                                        </SelectField>
-                                    </SettingRow>
-                                </>
-                            )}
 
                             {settings.hardware.connectionType === 'wifi' && (
                                 <>
@@ -480,7 +462,8 @@ const SettingsPage = () => {
 
                         {/* Sensor list */}
                         {discoveredSensors.map((sensor, idx) => {
-                            const isOnline = sensor.lastSeen && (Date.now() - sensor.lastSeen < 30000);
+                            const isOnline = rawSensors.some(s => s.address === sensor.address) ||
+                                (sensor.lastSeen && Date.now() - sensor.lastSeen < 30000);
                             const accentColor = sensor.color || '#FF6B35';
                             const expanded = expandedSensors[sensor.address];
                             return (
