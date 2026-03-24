@@ -14,6 +14,9 @@
  */
 
 import { SAFETY, SIGNAL, PID_TUNING } from '../config/constants.js';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'PidTuner' });
 
 export default class PidTuner {
     constructor() {
@@ -74,8 +77,8 @@ export default class PidTuner {
         this._startTime = Date.now();
         this._relayIsOn = true;
 
-        console.log(`[PidTuner] Started. Target: ${this.target}°C, StepPower: ${this.stepPower}%, SafetyLimit: ${this._maxSafeTemp}°C`);
-        console.log(`[PidTuner] Phase 1: Heating to target temperature...`);
+        log.info({ target: this.target, stepPower: this.stepPower, safetyLimit: this._maxSafeTemp }, 'Started');
+        log.info('Phase 1: Heating to target temperature');
         return this.stepPower;
     }
 
@@ -99,7 +102,7 @@ export default class PidTuner {
         // ║  Immediately stops tuning if temp is dangerous  ║
         // ╚══════════════════════════════════════════════════╝
         if (temp >= this._maxSafeTemp) {
-            console.error(`[PidTuner] SAFETY STOP! Raw temp ${temp.toFixed(1)}°C >= limit ${this._maxSafeTemp}°C. Aborting!`);
+            log.error({ temp: temp.toFixed(1), limit: this._maxSafeTemp }, 'SAFETY STOP! Aborting');
             this.tuning = false;
             this.state = 'DONE';
             return {
@@ -126,7 +129,7 @@ export default class PidTuner {
                 power = this.stepPower;
                 // Use RAW temp for initial heating (faster reaction)
                 if (temp >= this.target) {
-                    console.log(`[PidTuner] Target ${this.target}°C reached (raw: ${temp.toFixed(1)}°C, filtered: ${filtered.toFixed(1)}°C). Switching to relay oscillation.`);
+                    log.info({ target: this.target, raw: temp.toFixed(1), filtered: filtered.toFixed(1) }, 'Target reached, switching to relay oscillation');
                     this.state = 'RELAY_OSCILLATION';
                     // Switch heater OFF immediately
                     this._relayIsOn = false;
@@ -164,10 +167,10 @@ export default class PidTuner {
         // In the deadband zone (target ± hysteresis), relay state does NOT change
         if (this._relayIsOn && raw >= upperBound) {
             this._relayIsOn = false;
-            console.log(`[PidTuner] Relay OFF at ${raw.toFixed(1)}°C (>= ${upperBound}°C)`);
+            log.debug({ raw: raw.toFixed(1), bound: upperBound }, 'Relay OFF');
         } else if (!this._relayIsOn && raw <= lowerBound) {
             this._relayIsOn = true;
-            console.log(`[PidTuner] Relay ON at ${raw.toFixed(1)}°C (<= ${lowerBound}°C)`);
+            log.debug({ raw: raw.toFixed(1), bound: lowerBound }, 'Relay ON');
         }
 
         // --- 2. TRACK LOCAL EXTREMES (use RAW for accurate extremes) ---
@@ -200,7 +203,7 @@ export default class PidTuner {
             if (this.peaks.length === 0 ||
                 (this.valleys.length > 0 && this.valleys.length >= this.peaks.length)) {
                 this.peaks.push({ value: this._localMax, time: now });
-                console.log(`[PidTuner] PEAK #${this.peaks.length}: ${this._localMax.toFixed(1)}°C`);
+                log.info({ n: this.peaks.length, value: this._localMax.toFixed(1) }, 'PEAK detected');
                 this._checkCompletion();
             }
             this._localMin = raw; // Reset min tracker
@@ -211,7 +214,7 @@ export default class PidTuner {
         if (this._directionCounter >= this._confirmSamples) {
             if (this.peaks.length > this.valleys.length) {
                 this.valleys.push({ value: this._localMin, time: now });
-                console.log(`[PidTuner] VALLEY #${this.valleys.length}: ${this._localMin.toFixed(1)}°C`);
+                log.info({ n: this.valleys.length, value: this._localMin.toFixed(1) }, 'VALLEY detected');
                 this._checkCompletion();
             }
             this._localMax = raw; // Reset max tracker
@@ -230,7 +233,7 @@ export default class PidTuner {
         // Need targetCycles+1 peaks and targetCycles valleys for targetCycles period measurements
         if (this.peaks.length >= this.targetCycles + 1 && this.valleys.length >= this.targetCycles) {
             this.currentCycle = Math.min(this.peaks.length, this.valleys.length);
-            console.log(`[PidTuner] Enough data: ${this.peaks.length} peaks, ${this.valleys.length} valleys. Computing...`);
+            log.info({ peaks: this.peaks.length, valleys: this.valleys.length }, 'Enough data, computing');
             this.state = 'COMPUTING';
         } else {
             this.currentCycle = Math.max(0, this.peaks.length - 1);
@@ -290,12 +293,13 @@ export default class PidTuner {
 
         const elapsed = ((Date.now() - this._startTime) / 60000).toFixed(1);
 
-        console.log(`[PidTuner] ====== TUNING COMPLETE ======`);
-        console.log(`[PidTuner] Duration: ${elapsed} min`);
-        console.log(`[PidTuner] Peaks: ${this.peaks.map(p => p.value.toFixed(1)).join(', ')}°C`);
-        console.log(`[PidTuner] Valleys: ${this.valleys.map(v => v.value.toFixed(1)).join(', ')}°C`);
-        console.log(`[PidTuner] A=${A.toFixed(2)}°C, Tu=${Tu.toFixed(1)}s, Ku=${Ku.toFixed(2)}`);
-        console.log(`[PidTuner] → Kp=${Kp.toFixed(2)}, Ki=${Ki.toFixed(3)}, Kd=${Kd.toFixed(2)}`);
+        log.info({
+            elapsed,
+            peaks: this.peaks.map(p => p.value.toFixed(1)),
+            valleys: this.valleys.map(v => v.value.toFixed(1)),
+            A: A.toFixed(2), Tu: Tu.toFixed(1), Ku: Ku.toFixed(2),
+            Kp: Kp.toFixed(2), Ki: Ki.toFixed(3), Kd: Kd.toFixed(2),
+        }, 'TUNING COMPLETE');
 
         return {
             tuning: false,

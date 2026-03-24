@@ -7,6 +7,9 @@
 import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'Migration' });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, 'migrations');
@@ -39,7 +42,7 @@ export function runMigrations(db) {
     for (const file of files) {
         if (applied.has(file)) continue;
 
-        console.log(`[DB] Applying migration: ${file}`);
+        log.info({ file }, 'Applying migration');
         const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf-8');
 
         // Run inside transaction for atomicity
@@ -49,12 +52,12 @@ export function runMigrations(db) {
         })();
 
         count++;
-        console.log(`[DB] Migration applied: ${file}`);
+        log.info({ file }, 'Migration applied');
     }
 
     if (count === 0) {
-        console.log('[DB] All migrations up to date.');
+        log.info('All migrations up to date');
     } else {
-        console.log(`[DB] Applied ${count} migration(s).`);
+        log.info({ count }, 'Migrations applied');
     }
 }

@@ -50,7 +50,7 @@ class PIDController {
      */
     resetIntegral() {
         this.integral = 0;
-        console.log('[PIDController] Integral reset');
+        // Integral reset (silent — happens frequently during mode transitions)
     }
 
     /**

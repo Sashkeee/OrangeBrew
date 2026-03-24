@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { recipeQueries } from '../db/database.js';
 import { scaleRecipe } from '../utils/scaleRecipe.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'Recipes' });
 const router = Router();
 
 // Helper: parse JSON fields in a recipe row
@@ -62,6 +64,7 @@ router.post('/import', (req, res) => {
             }
         }
 
+        log.info({ userId: req.user.id, imported, skipped, total: recipes.length }, 'Recipes imported');
         res.json({ ok: true, imported, skipped, total: recipes.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -124,6 +127,7 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
     try {
         const recipe = recipeQueries.create(req.body, req.user.id);
+        log.info({ userId: req.user.id, recipeName: recipe.name }, 'Recipe created');
         res.status(201).json(parseRecipe(recipe));
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -146,6 +150,7 @@ router.delete('/:id', (req, res) => {
     try {
         const result = recipeQueries.delete(req.params.id, req.user.id);
         if (!result.changes) return res.status(404).json({ error: 'Recipe not found' });
+        log.warn({ userId: req.user.id, recipeId: req.params.id }, 'Recipe deleted');
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

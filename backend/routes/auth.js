@@ -4,7 +4,9 @@ import jwt from 'jsonwebtoken';
 import { userQueries } from '../db/database.js';
 import { authenticate } from '../middleware/auth.js';
 import config from '../config/env.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'Auth' });
 const router = express.Router();
 const { JWT_SECRET } = config;
 
@@ -20,7 +22,7 @@ function makeToken(user) {
 // ─── POST /auth/login ──────────────────────────────────────
 
 router.post('/login', async (req, res) => {
-    console.log(`[Auth] Login attempt for user: ${req.body.username}`);
+    log.info({ username: req.body.username, ip: req.ip }, 'Login attempt');
     try {
         const { username, password } = req.body;
 
@@ -30,11 +32,13 @@ router.post('/login', async (req, res) => {
 
         const user = userQueries.getByUsername(username);
         if (!user) {
+            log.warn({ username, ip: req.ip }, 'Failed login attempt — unknown user');
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
+            log.warn({ username, ip: req.ip }, 'Failed login attempt — wrong password');
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
@@ -54,7 +58,7 @@ router.post('/login', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[Auth API] Login error:', error);
+        log.error({ err: error }, 'Login error');
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -96,7 +100,7 @@ router.post('/register', async (req, res) => {
         // Record consent timestamp (152-ФЗ compliance)
         userQueries.setConsent(user.id);
 
-        console.log(`[Auth] New user registered: ${username} (${email})`);
+        log.info({ username, email }, 'User registered');
 
         const token = makeToken(user);
 
@@ -115,7 +119,7 @@ router.post('/register', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[Auth API] Register error:', error);
+        log.error({ err: error }, 'Register error');
         res.status(500).json({ error: 'Internal server error' });
     }
 });

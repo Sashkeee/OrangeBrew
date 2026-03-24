@@ -29,7 +29,8 @@ import {
     sendToHardware,
     sendToUserHardware,
     broadcastToAllHardware,
-    getClientCount
+    getClientCount,
+    getHardwareCount
 } from './ws/liveServer.js';
 import { settingsQueries, sensorQueries, deviceQueries } from './db/database.js';
 import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
@@ -358,7 +359,27 @@ async function main() {
 
     server.listen(PORT, () => {
         logger.info({ module: 'Server', port: PORT, mode: CONNECTION_TYPE }, 'OrangeBrew Backend started');
+        logger.info({
+            module: 'Server',
+            nodeVersion: process.version,
+            env: process.env.NODE_ENV,
+            dbPath: DB_PATH,
+            connectionType: connectionMode,
+            memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        }, 'Environment info');
     });
+
+    // ─── Periodic Heartbeat (every 5 min) ────────────────────
+    setInterval(() => {
+        logger.info({
+            module: 'Health',
+            rssMemMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+            heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            uiClients: getClientCount(),
+            hwClients: getHardwareCount(),
+            uptime: Math.round(process.uptime()),
+        }, 'Heartbeat');
+    }, 5 * 60 * 1000);
 
     // ─── Graceful Shutdown ────────────────────────────────────
 

@@ -7,6 +7,9 @@
  */
 
 import { settingsQueries } from '../db/database.js';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'Telegram' });
 
 // ─── State ───────────────────────────────────────────────
 
@@ -28,11 +31,11 @@ let currentProcessType = null; // 'mash', 'boil', 'fermentation', etc.
  */
 export async function sendMessage(text, opts = {}) {
     if (!botToken || !chatId) {
-        console.warn('[Telegram] Skip send: botToken or chatId missing');
+        log.warn('Skip send: botToken or chatId missing');
         return { ok: false, description: 'Telegram не настроен (отсутствует токен или Chat ID)' };
     }
     if (!enabled) {
-        console.warn('[Telegram] Skip send: service disabled in settings');
+        log.warn('Skip send: service disabled');
         return { ok: false, description: 'Telegram уведомления отключены в настройках' };
     }
 
@@ -50,13 +53,13 @@ export async function sendMessage(text, opts = {}) {
         });
         const data = await res.json();
         if (!data.ok) {
-            console.error('[Telegram] API error:', data.description);
+            log.error({ apiError: data.description }, 'API error');
         } else {
-            console.log('[Telegram] Message sent successfully');
+            log.debug('Message sent');
         }
         return data;
     } catch (err) {
-        console.error('[Telegram] Send failed:', err.message);
+        log.error({ err }, 'Send failed');
         return { ok: false, description: `Ошибка сети: ${err.message}` };
     }
 }
@@ -70,7 +73,7 @@ export async function sendMessage(text, opts = {}) {
 export function notifyPhaseChange(processType, phaseName, details = '') {
     const config = getConfig();
     if (!config.notifyPhaseChange) {
-        console.log('[Telegram] Phase change notify disabled in config');
+        log.debug('Phase change notify disabled');
         return;
     }
 
@@ -80,7 +83,7 @@ export function notifyPhaseChange(processType, phaseName, details = '') {
     }[processType] || '📋';
 
     const msg = `${emoji} *Смена фазы*\n\nПроцесс: *${processType}*\nФаза: *${phaseName}*${details ? `\n${details}` : ''}`;
-    console.log(`[Telegram] notifyPhaseChange: ${phaseName}`);
+    log.info({ phase: phaseName }, 'notifyPhaseChange');
     return sendMessage(msg);
 }
 
@@ -127,7 +130,7 @@ export function sendStatusReport() {
     // If it's mash or boil, we don't show all distillation sensors
     const isBrewing = ['mash', 'boil', 'brew'].includes(currentProcessType);
 
-    console.log(`[Telegram] Generating report. Process: ${currentProcessType}, isBrewing: ${isBrewing}`);
+    log.debug({ processType: currentProcessType, isBrewing }, 'Generating report');
 
     // Safety: ensure we have numbers (handle both layouts: { boiler: 20 } and { boiler: { value: 20 } })
     const getVal = (val) => {
@@ -212,7 +215,7 @@ export function notifyBoilMilestone(type, details = '') {
     };
     const emoji = icons[type] || '🔔';
     const msg = `${emoji} *Уведомление варки*\n\n${details}`;
-    console.log(`[Telegram] notifyBoilMilestone: ${type}`);
+    log.info({ type }, 'notifyBoilMilestone');
     return sendMessage(msg);
 }
 
@@ -235,7 +238,7 @@ export function updateControlState(control) {
 }
 
 export function setCurrentProcessType(type) {
-    console.log(`[Telegram] Process type set to: ${type}`);
+    log.info({ type }, 'Process type set');
     currentProcessType = type;
 }
 
@@ -277,27 +280,27 @@ export function initTelegram() {
         chatId = process.env.TELEGRAM_CHAT_ID || config.chatId || '';
         enabled = config.enabled && !!botToken && !!chatId;
 
-        console.log(`[Telegram] Init: enabled=${enabled}, hasToken=${!!botToken}, chatId=${chatId || 'none'}`);
+        log.info({ enabled, hasToken: !!botToken, chatId: chatId || 'none' }, 'Init');
 
         if (!enabled) {
-            console.log('[Telegram] Service is disabled or missing credentials');
+            log.info('Service disabled or missing credentials');
             return;
         }
 
-        console.log(`[Telegram] Initialized OK`);
+        log.info('Initialized OK');
 
         // Start periodic reports
         const intervalMin = config.notifyInterval || 5;
         if (intervalMin > 0) {
             if (periodicInterval) clearInterval(periodicInterval);
             periodicInterval = setInterval(sendStatusReport, intervalMin * 60 * 1000);
-            console.log(`[Telegram] Periodic reports every ${intervalMin}min`);
+            log.info({ intervalMin }, 'Periodic reports started');
         }
 
         // Send startup message
         sendMessage('🟢 *OrangeBrew запущен*\n\nСистема готова к работе.');
     } catch (err) {
-        console.error('[Telegram] Initialization failed:', err.message);
+        log.error({ err }, 'Initialization failed');
     }
 }
 

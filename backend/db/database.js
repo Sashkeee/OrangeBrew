@@ -4,7 +4,9 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, existsSync } from 'fs';
 import { runMigrations } from './migrate.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'DB' });
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let db = null;
@@ -30,7 +32,7 @@ function _assignOrphanedDataToAdmin() {
         for (const sql of updates) {
             const info = db.prepare(sql).run(adminId);
             if (info.changes > 0) {
-                console.log(`[DB] Assigned ${info.changes} orphaned row(s) to admin (id=${adminId}) — ${sql.match(/UPDATE (\w+)/)[1]}`);
+                log.info({ changes: info.changes, table: sql.match(/UPDATE (\w+)/)[1], adminId }, 'Assigned orphaned rows');
             }
         }
     })();
@@ -51,7 +53,7 @@ export async function initDatabase(path) {
     }
 
     try {
-        console.log(`[DB] Opening database: ${path}`);
+        log.info({ path }, 'Opening database');
         db = new Database(path, { verbose: null });
 
         // Performance settings
@@ -69,9 +71,9 @@ export async function initDatabase(path) {
         // Seed existing data to admin user (no-op if already done)
         _assignOrphanedDataToAdmin();
 
-        console.log('[DB] Database initialized successfully.');
+        log.info('Database initialized successfully');
     } catch (err) {
-        console.error('[DB] Failed to initialize database:', err);
+        log.error({ err }, 'Failed to initialize database');
         throw err;
     }
 
@@ -101,7 +103,7 @@ export function closeDatabase() {
     if (db) {
         db.close();
         db = null;
-        console.log('[DB] Database connection closed.');
+        log.info('Database connection closed');
     }
 }
 
@@ -109,17 +111,28 @@ export function closeDatabase() {
 
 function queryAll(sql, params = []) {
     if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
-    return db.prepare(sql).all(params);
+    const start = performance.now();
+    const result = db.prepare(sql).all(params);
+    const ms = performance.now() - start;
+    if (ms > 100) log.warn({ sql: sql.slice(0, 80), ms: Math.round(ms) }, 'Slow query');
+    return result;
 }
 
 function queryOne(sql, params = []) {
     if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
-    return db.prepare(sql).get(params) || null;
+    const start = performance.now();
+    const result = db.prepare(sql).get(params) || null;
+    const ms = performance.now() - start;
+    if (ms > 100) log.warn({ sql: sql.slice(0, 80), ms: Math.round(ms) }, 'Slow query');
+    return result;
 }
 
 function runSql(sql, params = []) {
     if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
+    const start = performance.now();
     const info = db.prepare(sql).run(params);
+    const ms = performance.now() - start;
+    if (ms > 100) log.warn({ sql: sql.slice(0, 80), ms: Math.round(ms) }, 'Slow query');
     return { changes: info.changes, lastId: info.lastInsertRowid };
 }
 

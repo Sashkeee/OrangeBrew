@@ -19,7 +19,9 @@ import {
     recipeLikesQueries, recipeCommentsQueries,
     recipeQueries, recipeSearchQueries, recipeTrendingQueries,
 } from '../db/database.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'Social' });
 const router = Router();
 
 // ─── Public Library ───────────────────────────────────────
@@ -41,7 +43,7 @@ router.get('/public', (req, res) => {
         }));
         res.json(recipes);
     } catch (err) {
-        console.error('[public] list failed:', err);
+        log.error({ err }, 'Public list failed');
         res.status(500).json({ error: 'Failed to list public recipes' });
     }
 });
@@ -67,7 +69,7 @@ router.get('/search', (req, res) => {
         }));
         res.json(recipes);
     } catch (err) {
-        console.error('[search] failed:', err);
+        log.error({ err }, 'Search failed');
         res.status(500).json({ error: 'Search failed' });
     }
 });
@@ -80,7 +82,7 @@ router.get('/styles', (req, res) => {
         const styles = recipeSearchQueries.getPublicStyles();
         res.json(styles);
     } catch (err) {
-        console.error('[styles] failed:', err);
+        log.error({ err }, 'Styles failed');
         res.status(500).json({ error: 'Failed to get styles' });
     }
 });
@@ -104,7 +106,7 @@ router.post('/:id/publish', (req, res) => {
         if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
         res.json(recipe);
     } catch (err) {
-        console.error('[publish] toggle failed:', err);
+        log.error({ err }, 'Publish toggle failed');
         res.status(500).json({ error: 'Failed to update recipe visibility' });
     }
 });
@@ -128,7 +130,7 @@ router.get('/trending', (req, res) => {
         }));
         res.json(recipes);
     } catch (err) {
-        console.error('[trending] failed:', err);
+        log.error({ err }, 'Trending failed');
         res.status(500).json({ error: 'Failed to get trending recipes' });
     }
 });
@@ -153,7 +155,7 @@ router.get('/:id/similar', (req, res) => {
         }));
         res.json(recipes);
     } catch (err) {
-        console.error('[similar] failed:', err);
+        log.error({ err }, 'Similar failed');
         res.status(500).json({ error: 'Failed to get similar recipes' });
     }
 });
@@ -169,7 +171,7 @@ router.post('/:id/like', (req, res) => {
         const result = recipeLikesQueries.toggle(recipeId, req.user.id);
         res.json(result);
     } catch (err) {
-        console.error('[like] toggle failed:', err);
+        log.error({ err }, 'Like toggle failed');
         res.status(500).json({ error: 'Failed to toggle like' });
     }
 });
@@ -183,7 +185,7 @@ router.get('/:id/likes', (req, res) => {
         const result = recipeLikesQueries.getStatus(recipeId, req.user.id);
         res.json(result);
     } catch (err) {
-        console.error('[like] getStatus failed:', err);
+        log.error({ err }, 'Like getStatus failed');
         res.status(500).json({ error: 'Failed to get like status' });
     }
 });
@@ -208,7 +210,7 @@ router.post('/:id/comments', (req, res) => {
         const comment = recipeCommentsQueries.create(recipeId, req.user.id, trimmed);
         res.status(201).json({ comment });
     } catch (err) {
-        console.error('[comments] create failed:', err);
+        log.error({ err }, 'Comment create failed');
         res.status(500).json({ error: 'Failed to create comment' });
     }
 });
@@ -225,7 +227,7 @@ router.get('/:id/comments', (req, res) => {
         const result = recipeCommentsQueries.getByRecipe(recipeId, limit, offset);
         res.json(result);
     } catch (err) {
-        console.error('[comments] list failed:', err);
+        log.error({ err }, 'Comment list failed');
         res.status(500).json({ error: 'Failed to list comments' });
     }
 });
@@ -241,7 +243,7 @@ router.delete('/:id/comments/:cid', (req, res) => {
         if (result === false) return res.status(403).json({ error: 'Not your comment' });
         res.json({ ok: true });
     } catch (err) {
-        console.error('[comments] delete failed:', err);
+        log.error({ err }, 'Comment delete failed');
         res.status(500).json({ error: 'Failed to delete comment' });
     }
 });

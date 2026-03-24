@@ -10,6 +10,7 @@ import config from '../config/env.js';
 import { INTERVALS } from '../config/constants.js';
 
 const hwLog = logger.child({ module: 'ESP32' });
+const wsLog = logger.child({ module: 'WS' });
 
 const { JWT_SECRET } = config;
 
@@ -72,7 +73,7 @@ export function initWebSocket(server) {
                 if (msg.type === 'auth') {
                     const device = deviceQueries.getByApiKey(msg.api_key);
                     if (!device) {
-                        console.log(`[WS] Unknown api_key attempt: ${msg.api_key} (deviceId: ${msg.deviceId || 'unknown'})`);
+                        wsLog.warn({ apiKey: msg.api_key, deviceId: msg.deviceId || 'unknown' }, 'Unknown api_key');
                         ws.close(4001, 'Unknown api_key');
                         return;
                     }
@@ -111,7 +112,7 @@ export function initWebSocket(server) {
                     broadcastToUser(entry.userId, 'device_status', { deviceId, status: 'offline' });
                 }
                 entry.ws.terminate();
-                console.log(`[WS] Hardware ping timeout: ${deviceId}`);
+                wsLog.warn({ deviceId }, 'Hardware ping timeout');
                 continue;
             }
             entry.ws.isAlive = false;
@@ -121,7 +122,7 @@ export function initWebSocket(server) {
 
     wss.on('close', () => clearInterval(pingInterval));
 
-    console.log('[WS] WebSocket server initialized on /ws');
+    wsLog.info('WebSocket server initialized on /ws');
 }
 
 // ─── Pairing ───────────────────────────────────────────────
@@ -155,7 +156,7 @@ async function handlePairingMessage(ws, msg) {
     // Mark pairing as used
     pairingQueries.markUsed(pairing.id, deviceId);
 
-    console.log(`[WS] Device paired: ${deviceId} → user_id=${pairing.user_id}`);
+    wsLog.info({ deviceId, userId: pairing.user_id }, 'Device paired');
 
     // Tell ESP32 its new api_key (it should store in NVS and reconnect with type:'auth')
     ws.send(JSON.stringify({ type: 'paired', api_key }));
@@ -168,7 +169,7 @@ function setupUiClient(ws, userId) {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     uiClients.set(ws, { userId });
-    console.log(`[WS] UI client connected (userId=${userId}). Total UI: ${uiClients.size}`);
+    wsLog.info({ userId, total: uiClients.size }, 'UI client connected');
 
     ws.send(JSON.stringify({
         type: 'init',
@@ -187,7 +188,7 @@ function setupUiClient(ws, userId) {
 
     ws.on('close', () => {
         uiClients.delete(ws);
-        console.log(`[WS] UI client disconnected (userId=${userId}). Total UI: ${uiClients.size}`);
+        wsLog.info({ userId, total: uiClients.size }, 'UI client disconnected');
     });
 
     ws.on('error', () => {
@@ -202,7 +203,7 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
     ws.deviceId = deviceId;
     deviceQueries.updateStatus(deviceId, 'online');
 
-    console.log(`[WS] Hardware connected: ${deviceId} (user=${userId}, name=${name}). Total HW: ${hardwareClients.size}`);
+    wsLog.info({ deviceId, userId, name, total: hardwareClients.size }, 'Hardware connected');
     if (userId != null) {
         broadcastToUser(userId, 'device_status', { deviceId, status: 'online', name, role });
     }
@@ -213,7 +214,7 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
             const msg = JSON.parse(raw.toString());
             handleHardwareMessage(deviceId, msg);
         } catch {
-            console.error(`[WS] Invalid JSON from hardware ${deviceId}`);
+            wsLog.error({ deviceId }, 'Invalid JSON from hardware');
         }
     });
 
@@ -223,7 +224,7 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
         if (userId != null) {
             broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
         }
-        console.log(`[WS] Hardware disconnected: ${deviceId}`);
+        wsLog.info({ deviceId }, 'Hardware disconnected');
     });
 
     ws.on('error', () => {

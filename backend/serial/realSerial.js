@@ -5,6 +5,9 @@
  */
 import { SerialPort, ReadlineParser } from 'serialport';
 import EventEmitter from 'events';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'RealSerial' });
 
 export class RealSerial extends EventEmitter {
     constructor(portName, baudRate = 115200) {
@@ -12,7 +15,7 @@ export class RealSerial extends EventEmitter {
         this.portName = portName;
         this.baudRate = baudRate;
 
-        console.log(`[RealSerial] Connecting to ${portName} at ${baudRate} baud...`);
+        log.info({ port: portName, baudRate }, 'Connecting');
 
         this.port = new SerialPort({
             path: portName,
@@ -27,17 +30,17 @@ export class RealSerial extends EventEmitter {
 
     _initEvents() {
         this.port.on('open', () => {
-            console.log(`[RealSerial] Successfully connected to ${this.portName}`);
+            log.info({ port: this.portName }, 'Connected');
             this.emit('connected');
         });
 
         this.port.on('close', () => {
-            console.log(`[RealSerial] Disconnected from ${this.portName}`);
+            log.info({ port: this.portName }, 'Disconnected');
             this.emit('disconnected');
         });
 
         this.port.on('error', (err) => {
-            console.error(`[RealSerial] Error:`, err.message);
+            log.error({ err }, 'Serial error');
             this.emit('error', err);
         });
 
@@ -69,7 +72,7 @@ export class RealSerial extends EventEmitter {
 
             } catch (e) {
                 // Ignore non-JSON debug logs perfectly
-                console.log(`[ESP32 Log] ${dataStr}`);
+                log.debug({ raw: dataStr }, 'Non-JSON serial data');
             }
         });
     }
@@ -77,7 +80,7 @@ export class RealSerial extends EventEmitter {
     start() {
         this.port.open((err) => {
             if (err) {
-                console.error(`[RealSerial] Error opening port:`, err.message);
+                log.error({ err }, 'Error opening port');
                 // Optionally retry here
             }
         });
@@ -95,7 +98,7 @@ export class RealSerial extends EventEmitter {
             const payload = commandStr.endsWith('\n') ? commandStr : commandStr + '\n';
             this.port.write(payload, (err) => {
                 if (err) {
-                    console.error('[RealSerial] Write error:', err.message);
+                    log.error({ err }, 'Write error');
                 }
             });
         }

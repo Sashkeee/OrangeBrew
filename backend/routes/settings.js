@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { settingsQueries } from '../db/database.js';
 import { sendMessage, reloadTelegramConfig } from '../services/telegram.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'Settings' });
 const router = Router();
 
 /**
@@ -38,7 +40,7 @@ export default function createSettingsRouter() {
                 const pid = req.body.pid;
                 if (pid.kp !== undefined && pid.ki !== undefined && pid.kd !== undefined) {
                     pidManager.setTunings(pid.kp, pid.ki, pid.kd);
-                    console.log(`[Settings] Applied PID tunings: P=${pid.kp} I=${pid.ki} D=${pid.kd}`);
+                    log.info({ kp: pid.kp, ki: pid.ki, kd: pid.kd }, 'Applied PID tunings');
                 }
             }
 

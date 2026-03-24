@@ -15,6 +15,9 @@
  */
 
 import EventEmitter from 'events';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ module: 'MockSerial' });
 
 // ─── Single-device state factory ──────────────────────────
 
@@ -104,13 +107,13 @@ export class MockSerial extends EventEmitter {
 
     /** @deprecated Legacy — simulation starts in constructor. */
     start() {
-        console.log('[MockSerial] Simulation started');
+        log.info('Simulation started');
         this.emit('connected');
     }
 
     /** @deprecated Legacy. */
     stop() {
-        console.log('[MockSerial] Simulation stopped');
+        log.info('Simulation stopped');
         this.emit('disconnected');
     }
 
@@ -137,7 +140,7 @@ export class MockSerial extends EventEmitter {
     setSimulationEnabled(enabled) {
         this._state.simulationEnabled = enabled;
         this.simulationEnabled = enabled;
-        console.log(`[MockSerial] Physics simulation ${enabled ? 'ENABLED' : 'DISABLED'}`);
+        log.info({ enabled }, 'Physics simulation toggled');
     }
 
     // ── Multi-device API ────────────────────────────────────
@@ -152,7 +155,7 @@ export class MockSerial extends EventEmitter {
         const state = createDeviceState();
         state._userId = userId;
         this._devices.set(deviceId, state);
-        console.log(`[MockSerial] Virtual device created: ${deviceId} (user=${userId})`);
+        log.info({ deviceId, userId }, 'Virtual device created');
         return state;
     }
 
@@ -172,7 +175,7 @@ export class MockSerial extends EventEmitter {
     writeToDevice(deviceId, commandStr) {
         const state = this._devices.get(deviceId);
         if (!state) {
-            console.warn(`[MockSerial] Unknown device: ${deviceId}`);
+            log.warn({ deviceId }, 'Unknown device');
             return;
         }
         this._applyCommand(state, commandStr);
@@ -217,7 +220,7 @@ export class MockSerial extends EventEmitter {
      */
     simulateAlert(deviceId, type) {
         this.emit('device:alert', { deviceId, type });
-        console.log(`[MockSerial] Simulated alert on device ${deviceId}: ${type}`);
+        log.info({ deviceId, type }, 'Simulated alert');
     }
 
     /** List all registered virtual device ids. */
@@ -230,7 +233,7 @@ export class MockSerial extends EventEmitter {
     _applyCommand(state, commandStr) {
         try {
             const cmd = JSON.parse(commandStr);
-            console.log('[MockSerial] Received:', cmd);
+            log.debug({ cmd }, 'Received');
 
             if (cmd.cmd === 'setHeater')  state.heaterPower  = parseFloat(cmd.value);
             if (cmd.cmd === 'setCooler')  state.coolerPower  = parseFloat(cmd.value);
@@ -246,7 +249,7 @@ export class MockSerial extends EventEmitter {
                 state.dephlegPower = 0;
             }
         } catch (e) {
-            console.error('[MockSerial] Parse error:', e);
+            log.error({ err: e }, 'Parse error');
         }
     }
 

@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { sessionQueries, recipeQueries, temperatureQueries, fractionQueries, fermentationQueries } from '../db/database.js';
 import telegram from '../services/telegram.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'Sessions' });
 const router = Router();
 
 // GET /api/sessions — sessions for current user (optional ?type=mash|boil|...)
@@ -28,7 +30,7 @@ router.get('/:id', (req, res) => {
 // POST /api/sessions — create session
 router.post('/', async (req, res) => {
     try {
-        console.log('[Sessions] Creating new session:', req.body.type);
+        log.info({ type: req.body.type }, 'Creating new session');
         const session = sessionQueries.create(req.body, req.user.id);
 
         let recipeName = '—';
@@ -37,7 +39,7 @@ router.post('/', async (req, res) => {
             if (recipe) recipeName = recipe.name;
         }
 
-        console.log(`[Sessions] Notifying Telegram: process=${req.body.type}, recipe=${recipeName}`);
+        log.info({ type: req.body.type, recipeName }, 'Notifying Telegram');
         telegram.setCurrentProcessType(req.body.type || 'brew');
         await telegram.notifyPhaseChange(
             req.body.type || 'brew',
@@ -47,7 +49,7 @@ router.post('/', async (req, res) => {
 
         res.status(201).json(session);
     } catch (err) {
-        console.error('[Sessions] Error creating session:', err.message);
+        log.error({ err }, 'Error creating session');
         res.status(500).json({ error: err.message });
     }
 });

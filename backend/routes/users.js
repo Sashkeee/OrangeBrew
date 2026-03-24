@@ -1,7 +1,9 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import { getDb } from '../db/database.js';
+import logger from '../utils/logger.js';
 
+const log = logger.child({ module: 'Users' });
 const router = express.Router();
 
 // Middleware to Ensure Admin
@@ -99,6 +101,7 @@ router.post('/', requireAdmin, async (req, res) => {
         const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
             .run(username, hash, userRole);
 
+        log.info({ adminId: req.user.id, username, role: userRole }, 'User created by admin');
         res.status(201).json({ id: result.lastInsertRowid, username, role: userRole });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -116,6 +119,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
         if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
 
         db.prepare('DELETE FROM users WHERE id = ?').run(id);
+        log.warn({ adminId: req.user.id, deletedUserId: id }, 'User deleted');
         res.json({ message: 'Пользователь удален' });
     } catch (err) {
         res.status(500).json({ error: err.message });
