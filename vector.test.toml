@@ -34,10 +34,12 @@ if err == null && is_object(parsed) {
             .level = "error"
         } else if level_num >= 40 {
             .level = "warn"
+        } else if level_num >= 30 {
+            .level = "info"
         } else if level_num >= 20 {
             .level = "debug"
         } else {
-            .level = "info"
+            .level = "trace"
         }
 
         # Pino uses "msg" or "message" key

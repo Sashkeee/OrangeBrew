@@ -1,0 +1,5 @@
+# OrangeBrew — credentials inventory
+# НЕ коммитить. Добавлен в .gitignore.
+
+[prod] test.orangebrew.ru
+  admin: crm4lolz

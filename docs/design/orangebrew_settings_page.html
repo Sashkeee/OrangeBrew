@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrangeBrew — Страница Настроек (Design Mockup)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0F0F0F;
+            color: #D3D1C7;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 28px;
+            color: #D3D1C7;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            color: #888780;
+            font-size: 14px;
+        }
+
+        .settings-layout {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 30px;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .sidebar-item {
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: #2C2C2A;
+            border: 1px solid #5F5E5A;
+            cursor: pointer;
+            color: #D3D1C7;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .sidebar-item:hover {
+            background: #3C3C3A;
+            border-color: #7F7E7A;
+        }
+
+        .sidebar-item.active {
+            background: #3C3489;
+            border-color: #534AB7;
+            color: #CECBF6;
+        }
+
+        .content {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .settings-section {
+            background: #1A1A1A;
+            border: 1px solid #2C2C2A;
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #D3D1C7;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-icon {
+            font-size: 20px;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-bottom: 1px solid #2C2C2A;
+        }
+
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+
+        .setting-label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .setting-label-text {
+            color: #D3D1C7;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .setting-label-desc {
+            color: #888780;
+            font-size: 12px;
+        }
+
+        .setting-control {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        input[type="number"],
+        input[type="text"],
+        select {
+            background: #2C2C2A;
+            border: 1px solid #5F5E5A;
+            border-radius: 6px;
+            color: #D3D1C7;
+            padding: 10px 12px;
+            font-size: 14px;
+            min-width: 150px;
+        }
+
+        input[type="number"]:focus,
+        input[type="text"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #534AB7;
+            background: #3C3432;
+        }
+
+        .toggle {
+            position: relative;
+            width: 48px;
+            height: 28px;
+            background: #2C2C2A;
+            border-radius: 14px;
+            cursor: pointer;
+            border: 1px solid #5F5E5A;
+            transition: all 0.3s;
+        }
+
+        .toggle.active {
+            background: #0F6E56;
+            border-color: #0F6E56;
+        }
+
+        .toggle-dot {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 12px;
+            transition: left 0.3s;
+        }
+
+        .toggle.active .toggle-dot {
+            left: 22px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #534AB7;
+            color: #CECBF6;
+        }
+
+        .btn-primary:hover {
+            background: #6B5FC4;
+        }
+
+        .btn-secondary {
+            background: #2C2C2A;
+            color: #D3D1C7;
+            border: 1px solid #5F5E5A;
+        }
+
+        .btn-secondary:hover {
+            background: #3C3C3A;
+            border-color: #7F7E7A;
+        }
+
+        .btn-danger {
+            background: #791F1F;
+            color: #F7C1C1;
+        }
+
+        .btn-danger:hover {
+            background: #9A2929;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .info-box {
+            background: #0F6E56;
+            border: 1px solid #0F6E56;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: #9FE1CB;
+            font-size: 13px;
+            margin-top: 16px;
+        }
+
+        .warning-box {
+            background: #2C1F0F;
+            border: 1px solid #5F3B1F;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: #F4C4A0;
+            font-size: 13px;
+            margin-top: 16px;
+        }
+
+        .divider {
+            height: 1px;
+            background: #2C2C2A;
+            margin: 24px 0;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .settings-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-connected {
+            background: #0F6E56;
+        }
+
+        .status-disconnected {
+            background: #791F1F;
+        }
+
+        .status-text {
+            font-size: 13px;
+            color: #888780;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚙️ Страница Настроек</h1>
+            <p>Design Mockup для OrangeBrew Settings Page</p>
+        </header>
+
+        <div class="settings-layout">
+            <!-- Левая колонка: навигация -->
+            <div class="sidebar">
+                <div class="sidebar-item active">⚡ ПИД-регулятор</div>
+                <div class="sidebar-item">📊 Датчики</div>
+                <div class="sidebar-item">🔧 Калман-фильтр</div>
+                <div class="sidebar-item">📱 Telegram</div>
+                <div class="sidebar-item">📡 Соединение</div>
+                <div class="sidebar-item">👤 Профиль</div>
+            </div>
+
+            <!-- Правая колонка: контент -->
+            <div class="content">
+                <!-- Секция 1: ПИД-регулятор -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span class="section-icon">⚡</span>
+                        ПИД-регулятор
+                    </div>
+
+                    <div class="grid-2">
+                        <div>
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <span class="setting-label-text">Коэффициент P (пропорциональный)</span>
+                                    <span class="setting-label-desc">Влияет на скорость реакции</span>
+                                </div>
+                                <div class="setting-control">
+                                    <input type="number" value="2.5" step="0.1" min="0">
+                                </div>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <span class="setting-label-text">Коэффициент I (интегральный)</span>
+                                    <span class="setting-label-desc">Устраняет статическую ошибку</span>
+                                </div>
+                                <div class="setting-control">
+                                    <input type="number" value="0.8" step="0.1" min="0">
+                                </div>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <span class="setting-label-text">Коэффициент D (дифференциальный)</span>
+                                    <span class="setting-label-desc">Предсказывает переброс</span>
+                                </div>
+                                <div class="setting-control">
+                                    <input type="number" value="0.5" step="0.1" min="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <span class="setting-label-text">Режим нагрева</span>
+                                    <span class="setting-label-desc">Быстрый нагрев или поддержание</span>
+                                </div>
+                                <div class="setting-control">
+                                    <select>
+                                        <option>Heating (полная мощность)</option>
+                                        <option>Holding (контроль)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <span class="setting-label-text">Макс. мощность нагревателя</span>
+                                    <span class="setting-label-desc">% от номинальной мощности</span>
+                                </div>
+                                <div class="setting-control">
+                                    <input type="number" value="100" step="10" min="0" max="100">
+                                    <span>%</span>
+                                </div>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <span class="setting-label-text">Автотюнинг PID</span>
+                                    <span class="setting-label-desc">Найти оптимальные коэффициенты</span>
+                                </div>
+                                <div class="setting-control">
+                                    <button class="btn-primary">Запустить</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="button-group">
+                        <button class="btn-primary">Сохранить</button>
+                        <button class="btn-secondary">Вернуть значения</button>
+                    </div>
+                </div>
+
+                <!-- Секция 2: Датчики -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span class="section-icon">📊</span>
+                        Датчики температуры
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Использовать датчик для варки</span>
+                            <span class="setting-label-desc">DS18B20 адрес: 28:FF:12:45:67:89:AB:CD</span>
+                        </div>
+                        <div class="setting-control">
+                            <div class="toggle active">
+                                <div class="toggle-dot"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Калибровочное смещение (основной датчик)</span>
+                            <span class="setting-label-desc">Компенсирует неточность датчика</span>
+                        </div>
+                        <div class="setting-control">
+                            <input type="number" value="0" step="0.1" min="-5" max="5">
+                            <span>°C</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Использовать дополнительный датчик</span>
+                            <span class="setting-label-desc">DS18B20 адрес: 28:FF:AB:CD:EF:01:23:45</span>
+                        </div>
+                        <div class="setting-control">
+                            <div class="toggle">
+                                <div class="toggle-dot"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="info-box">
+                        💡 Обнаруженные датчики: 3 шт. Перезагрузите устройство, чтобы обновить список.
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary">Сохранить</button>
+                        <button class="btn-secondary">Сканировать датчики</button>
+                    </div>
+                </div>
+
+                <!-- Секция 3: Калман-фильтр -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span class="section-icon">🔧</span>
+                        Фильтр Калмана (шумоподавление)
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Включить фильтр Калмана</span>
+                            <span class="setting-label-desc">Уменьшает шум датчика</span>
+                        </div>
+                        <div class="setting-control">
+                            <div class="toggle active">
+                                <div class="toggle-dot"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Q (процессный шум)</span>
+                            <span class="setting-label-desc">Чем выше, тем больше изменений ожидается</span>
+                        </div>
+                        <div class="setting-control">
+                            <input type="number" value="0.01" step="0.001" min="0" max="1">
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">R (шум измерения)</span>
+                            <span class="setting-label-desc">Чем выше, тем больше доверия модели</span>
+                        </div>
+                        <div class="setting-control">
+                            <input type="number" value="0.1" step="0.01" min="0" max="1">
+                        </div>
+                    </div>
+
+                    <div class="warning-box">
+                        ⚠️ Неправильная настройка фильтра может привести к задержке реакции. Используйте значения по умолчанию в начале.
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary">Сохранить</button>
+                        <button class="btn-secondary">По умолчанию</button>
+                    </div>
+                </div>
+
+                <!-- Секция 4: Telegram -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span class="section-icon">📱</span>
+                        Telegram уведомления
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Включить уведомления</span>
+                            <span class="setting-label-desc">Получайте обновления о варке</span>
+                        </div>
+                        <div class="setting-control">
+                            <div class="toggle active">
+                                <div class="toggle-dot"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Telegram Bot Token</span>
+                            <span class="setting-label-desc">Получить в @BotFather</span>
+                        </div>
+                        <div class="setting-control">
+                            <input type="text" value="123456:ABCdefGHIjklmno-PqrsTuv-WxyzABC" style="min-width: 250px;">
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Chat ID</span>
+                            <span class="setting-label-desc">ID вашего личного чата с ботом</span>
+                        </div>
+                        <div class="setting-control">
+                            <input type="text" value="987654321">
+                        </div>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Статус соединения</span>
+                            <span class="setting-label-desc">Проверка подключения к Telegram API</span>
+                        </div>
+                        <div class="setting-control">
+                            <span class="status-indicator status-connected"></span>
+                            <span class="status-text">Подключено</span>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary">Сохранить</button>
+                        <button class="btn-secondary">Тест отправки</button>
+                        <button class="btn-danger">Отключить</button>
+                    </div>
+                </div>
+
+                <!-- Секция 5: Соединение -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span class="section-icon">📡</span>
+                        Тип соединения
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <span class="setting-label-text">Способ подключения к ESP32</span>
+                            <span class="setting-label-desc">Serial, WiFi или эмулятор (для разработки)</span>
+                        </div>
+                        <div class="setting-control">
+                            <select>
+                                <option selected>WiFi (WebSocket)</option>
+                                <option>Serial (USB)</option>
+                                <option>Mock (для разработки)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="info-box">
+                        💡 WiFi (WebSocket) — рекомендуется. Устройство подключается через интернет без USB кабеля.
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary">Применить</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -135,8 +135,16 @@ OrangeBrew/
 │   │       └── pages.css      # Стили страниц
 │   └── package.json
 ├── firmware/
-│   └── esp32/OrangeBrew_ESP32/
-│       └── OrangeBrew_ESP32.ino   # Arduino скетч для ESP32/ESP8266
+│   ├── esp32/OrangeBrew_ESP32/
+│   │   └── OrangeBrew_ESP32.ino       # Arduino скетч для Node32 (ESP32)
+│   ├── esp32c3/
+│   │   ├── OrangeBrew_ESP32C3/
+│   │   │   └── OrangeBrew_ESP32C3.ino # Основная прошивка ESP32-C3 (gitignored — содержит BENCH_WIFI_PASS)
+│   │   ├── OrangeBrew_ESP32C3_Diag/
+│   │   │   └── OrangeBrew_ESP32C3_Diag.ino # Диагностика железа (AP, датчики, пины)
+│   │   └── AP_Test/                   # Минимальный тест точки доступа
+│   └── esp8266/OrangeBrew_ESP8266/
+│       └── OrangeBrew_ESP8266.ino     # Arduino скетч для ESP8266
 ├── docker-compose.prod.yml
 ├── CLAUDE.md                  # Этот файл
 ├── SCHEMA.md                  # Схема SQLite таблиц
@@ -190,7 +198,7 @@ ProcessManager эмитит событие `update` при каждом изме
 **Паринг нового устройства:**
 1. Пользователь открывает `POST /api/devices/pair/init` → получает 6-символьный `pairing_code`
 2. ESP32 отправляет `{type: 'pair', pairing_code, deviceId}` по WebSocket
-3. Сервер валидирует код, сохраняет `api_key` в `devices`, отправляет устройству `{type: 'pair_success', api_key}`
+3. Сервер валидирует код, сохраняет `api_key` в `devices`, отправляет устройству `{type: 'paired', api_key}`
 4. ESP32 переподключается с `{type: 'auth', api_key}`
 5. Frontend поллит `GET /api/devices/pair/status` до завершения
 
@@ -261,7 +269,29 @@ Structured logging: pino-http → stdout → Vector → Betterstack ClickHouse.
 
 ---
 
-### 10. Settings.jsx — module-scope компоненты
+### 10. Graceful Shutdown — правильный порядок
+При получении SIGTERM/SIGINT важен порядок завершения:
+```js
+closeWebSocket();  // сначала — ESP32 отключается, новых данных не будет
+closeDatabase();   // потом — БД закрывается чисто
+server.close();    // последним — HTTP
+```
+**Нарушение порядка:** если `closeDatabase()` вызвать до `closeWebSocket()`, ESP32 успевает прислать последний пакет датчиков → `mapSensors()` → `db.prepare(null)` → краш.
+
+`closeWebSocket()` экспортирована из `ws/liveServer.js`.
+
+---
+
+### 11. device_log — ESP32 логи в Betterstack
+ESP32 может отправлять `{type: 'device_log', level, msg, uptime}` по WebSocket.
+`liveServer.js` пишет их через `hwLog` (child logger с `module: 'ESP32'`) с полями `deviceId`, `userId`, `source: 'device'`.
+Логи появляются в Betterstack и читаемы через `/логи`.
+
+**Ограничение:** большинство `Serial.println()` в прошивке ещё не заменены на `log()` — device_log работает только там где явно используется `log()`/`logW()`/`logE()`.
+
+---
+
+### 12. Settings.jsx — module-scope компоненты
 Sub-компоненты (`SelectField`, `SettingRow`, `Toggle`) и объекты стилей (`inputStyle`, `selectStyle`, `labelStyle`, `toggleStyle`, `toggleDotStyle`) вынесены из render-функции `SettingsPage` в module scope. Это предотвращает пересоздание компонентов при частых ре-рендерах от `useSensors()` WebSocket обновлений (каждые ~1.5с).
 
 ---
@@ -447,12 +477,16 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 | # | Проблема | Статус | Файл |
 |---|---------|--------|------|
 | 1 | `mapSensors()` вынесена в `utils/sensorMapper.js` | ✅ исправлено | `backend/utils/sensorMapper.js` |
-| 2 | `RecipeConstructor` и `RecipeConstructor_V2` — дублирование логики | открыто | `frontend/src/pages/` |
-| 3 | `global._latestProcessState` — антипаттерн глобального состояния | открыто | `backend/services/telegram.js` |
-| 4 | Валидация паузы в рецепте требует возрастания температур — неверно для реального пивоварения | открыто | `RecipeConstructor.jsx` |
-| 5 | `backend/routes/users.js` использует `getDb()` напрямую вместо query-объектов | открыто | `backend/routes/users.js` |
-| 6 | `sql.js` в backend/package.json — похоже не используется | открыто | `backend/package.json` |
-| 7 | `realSerial.js` deprecated — файл сохранён, но не используется | открыто | `backend/serial/realSerial.js` |
+| 2 | `runSql()` null-check отсутствовал | ✅ исправлено | `backend/db/database.js` |
+| 3 | Graceful shutdown race: closeDatabase() до closeWebSocket() | ✅ исправлено | `backend/server.js` |
+| 4 | `RecipeConstructor` и `RecipeConstructor_V2` — дублирование логики | открыто | `frontend/src/pages/` |
+| 5 | `global._latestProcessState` — антипаттерн глобального состояния | открыто | `backend/services/telegram.js` |
+| 6 | Валидация паузы в рецепте требует возрастания температур — неверно для реального пивоварения | открыто | `RecipeConstructor.jsx` |
+| 7 | `backend/routes/users.js` использует `getDb()` напрямую вместо query-объектов | открыто | `backend/routes/users.js` |
+| 8 | `sql.js` в backend/package.json — не используется | открыто | `backend/package.json` |
+| 9 | `realSerial.js` deprecated — файл сохранён, но не используется | открыто | `backend/serial/realSerial.js` |
+| 10 | ESP32 прошивка: `Serial.println()` не заменены на `log()` — device_log не работает для большинства строк | открыто | `firmware/esp32c3/` |
+| 11 | `firmware/esp32c3/OrangeBrew_ESP32C3/` gitignored — прошивка не версионируется в git | открыто | `.gitignore` |
 
 ---
 

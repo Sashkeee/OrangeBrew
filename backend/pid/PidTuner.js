@@ -13,6 +13,8 @@
  * - Подтверждение смены направления несколькими чтениями
  */
 
+import { SAFETY, SIGNAL, PID_TUNING } from '../config/constants.js';
+
 export default class PidTuner {
     constructor() {
         this.reset();
@@ -27,10 +29,10 @@ export default class PidTuner {
         this.state = 'IDLE'; // IDLE → HEATING_INITIAL → RELAY_OSCILLATION → DONE
 
         // Safety
-        this._maxSafeTemp = 98; // °C — аварийный порог (по сырой температуре!)
+        this._maxSafeTemp = SAFETY.MAX_TEMP_C; // °C — аварийный порог (по сырой температуре!)
 
         // EMA filter for temperature smoothing (only for peak/valley detection)
-        this._emaAlpha = 0.4;      // Higher alpha = faster response (good for fast systems)
+        this._emaAlpha = SIGNAL.EMA_ALPHA;      // Higher alpha = faster response (good for fast systems)
         this._filteredTemp = null;
 
         // Relay state tracking with hysteresis (NOT dwell time!)
@@ -38,12 +40,12 @@ export default class PidTuner {
         // Relay OFF when: raw > target + hysteresis
         // This prevents chattering near target without blocking the relay for seconds
         this._relayIsOn = false;
-        this._hysteresis = 1.5; // °C — deadband half-width around target
+        this._hysteresis = SAFETY.HYSTERESIS_C; // °C — deadband half-width around target
 
         // Direction tracking for peak/valley detection
         this._prevFilteredTemp = null;
         this._directionCounter = 0;
-        this._confirmSamples = 3;   // Confirm direction change with 3 samples
+        this._confirmSamples = SIGNAL.CONFIRM_SAMPLES;   // Confirm direction change with N samples
 
         // Tracking local extremes
         this._localMax = -999;
@@ -53,7 +55,7 @@ export default class PidTuner {
         this.peaks = [];   // [{value, time}, ...]
         this.valleys = []; // [{value, time}, ...]
 
-        this.targetCycles = 3;
+        this.targetCycles = PID_TUNING.TARGET_CYCLES;
         this.currentCycle = 0;
 
         // Timing
@@ -267,10 +269,10 @@ export default class PidTuner {
         const Tu = periods.reduce((a, b) => a + b, 0) / periods.length;
 
         // Validation
-        if (Tu < 2) {
+        if (Tu < PID_TUNING.MIN_PERIOD_S) {
             return { tuning: false, done: true, error: `Период слишком мал (Tu=${Tu.toFixed(1)}с). Возможен шум.` };
         }
-        if (A < 0.1) {
+        if (A < PID_TUNING.MIN_AMPLITUDE_C) {
             return { tuning: false, done: true, error: `Амплитуда слишком мала (A=${A.toFixed(2)}°C).` };
         }
 

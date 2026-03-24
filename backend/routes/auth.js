@@ -3,9 +3,10 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { userQueries } from '../db/database.js';
 import { authenticate } from '../middleware/auth.js';
+import config from '../config/env.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
+const { JWT_SECRET } = config;
 
 /** Build JWT payload + token string */
 function makeToken(user) {

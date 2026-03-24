@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OrangeBrew — Пивоварение / Рецепты</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050505; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; }
+  .app { display: flex; height: 580px; width: 960px; background: #0a0a0a; border-radius: 12px; overflow: hidden; border: 1px solid #1a1a1a; }
+  .sidebar { width: 240px; min-width: 240px; background: #111; border-right: 1px solid #1e1e1e; display: flex; flex-direction: column; }
+  .logo-area { padding: 20px 16px 16px; border-bottom: 1px solid #1e1e1e; }
+  .logo-placeholder { width: 40px; height: 40px; border-radius: 8px; background: #1a1a1a; border: 1.5px dashed #F97316; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .logo-text { margin-top: 8px; font-size: 13px; font-weight: 700; color: #F97316; letter-spacing: 1.5px; }
+  .nav { flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; border-left: 2px solid transparent; }
+  .nav-item:hover { background: #1a1a1a; }
+  .nav-item.active { background: #1a1a1a; border-left-color: #F97316; }
+  .nav-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: rgba(255,255,255,0.04); flex-shrink: 0; }
+  .nav-item.active .nav-icon { background: rgba(249,115,22,0.12); }
+  .nav-texts { flex: 1; }
+  .nav-name { font-size: 13px; font-weight: 500; color: #666; }
+  .nav-item.active .nav-name { color: #F97316; }
+  .nav-desc { font-size: 10px; color: #333; margin-top: 1px; }
+  .nav-item.active .nav-desc { color: rgba(249,115,22,0.5); }
+  .nav-dot { width: 5px; height: 5px; border-radius: 50%; background: #F97316; opacity: 0; flex-shrink: 0; }
+  .nav-item.active .nav-dot { opacity: 1; }
+  .sidebar-footer { padding: 12px 16px; border-top: 1px solid #1e1e1e; display: flex; align-items: center; justify-content: space-between; }
+  .profile-btn { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: #1a1a1a; border: 1px solid #2a2a2a; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .username { font-size: 12px; color: #555; }
+  .settings-icon { width: 26px; height: 26px; border-radius: 6px; background: #1a1a1a; border: 1px solid #2a2a2a; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #0d0d0d; }
+  .section-header { padding: 16px 20px 0; border-bottom: 1px solid #1e1e1e; flex-shrink: 0; }
+  .sh-title { font-size: 18px; font-weight: 700; color: #e0e0e0; margin-bottom: 14px; }
+  .tabs { display: flex; gap: 0; }
+  .tab { padding: 8px 18px; font-size: 12px; color: #555; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  .tab:hover { color: #888; }
+  .tab.active { color: #F97316; border-bottom-color: #F97316; }
+  .content-body { flex: 1; padding: 16px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; }
+  .search-box { flex: 1; background: #111; border: 1px solid #1e1e1e; border-radius: 6px; padding: 7px 12px; display: flex; align-items: center; gap: 8px; }
+  .search-box input { background: none; border: none; outline: none; color: #888; font-size: 12px; flex: 1; }
+  .add-btn { padding: 7px 14px; border-radius: 6px; background: #F97316; border: none; color: #000; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .import-btn { padding: 7px 12px; border-radius: 6px; background: #1a1a1a; border: 1px solid #2a2a2a; color: #666; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .filters { display: flex; gap: 6px; }
+  .filter { padding: 4px 12px; border-radius: 20px; font-size: 11px; cursor: pointer; border: 1px solid #1e1e1e; color: #555; background: transparent; }
+  .filter:hover { border-color: #333; color: #888; }
+  .filter.active { background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.3); color: #F97316; }
+  .section-sub { font-size: 10px; color: #333; letter-spacing: 1px; }
+  /* Карточка рецепта — финальная */
+  .recipe-card { background: #111; border: 1px solid #1e1e1e; border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: border-color 0.15s; }
+  .recipe-card:hover { border-color: #2a2a2a; }
+  .rc-color { width: 4px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
+  .rc-info { flex: 1; min-width: 0; }
+  .rc-name { font-size: 13px; font-weight: 600; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rc-style { font-size: 11px; color: #555; margin-top: 4px; }
+  .rc-stats { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .rc-stat { font-size: 11px; color: #444; }
+  .rc-stat.liked { color: #E24B4A; }
+  .rc-abv { font-size: 12px; font-weight: 600; color: #F97316; }
+  .actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .act-btn { width: 28px; height: 28px; border-radius: 6px; background: transparent; border: 1px solid transparent; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; color: #333; transition: all 0.15s; }
+  .act-btn:hover { background: #1a1a1a; border-color: #2a2a2a; color: #888; }
+  .act-btn.danger:hover { color: #E24B4A; border-color: rgba(226,75,74,0.2); }
+  .rc-brew-btn { padding: 5px 12px; border-radius: 5px; background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.2); color: #F97316; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .rc-brew-btn:hover { background: rgba(249,115,22,0.2); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="logo-area">
+      <div class="logo-placeholder">🍺</div>
+      <div class="logo-text">ORANGEBREW</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active">
+        <div class="nav-icon">🍺</div>
+        <div class="nav-texts">
+          <div class="nav-name">Пивоварение</div>
+          <div class="nav-desc">Затирание и кипячение</div>
+        </div>
+        <div class="nav-dot"></div>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">🌿</div>
+        <div class="nav-texts">
+          <div class="nav-name">Брожение</div>
+          <div class="nav-desc">Дневник ферментации</div>
+        </div>
+        <div class="nav-dot"></div>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">🏭</div>
+        <div class="nav-texts">
+          <div class="nav-name">Дистилляция</div>
+          <div class="nav-desc">Перегонка браги</div>
+        </div>
+        <div class="nav-dot"></div>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon">⚗️</div>
+        <div class="nav-texts">
+          <div class="nav-name">Ректификация</div>
+          <div class="nav-desc">Получение спирта</div>
+        </div>
+        <div class="nav-dot"></div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="profile-btn">
+        <div class="avatar">👤</div>
+        <div class="username">admin</div>
+      </div>
+      <div class="settings-icon">⚙️</div>
+    </div>
+  </div>
+  <div class="content">
+    <div class="section-header">
+      <div class="sh-title">🍺 Пивоварение</div>
+      <div class="tabs">
+        <div class="tab active">Рецепты</div>
+        <div class="tab">История варок</div>
+        <div class="tab">Справочник</div>
+        <div class="tab">Калькуляторы</div>
+      </div>
+    </div>
+    <div class="content-body">
+      <div class="toolbar">
+        <div class="search-box">
+          <span style="color:#333;font-size:13px">🔍</span>
+          <input placeholder="Поиск рецептов..."/>
+        </div>
+        <div class="import-btn">↑ Импорт BeerXML</div>
+        <div class="add-btn">+ Новый рецепт</div>
+      </div>
+      <div class="filters">
+        <div class="filter active">Мои рецепты</div>
+        <div class="filter">Публичные</div>
+        <div class="filter">Trending 🔥</div>
+        <div class="filter">Избранные ♥</div>
+      </div>
+      <div class="section-sub">МОИ РЕЦЕПТЫ — 3</div>
+      <div class="recipe-card">
+        <div class="rc-color" style="background:#F97316"></div>
+        <div class="rc-info">
+          <div class="rc-name">Жигулёвское классическое</div>
+          <div class="rc-style">American Lager</div>
+        </div>
+        <div class="rc-stats">
+          <div class="rc-stat liked">♥ 12</div>
+          <div class="rc-stat">💬 3</div>
+          <div class="rc-abv">4.5%</div>
+        </div>
+        <div class="actions">
+          <div class="act-btn" title="Редактировать">✏️</div>
+          <div class="act-btn" title="Поделиться">🔗</div>
+          <div class="act-btn danger" title="Удалить">🗑</div>
+        </div>
+        <div class="rc-brew-btn">▶ Варить</div>
+      </div>
+      <div class="recipe-card">
+        <div class="rc-color" style="background:#3B82F6"></div>
+        <div class="rc-info">
+          <div class="rc-name">Пшеничное Hefeweizen</div>
+          <div class="rc-style">Hefeweizen</div>
+        </div>
+        <div class="rc-stats">
+          <div class="rc-stat">♥ 5</div>
+          <div class="rc-stat">💬 1</div>
+          <div class="rc-abv">5.2%</div>
+        </div>
+        <div class="actions">
+          <div class="act-btn" title="Редактировать">✏️</div>
+          <div class="act-btn" title="Поделиться">🔗</div>
+          <div class="act-btn danger" title="Удалить">🗑</div>
+        </div>
+        <div class="rc-brew-btn">▶ Варить</div>
+      </div>
+      <div class="recipe-card">
+        <div class="rc-color" style="background:#22C55E"></div>
+        <div class="rc-info">
+          <div class="rc-name">IPA с Citra и Mosaic</div>
+          <div class="rc-style">American IPA</div>
+        </div>
+        <div class="rc-stats">
+          <div class="rc-stat">♥ 8</div>
+          <div class="rc-stat">💬 5</div>
+          <div class="rc-abv">6.8%</div>
+        </div>
+        <div class="actions">
+          <div class="act-btn" title="Редактировать">✏️</div>
+          <div class="act-btn" title="Поделиться">🔗</div>
+          <div class="act-btn danger" title="Удалить">🗑</div>
+        </div>
+        <div class="rc-brew-btn">▶ Варить</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

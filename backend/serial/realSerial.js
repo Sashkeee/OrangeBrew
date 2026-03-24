@@ -1,3 +1,8 @@
+/**
+ * @deprecated USB Serial подключение больше не поддерживается.
+ * ESP устройства подключаются по WiFi через WebSocket (см. ws/liveServer.js).
+ * Файл сохранён для справки. Не используется в production.
+ */
 import { SerialPort, ReadlineParser } from 'serialport';
 import EventEmitter from 'events';
 

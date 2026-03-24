@@ -46,3 +46,7 @@ yarn-error.log*
 # Firmware — содержит захардкоженные Wi-Fi пароли (BENCH_WIFI_PASS)
 firmware/esp32c3/OrangeBrew_ESP32C3/OrangeBrew_ESP32C3.ino
 firmware/esp32c3/OrangeBrew_ESP32C3/portal_html.h
+
+*.db-shm
+*.db-wal
+

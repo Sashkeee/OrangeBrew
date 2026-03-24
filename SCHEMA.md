@@ -37,12 +37,11 @@ ESP32 устройства, подключённые к системе.
 - `getAll(userId)` — устройства пользователя, сортировка по `last_seen DESC`
 - `getById(id)`
 - `getByApiKey(apiKey)` — поиск устройства по per-device api_key (для hardware auth)
-- `upsert(id, name, role)` — INSERT OR UPDATE: при конфликте обновляет `status='online'` и `last_seen`
+- `upsert(id, name, userId, apiKey?, role?)` — INSERT OR UPDATE: при конфликте обновляет `status='online'`, `last_seen`; api_key сохраняется через COALESCE (не перезаписывает если null)
 - `updateStatus(id, status)` — обновить статус и `last_seen`
-- `setApiKey(id, apiKey)` — сохранить per-device api_key после паринга
-- `rename(id, name)`
-- `setRole(id, role)`
-- `delete(id)`
+- `rename(id, name, userId)`
+- `setRole(id, role, userId)`
+- `delete(id, userId)`
 
 ---
 
@@ -107,15 +106,17 @@ ESP32 устройства, подключённые к системе.
 - `setPublic(id, userId, isPublic)`
 
 **Query-объект:** `recipeSearchQueries` (FTS5 поиск)
-- `search(query, userId)` — полнотекстовый поиск через `recipes_fts`
+- `searchPublic(query, style?, limit, offset)` — поиск среди публичных рецептов через `recipes_fts`; без query — сортировка по likes_count
+- `searchOwn(userId, query, limit, offset)` — поиск среди своих рецептов
+- `getPublicStyles()` — список уникальных стилей публичных рецептов (для фильтра)
 
 **Query-объект:** `recipeTrendingQueries`
-- `getTrending(limit)` — публичные рецепты по убыванию `likes_count`
+- `getTrending(days=7, limit=10)` — публичные рецепты, score = likes×2 + comments
+- `getSimilar(recipeId, limit=5)` — похожие по стилю; fallback на top-rated
 
 **Query-объект:** `recipeLikesQueries`
 - `toggle(recipeId, userId)` — лайк/анлайк; возвращает `{ liked, count }`
-- `getCount(recipeId)`
-- `isLiked(recipeId, userId)`
+- `getStatus(recipeId, userId)` — возвращает `{ count, isLiked }`
 
 **Query-объект:** `recipeCommentsQueries`
 - `getByRecipe(recipeId, limit=50, offset=0)` — комментарии к рецепту (с пагинацией, `is_deleted = 0`); возвращает `{ comments, total }`
@@ -196,13 +197,13 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 | `user_id` | INTEGER FK → `users(id)` | Владелец сессии (добавлено через migrate.js) |
 
 **Query-объект:** `sessionQueries`
-- `getAll(type?, userId)` — сессии пользователя; при `type` — JOIN с `recipes`
-- `getById(id)`
+- `getAll(userId, type?)` — сессии пользователя; при `type` — JOIN с `recipes`
+- `getById(id, userId?)`
 - `create(session, userId)` — поля: `recipe_id`, `type`, `status`, `notes`
 - `update(id, data, userId)` — частичное обновление
 - `delete(id, userId)`
-- `complete(id)` — `status='completed'`, `finished_at=NOW`
-- `cancel(id)` — `status='cancelled'`, `finished_at=NOW`
+- `complete(id, userId)` — `status='completed'`, `finished_at=NOW`
+- `cancel(id, userId)` — `status='cancelled'`, `finished_at=NOW`
 
 **Индексы:**
 - `idx_sessions_type (type, status)`
@@ -427,6 +428,18 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 - `getByUser(userId)`
 - `getById(id)`
 - `getByYookassaId(yookassaId)`
+
+---
+
+## Распиновка плат
+
+| Плата | OneWire DATA | HEATER_PIN | PUMP_PIN | LED_PIN | BOOT_PIN |
+|-------|-------------|-----------|---------|--------|---------|
+| **Node32** (ESP32) | GPIO **13** | GPIO 14 | GPIO 12 | — | GPIO 0 |
+| **ESP32-C3 Super Mini** | GPIO **5** | GPIO 3 | GPIO 4 | GPIO 8 (HIGH active) | GPIO 9 |
+| **ESP8266** | GPIO **14** (D5) | GPIO 13 (D7) | GPIO 12 (D6) | GPIO 2 D4 (LOW active) | GPIO 0 (D3) |
+
+Резистор подтяжки OneWire: **4.7 кОм** между DATA и 3.3V. Один резистор на шину (не на датчик).
 
 ---
 

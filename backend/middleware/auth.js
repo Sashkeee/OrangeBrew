@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import config from '../config/env.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
+const { JWT_SECRET } = config;
 
 export function authenticate(req, res, next) {
     // During dev/testing or local network, you might want an easy bypass mechanism

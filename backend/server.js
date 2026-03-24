@@ -9,6 +9,15 @@ import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// ─── Global error handlers (must be registered early) ─────
+process.on('uncaughtException', (err) => {
+    logger.fatal({ err }, 'Uncaught exception — exiting');
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    logger.error({ err: reason }, 'Unhandled promise rejection');
+});
+
 import { initDatabase, closeDatabase } from './db/database.js';
 import {
     initWebSocket,
@@ -46,6 +55,8 @@ import devicesRouter from './routes/devices.js';
 import beerxmlRouter from './routes/beerxml.js';
 import recipeSocialRouter from './routes/recipe-social.js';
 import { authenticate } from './middleware/auth.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { INTERVALS } from './config/constants.js';
 import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -187,6 +198,8 @@ app.post('/api/debug/pid/tunings', authenticate, (req, res) => {
 // ─── Serve Frontend ───────────────────────────────────────
 // (Removed SPA serving from backend as it's now handled by Caddy/Nginx)
 
+// ─── Centralized error handler (must be AFTER all routes) ─
+app.use(errorHandler);
 
 // ─── Initialize ───────────────────────────────────────────
 
@@ -318,7 +331,7 @@ async function main() {
 
         // Periodic log
         const now = Date.now();
-        if (now - lastHwDataLog > 30000) {
+        if (now - lastHwDataLog > INTERVALS.HW_DATA_LOG_MS) {
             logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, sensors: data.sensors?.length || 0 }, 'WiFi sensor data received');
             lastHwDataLog = now;
         }
@@ -376,7 +389,7 @@ async function main() {
         });
 
         // Force exit after 5 seconds
-        setTimeout(() => process.exit(1), 5000);
+        setTimeout(() => process.exit(1), INTERVALS.SHUTDOWN_TIMEOUT_MS);
     };
 
     process.on('SIGINT', () => shutdown('SIGINT'));

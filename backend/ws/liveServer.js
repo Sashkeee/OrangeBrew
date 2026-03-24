@@ -6,10 +6,12 @@ import { getSensorReadings } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
 import { deviceQueries, pairingQueries } from '../db/database.js';
 import logger from '../utils/logger.js';
+import config from '../config/env.js';
+import { INTERVALS } from '../config/constants.js';
 
 const hwLog = logger.child({ module: 'ESP32' });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_super_secret_for_orangebrew';
+const { JWT_SECRET } = config;
 
 /**
  * UI clients: Map<ws, { userId: number }>
@@ -53,7 +55,7 @@ export function initWebSocket(server) {
         // ── Hardware client: authenticates via first message ──
         const authTimeout = setTimeout(() => {
             ws.close(4001, 'Auth timeout');
-        }, 10_000);
+        }, INTERVALS.WS_AUTH_TIMEOUT_MS);
 
         ws.once('message', async (raw) => {
             clearTimeout(authTimeout);
@@ -115,7 +117,7 @@ export function initWebSocket(server) {
             entry.ws.isAlive = false;
             entry.ws.ping();
         }
-    }, 10_000);
+    }, INTERVALS.WS_PING_MS);
 
     wss.on('close', () => clearInterval(pingInterval));
 
