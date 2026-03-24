@@ -483,10 +483,12 @@ const SettingsPage = () => {
                                         }}
                                     >
                                         {/* Enable toggle */}
-                                        <Toggle
-                                            value={sensor.enabled !== false}
-                                            onChange={v => updateDiscoveredSensor(sensor.address, 'enabled', v)}
-                                        />
+                                        <div onClick={e => e.stopPropagation()}>
+                                            <Toggle
+                                                value={sensor.enabled !== false}
+                                                onChange={v => updateDiscoveredSensor(sensor.address, 'enabled', v)}
+                                            />
+                                        </div>
                                         {/* Color dot */}
                                         <div style={{
                                             width: '12px', height: '12px', borderRadius: '50%',

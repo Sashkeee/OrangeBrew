@@ -112,22 +112,6 @@ router.get('/discovered', authenticate, (req, res) => {
         });
     }
 
-    // Also include configured sensors not seen recently (possibly offline)
-    for (const cfg of configs) {
-        if (!userMap.has(cfg.address)) {
-            result.push({
-                address: cfg.address,
-                temp: null,
-                lastSeen: null,
-                name: cfg.name,
-                color: cfg.color,
-                offset: cfg.offset,
-                enabled: cfg.enabled !== 0,
-                configured: true,
-            });
-        }
-    }
-
     res.json(result);
 });
 
