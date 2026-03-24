@@ -90,7 +90,7 @@ export function initWebSocket(server) {
         });
     });
 
-    // ── Ping all clients every 30s to keep connections alive through proxies ──
+    // ── Ping all clients every 10s for fast offline detection ──
     pingInterval = setInterval(() => {
         for (const [ws] of uiClients) {
             if (ws.isAlive === false) {
@@ -115,7 +115,7 @@ export function initWebSocket(server) {
             entry.ws.isAlive = false;
             entry.ws.ping();
         }
-    }, 30_000);
+    }, 10_000);
 
     wss.on('close', () => clearInterval(pingInterval));
 

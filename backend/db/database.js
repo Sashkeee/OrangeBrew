@@ -529,6 +529,11 @@ export const deviceQueries = {
     },
 
     delete: (id, userId) => runSql('DELETE FROM devices WHERE id = ? AND user_id = ?', [id, userId]),
+
+    /** Mark all devices offline — called on server startup before any WS connections. */
+    resetAllOnline: () => {
+        runSql(`UPDATE devices SET status = 'offline' WHERE status = 'online'`);
+    },
 };
 
 // ─── Device Pairings ──────────────────────────────────────

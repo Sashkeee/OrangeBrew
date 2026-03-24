@@ -22,7 +22,7 @@ import {
     broadcastToAllHardware,
     getClientCount
 } from './ws/liveServer.js';
-import { settingsQueries, sensorQueries } from './db/database.js';
+import { settingsQueries, sensorQueries, deviceQueries } from './db/database.js';
 import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
@@ -232,6 +232,9 @@ async function main() {
     // Database (async — sql.js loads WASM)
     await initDatabase(DB_PATH);
     await addDefaultAdminIfNoneExists();
+
+    // Reset stale "online" statuses — devices will be marked online when they reconnect via WS
+    deviceQueries.resetAllOnline();
 
     // HTTP + WebSocket server
     const server = createServer(app);
