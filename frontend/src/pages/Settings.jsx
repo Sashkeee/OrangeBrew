@@ -199,6 +199,27 @@ const SettingsPage = () => {
         return () => clearInterval(timer);
     }, [activeSection, loadDiscovered]);
 
+    // Sync rawSensors from WebSocket into the displayed list.
+    // Ensures sensors always appear even if /discovered in-memory map is empty.
+    useEffect(() => {
+        if (activeSection !== 'sensors' || !rawSensors.length) return;
+        setDiscoveredSensors(prev => {
+            let changed = false;
+            const next = prev.map(s => {
+                const live = rawSensors.find(r => r.address === s.address);
+                if (live && s.temp !== live.temp) { changed = true; return { ...s, temp: live.temp }; }
+                return s;
+            });
+            for (const rs of rawSensors) {
+                if (!next.find(s => s.address === rs.address)) {
+                    next.push({ address: rs.address, temp: rs.temp, lastSeen: Date.now(), name: '', color: null, offset: 0, enabled: true, configured: false });
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, [rawSensors, activeSection]);
+
     const updateDiscoveredSensor = (address, key, value) => {
         setDiscoveredSensors(prev => prev.map(s =>
             s.address === address ? { ...s, [key]: value } : s

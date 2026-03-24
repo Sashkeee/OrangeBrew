@@ -1,37 +1,41 @@
-import React, { useState, useEffect } from 'react';
-import { Cpu, ChevronDown, Wifi } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ChevronDown, Wifi, WifiOff } from 'lucide-react';
 import { deviceApi } from '../api/client';
+import wsClient from '../api/wsClient';
 
 export default function DeviceSelector({ value, onChange, label = "Контроллер" }) {
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+    const fetchDevices = useCallback((autoSelect = false) => {
         deviceApi.getAll().then(data => {
             const onlineOnes = data.filter(d => d.status === 'online');
-            // Always include local_serial as an option
-            const options = [
-                ...onlineOnes,
-                { id: 'local_serial', name: 'Локальный порт (USB)' }
-            ];
-            setDevices(options);
-
-            // Auto-select: if there are online WiFi devices and no value yet (or default),
-            // select the first online one
-            if (onlineOnes.length > 0 && (!value || value === 'local_serial')) {
+            setDevices(onlineOnes);
+            if (autoSelect && onlineOnes.length > 0 && !value) {
                 onChange(onlineOnes[0].id);
-            } else if (!value) {
-                onChange('local_serial');
             }
         }).catch(err => {
             console.error('[DeviceSelector] Failed to fetch devices', err);
-            setDevices([{ id: 'local_serial', name: 'Локальный порт (USB)' }]);
-            if (!value) onChange('local_serial');
+            setDevices([]);
         }).finally(() => setLoading(false));
+    }, [value, onChange]);
+
+    useEffect(() => {
+        fetchDevices(true);
+
+        // WS: мгновенное обновление при изменении статуса устройства
+        const unsub = wsClient.on('device_status', () => fetchDevices(false));
+
+        // Fallback-поллинг каждые 15с для abrupt disconnect (TCP timeout ~30-60с)
+        const interval = setInterval(() => fetchDevices(false), 15000);
+
+        return () => {
+            unsub();
+            clearInterval(interval);
+        };
     }, []);
 
-    const selectedDevice = devices.find(d => d.id === value);
-    const isWifi = value && value !== 'local_serial';
+    const hasDevices = devices.length > 0;
 
     return (
         <div style={{ marginBottom: '1rem' }}>
@@ -47,13 +51,13 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
             </label>
             <div style={{ position: 'relative' }}>
                 <select
-                    value={value || 'local_serial'}
+                    value={value || ''}
                     onChange={(e) => onChange(e.target.value)}
                     style={{
                         width: '100%',
                         padding: '0.8rem 1rem 0.8rem 2.5rem',
                         background: 'rgba(255,255,255,0.05)',
-                        border: `1px solid ${isWifi ? 'var(--accent-green)' : '#444'}`,
+                        border: `1px solid ${hasDevices && value ? 'var(--accent-green)' : '#444'}`,
                         borderRadius: '8px',
                         color: '#fff',
                         appearance: 'none',
@@ -63,19 +67,22 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
                         transition: 'border-color 0.2s'
                     }}
                 >
+                    {!hasDevices && (
+                        <option value="">Нет устройств онлайн</option>
+                    )}
                     {devices.map(d => (
                         <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                 </select>
-                {isWifi ? (
+                {hasDevices && value ? (
                     <Wifi
                         size={16}
                         style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--accent-green)' }}
                     />
                 ) : (
-                    <Cpu
+                    <WifiOff
                         size={16}
-                        style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--primary-color)' }}
+                        style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#666' }}
                     />
                 )}
                 <ChevronDown
@@ -83,7 +90,7 @@ export default function DeviceSelector({ value, onChange, label = "Контро�
                     style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#666', pointerEvents: 'none' }}
                 />
             </div>
-            {isWifi && (
+            {hasDevices && value && (
                 <div style={{ fontSize: '0.7rem', color: 'var(--accent-green)', marginTop: '0.3rem' }}>
                     ✓ WiFi устройство подключено
                 </div>

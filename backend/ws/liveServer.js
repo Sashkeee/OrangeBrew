@@ -105,6 +105,9 @@ export function initWebSocket(server) {
             if (entry.ws.isAlive === false) {
                 hardwareClients.delete(deviceId);
                 deviceQueries.updateStatus(deviceId, 'offline');
+                if (entry.userId != null) {
+                    broadcastToUser(entry.userId, 'device_status', { deviceId, status: 'offline' });
+                }
                 entry.ws.terminate();
                 console.log(`[WS] Hardware ping timeout: ${deviceId}`);
                 continue;
@@ -198,6 +201,9 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
     deviceQueries.updateStatus(deviceId, 'online');
 
     console.log(`[WS] Hardware connected: ${deviceId} (user=${userId}, name=${name}). Total HW: ${hardwareClients.size}`);
+    if (userId != null) {
+        broadcastToUser(userId, 'device_status', { deviceId, status: 'online', name, role });
+    }
 
     ws.on('message', (raw) => {
         ws.isAlive = true;
@@ -212,12 +218,18 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
     ws.on('close', () => {
         hardwareClients.delete(deviceId);
         deviceQueries.updateStatus(deviceId, 'offline');
+        if (userId != null) {
+            broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
+        }
         console.log(`[WS] Hardware disconnected: ${deviceId}`);
     });
 
     ws.on('error', () => {
         hardwareClients.delete(deviceId);
         deviceQueries.updateStatus(deviceId, 'offline');
+        if (userId != null) {
+            broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
+        }
     });
 }
 
