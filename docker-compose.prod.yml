@@ -9,6 +9,8 @@ services:
       - DB_PATH=/app/data/orangebrew.db
       - CONNECTION_TYPE=mock
       - NODE_ENV=production
+      - LOG_FORMAT=json
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       - orangebrew-data-prod:/app/data
     restart: unless-stopped
