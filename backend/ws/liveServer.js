@@ -302,8 +302,12 @@ function broadcastAll(payload) {
     }
 }
 
-export function broadcastSensors(sensorData) {
-    broadcastAll({ type: 'sensors', data: sensorData });
+export function broadcastSensors(sensorData, userId = null) {
+    if (userId !== null) {
+        broadcastToUser(userId, 'sensors', sensorData);
+    } else {
+        broadcastAll({ type: 'sensors', data: sensorData });
+    }
 }
 
 export function broadcastControl(controlState, userId = null) {

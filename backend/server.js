@@ -339,7 +339,8 @@ async function main() {
 
         updateSensorReadings(mappedData);
         // Include raw sensors array in broadcast so frontend can show individual sensors
-        broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData });
+        // Per-user isolation: only broadcast to the device owner
+        broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData }, userId);
 
         // Роутим только в PM владельца устройства
         if (userId != null) {

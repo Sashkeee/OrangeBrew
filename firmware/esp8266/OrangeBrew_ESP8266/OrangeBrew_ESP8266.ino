@@ -618,7 +618,48 @@ void loop() {
         if      (cmd.equalsIgnoreCase("RESET"))  { Serial.println("[CMD] Сброс..."); nvsClearAll(); delay(300); ESP.restart(); }
         else if (cmd.equalsIgnoreCase("STATUS")) { printHeartbeat(); }
         else if (cmd.equalsIgnoreCase("SCAN"))   { scanWifi(); }
-        else if (cmd.equalsIgnoreCase("HELP"))   { Serial.println("Команды: RESET | STATUS | SCAN | HELP"); }
+        else if (cmd.startsWith("WIFI ") || cmd.startsWith("wifi ")) {
+            // WIFI ssid password — подключение к WiFi из Serial
+            int firstSpace = cmd.indexOf(' ');
+            int secondSpace = cmd.indexOf(' ', firstSpace + 1);
+            if (secondSpace > 0) {
+                wifiSsid = cmd.substring(firstSpace + 1, secondSpace);
+                wifiPass = cmd.substring(secondSpace + 1);
+            } else {
+                wifiSsid = cmd.substring(firstSpace + 1);
+                wifiPass = "";
+            }
+            wifiSsid.trim(); wifiPass.trim();
+            Serial.println("[CMD] WiFi SSID: " + wifiSsid);
+            if (state == S_PORTAL) {
+                dnsServer.stop();
+                portalServer.stop();
+                WiFi.softAPdisconnect(true);
+                delay(300);
+            }
+            if (connectWiFi(wifiSsid, wifiPass)) {
+                nvsSave("wifi_ssid", wifiSsid);
+                nvsSave("wifi_pass", wifiPass);
+                Serial.println("[CMD] WiFi подключён и сохранён");
+            } else {
+                Serial.println("[CMD] ❌ Не удалось подключиться к WiFi");
+            }
+        }
+        else if (cmd.startsWith("PAIR ") || cmd.startsWith("pair ")) {
+            // PAIR 123456 — сопряжение с сервером
+            pairingCode = cmd.substring(5);
+            pairingCode.trim();
+            if (pairingCode.length() != 6) {
+                Serial.println("[CMD] ❌ Код должен быть 6 символов. Пример: PAIR ABC123");
+            } else if (WiFi.status() != WL_CONNECTED) {
+                Serial.println("[CMD] ❌ Сначала подключись к WiFi: WIFI ssid password");
+            } else {
+                Serial.println("[CMD] Pairing код: " + pairingCode);
+                state = S_PAIRING;
+                startWebSocket();
+            }
+        }
+        else if (cmd.equalsIgnoreCase("HELP"))   { Serial.println("Команды: RESET | STATUS | SCAN | WIFI ssid pass | PAIR code | HELP"); }
     }
 
     // ── PORTAL ──
