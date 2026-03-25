@@ -21,6 +21,47 @@ function makeToken(user) {
 
 // ─── POST /auth/login ──────────────────────────────────────
 
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Login with username and password
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, password]
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: admin
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *     responses:
+ *       200:
+ *         description: JWT token + user data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Missing username or password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/login', async (req, res) => {
     log.info({ username: req.body.username, ip: req.ip }, 'Login attempt');
     try {
@@ -65,6 +106,58 @@ router.post('/login', async (req, res) => {
 
 // ─── POST /auth/register ───────────────────────────────────
 
+/**
+ * @openapi
+ * /auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Register a new user
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, email, password, consent]
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 32
+ *                 example: brewer42
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: brewer@example.com
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 example: securePass123
+ *               consent:
+ *                 type: boolean
+ *                 description: Privacy policy consent (152-FZ)
+ *                 example: true
+ *     responses:
+ *       201:
+ *         description: User created, JWT token returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Validation error (missing fields, short password, invalid email, no consent)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       409:
+ *         description: Username or email already taken
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/register', async (req, res) => {
     try {
         const { username, email, password, consent } = req.body;
@@ -126,6 +219,34 @@ router.post('/register', async (req, res) => {
 
 // ─── GET /auth/me — current user info ─────────────────────
 
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get current authenticated user info
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Not authenticated or token expired
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/me', authenticate, (req, res) => {
     try {
         const user = userQueries.getById(req.user.id);

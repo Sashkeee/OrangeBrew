@@ -58,6 +58,7 @@ import recipeSocialRouter from './routes/recipe-social.js';
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { INTERVALS } from './config/constants.js';
+import { swaggerUi, swaggerSpec } from './swagger.js';
 import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 
 const PORT = parseInt(process.env.PORT) || 3001;
@@ -113,6 +114,19 @@ app.use(pinoHttp({
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Swagger UI — enabled via SWAGGER_ENABLED env var (default: true in dev, false in prod)
+const swaggerEnabled = process.env.SWAGGER_ENABLED
+    ? process.env.SWAGGER_ENABLED === 'true'
+    : process.env.NODE_ENV !== 'production';
+
+if (swaggerEnabled) {
+    app.use('/api-docs', apiLimiter, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+        customSiteTitle: 'OrangeBrew API Docs',
+    }));
+    app.get('/api-docs.json', apiLimiter, (req, res) => res.json(swaggerSpec));
+    logger.info({ module: 'Server' }, 'Swagger UI enabled at /api-docs');
+}
 
 // Health check
 app.get(['/api/health', '/health'], (req, res) => {
