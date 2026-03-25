@@ -10,9 +10,7 @@ const options = {
             description: 'IoT brewing & distillation automation platform. ESP32/ESP8266 sensors → Node.js backend → React frontend.',
         },
         servers: [
-            { url: 'http://localhost:3001', description: 'Development' },
-            { url: 'https://test.orangebrew.ru', description: 'Test stand' },
-            { url: 'https://orangebrew.ru', description: 'Production' },
+            { url: '/', description: 'Current host' },
         ],
         components: {
             securitySchemes: {
