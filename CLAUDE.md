@@ -46,7 +46,7 @@ OrangeBrew/
 ├── backend/
 │   ├── server.js              # Точка входа — Express + WS + per-user ProcessManager factory
 │   ├── utils/
-│   │   ├── logger.js          # Pino logger
+│   │   ├── logger.js          # Pino structured logger (JSON prod / pretty dev, child loggers per module)
 │   │   ├── sensorMapper.js    # mapSensors() — маппинг адресов датчиков к ролям
 │   │   └── scaleRecipe.js     # Масштабирование рецепта
 │   ├── db/
@@ -145,7 +145,9 @@ OrangeBrew/
 │   │   └── AP_Test/                   # Минимальный тест точки доступа
 │   └── esp8266/OrangeBrew_ESP8266/
 │       └── OrangeBrew_ESP8266.ino     # Arduino скетч для ESP8266
-├── docker-compose.prod.yml
+├── docker-compose.prod.yml    # Production: backend-prod (3000) + frontend-prod (8080)
+├── docker-compose.test.yml    # Test: backend-test (3001) + frontend-test (8081) + vector
+├── vector.test.toml           # Vector config: Docker logs → parse pino JSON → Betterstack
 ├── CLAUDE.md                  # Этот файл
 ├── SCHEMA.md                  # Схема SQLite таблиц
 └── .antigravityrules
@@ -291,7 +293,55 @@ ESP32 может отправлять `{type: 'device_log', level, msg, uptime}`
 
 ---
 
-### 12. Settings.jsx — module-scope компоненты
+### 12. Structured Logging — Pino → Vector → Betterstack
+
+Все `console.*` вызовы в backend заменены на **Pino structured logging** (JSON).
+
+**Pipeline:**
+```
+Pino (JSON на stdout) → Docker → Vector (парсинг + обогащение) → Betterstack (ClickHouse)
+```
+
+**logger.js** — базовый логгер с `base` полями `{app, env, service}`:
+- `LOG_FORMAT=json` — принудительный JSON (для Docker); иначе `pino-pretty` в dev
+- `LOG_LEVEL` — уровень логирования, default: `debug` (dev) / `info` (prod)
+
+**Child loggers** — каждый модуль создаёт свой:
+```js
+import logger from '../utils/logger.js';
+const log = logger.child({ module: 'Auth' });
+log.warn({ username, ip: req.ip }, 'Failed login attempt');
+```
+
+**Модули:** `Auth`, `WS`, `DB`, `Server`, `Health`, `Telegram`, `PidTuner`, `MockSerial`, `RealSerial`, `Migration`, `Sessions`, `Social`, `Settings`, `Devices`, `Recipes`, `Users`, `ESP32`
+
+**Уровни логирования:**
+- `error` — критические ошибки (краш, safety stop PID)
+- `warn` — проблемы (неудачный логин с IP, ping timeout ESP32, удаления, slow SQL >100ms)
+- `info` — бизнес-события (логин, создание рецепта, паринг, автотюнинг complete)
+- `debug` — техническая телеметрия (HTTP запросы, данные датчиков, relay ON/OFF)
+
+**Специальные логи:**
+- **Slow query detection:** `database.js` замеряет `performance.now()` для `queryAll`/`queryOne`/`runSql`; SQL >100ms → `log.warn`
+- **Failed login tracking:** `auth.js` логирует `ip` и `username` при неудачных попытках входа
+- **Heartbeat:** `server.js` каждые 5 минут пишет `{ module: 'Health', rssMemMb, heapUsedMb, uiClients, hwClients, uptime }`
+- **Startup diagnostics:** при старте `{ module: 'Server', nodeVersion, env, dbPath, connectionType, memoryMb }`
+
+**Vector** (`vector.test.toml`): парсит pino JSON, извлекает `http_method`, `http_url`, `http_status`, `response_time_ms`, `module`, `userId` на верхний уровень.
+
+**Betterstack Dashboard** (8 графиков):
+1. Warn rate over time
+2. Log volume by level (stacked bar)
+3. HTTP requests by status code (pie)
+4. Top 10 slowest endpoints
+5. Average HTTP response time (avg + max)
+6. Unauthorized requests over time
+7. Memory usage + Active WebSocket clients
+8. ESP32 device activity
+
+---
+
+### 13. Settings.jsx — module-scope компоненты
 Sub-компоненты (`SelectField`, `SettingRow`, `Toggle`) и объекты стилей (`inputStyle`, `selectStyle`, `labelStyle`, `toggleStyle`, `toggleDotStyle`) вынесены из render-функции `SettingsPage` в module scope. Это предотвращает пересоздание компонентов при частых ре-рендерах от `useSensors()` WebSocket обновлений (каждые ~1.5с).
 
 ---
@@ -454,6 +504,7 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 - **Не дублировать логику** между `RecipeConstructor` и `RecipeConstructor_V2` — они уже расходятся
 - **Не использовать глобальный `HARDWARE_API_KEY`** — устройства аутентифицируются по per-device `api_key`
 - **Не определять React-компоненты внутри render-функций** — это вызывает пересоздание при каждом ре-рендере (выносить в module scope)
+- **Не использовать `console.*` в backend** — только Pino через `logger.child({ module })`. Все console.* уже мигрированы
 
 ---
 
@@ -465,6 +516,9 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 | `DB_PATH` | `backend/.env` | Путь к SQLite файлу. По умолчанию: `./data/orangebrew.db` |
 | `CONNECTION_TYPE` | `backend/.env` | `mock` или `wifi`. По умолчанию: `mock`. Также читается из `settings_v2` |
 | `JWT_SECRET` | `backend/.env` | Секрет для подписи JWT токенов |
+| `LOG_FORMAT` | `backend/.env` / `docker-compose` | `json` — принудительный JSON даже в dev (для Vector в Docker) |
+| `LOG_LEVEL` | `backend/.env` | Уровень логирования Pino. Default: `debug` (dev) / `info` (prod) |
+| `NODE_ENV` | `backend/.env` / `docker-compose` | `development` или `production`. Влияет на формат логов и CORS |
 | `FRONTEND_URL` | `backend/.env` | URL фронтенда для CORS. Dev: `http://localhost:5173` |
 | `VITE_API_URL` | `frontend/.env` | URL backend API. Dev: `http://localhost:3001` |
 
@@ -479,6 +533,8 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 | 1 | `mapSensors()` вынесена в `utils/sensorMapper.js` | ✅ исправлено | `backend/utils/sensorMapper.js` |
 | 2 | `runSql()` null-check отсутствовал | ✅ исправлено | `backend/db/database.js` |
 | 3 | Graceful shutdown race: closeDatabase() до closeWebSocket() | ✅ исправлено | `backend/server.js` |
+| 12 | Все `console.*` мигрированы на Pino structured logging (~85 вызовов в 18 файлах) | ✅ исправлено | весь backend |
+| 13 | `postcss.config.js` и `tailwind.config.js` — мёртвый код, блокировал Docker build | ✅ удалено | frontend/ |
 | 4 | `RecipeConstructor` и `RecipeConstructor_V2` — дублирование логики | открыто | `frontend/src/pages/` |
 | 5 | `global._latestProcessState` — антипаттерн глобального состояния | открыто | `backend/services/telegram.js` |
 | 6 | Валидация паузы в рецепте требует возрастания температур — неверно для реального пивоварения | открыто | `RecipeConstructor.jsx` |

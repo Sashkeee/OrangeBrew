@@ -2,7 +2,7 @@
 
 Полная схема SQLite базы данных. Файл DDL: `backend/db/schema.sql`. Запросы: `backend/db/database.js`.
 Миграции (добавление колонок для мультитенантности): `backend/db/migrate.js`.
-Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`.
+Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`.
 
 ---
 

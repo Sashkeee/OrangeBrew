@@ -62,6 +62,16 @@ if err == null && is_object(parsed) {
         if exists(parsed.module) { .module = to_string!(parsed.module) }
         if exists(parsed.userId) { .userId = to_string!(parsed.userId) }
         if exists(parsed.responseTime) { .response_time_ms = parsed.responseTime }
+
+        # Lift heartbeat fields (from Health module)
+        if exists(parsed.rssMemMb) { .rss_mem_mb = parsed.rssMemMb }
+        if exists(parsed.heapUsedMb) { .heap_used_mb = parsed.heapUsedMb }
+        if exists(parsed.uiClients) { .ui_clients = parsed.uiClients }
+        if exists(parsed.hwClients) { .hw_clients = parsed.hwClients }
+        if exists(parsed.uptime) { .uptime_sec = parsed.uptime }
+
+        # Lift device fields (from WS/Server modules)
+        if exists(parsed.deviceId) { .device_id = to_string!(parsed.deviceId) }
     } else {
         # JSON but not pino — store as-is
         .level = "info"
