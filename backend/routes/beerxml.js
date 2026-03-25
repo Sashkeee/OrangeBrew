@@ -32,10 +32,71 @@ const upload = multer({
 // ─── Import ───────────────────────────────────────────────
 
 /**
- * POST /api/beerxml/import
- * Accepts either:
- *   - multipart/form-data with a field named "file" containing the .xml
- *   - application/xml or text/xml raw body
+ * @openapi
+ * /api/beerxml/import:
+ *   post:
+ *     summary: Import recipes from a BeerXML file
+ *     tags: [BeerXML]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: BeerXML .xml file (max 5 MB)
+ *         application/xml:
+ *           schema:
+ *             type: string
+ *             description: Raw BeerXML content
+ *     responses:
+ *       200:
+ *         description: Import results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 imported:
+ *                   type: integer
+ *                   description: Number of successfully imported recipes
+ *                 failed:
+ *                   type: integer
+ *                   description: Number of recipes that failed validation
+ *                 recipes:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                 errors:
+ *                   type: array
+ *                   description: Present only when some recipes failed
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       errors:
+ *                         type: array
+ *                         items:
+ *                           type: string
+ *       400:
+ *         description: No XML provided or invalid BeerXML
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/import', upload.single('file'), async (req, res) => {
     try {
@@ -92,8 +153,33 @@ router.post('/import', upload.single('file'), async (req, res) => {
 // ─── Export single ────────────────────────────────────────
 
 /**
- * GET /api/beerxml/export/:id
- * Export one recipe owned by the current user as a .xml file.
+ * @openapi
+ * /api/beerxml/export/{id}:
+ *   get:
+ *     summary: Export a single recipe as BeerXML
+ *     tags: [BeerXML]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Recipe ID
+ *     responses:
+ *       200:
+ *         description: BeerXML file download
+ *         content:
+ *           application/xml:
+ *             schema:
+ *               type: string
+ *       404:
+ *         description: Recipe not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/export/:id', (req, res) => {
     try {
@@ -118,8 +204,26 @@ router.get('/export/:id', (req, res) => {
 // ─── Export all ───────────────────────────────────────────
 
 /**
- * GET /api/beerxml/export-all
- * Export all recipes owned by the current user as a single .xml file.
+ * @openapi
+ * /api/beerxml/export-all:
+ *   get:
+ *     summary: Export all user recipes as a single BeerXML file
+ *     tags: [BeerXML]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: BeerXML file download containing all recipes
+ *         content:
+ *           application/xml:
+ *             schema:
+ *               type: string
+ *       404:
+ *         description: No recipes found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/export-all', (req, res) => {
     try {

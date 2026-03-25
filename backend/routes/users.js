@@ -17,7 +17,39 @@ const requireAdmin = (req, res, next) => {
 
 // --- PROFILE ROUTES (For authenticated users to manage themselves) ---
 
-// 1. Get my profile
+/**
+ * @openapi
+ * /api/users/me:
+ *   get:
+ *     summary: Get my profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user profile
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 username:
+ *                   type: string
+ *                 role:
+ *                   type: string
+ *                   enum: [user, admin]
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/me', (req, res) => {
     try {
         const db = getDb();
@@ -29,7 +61,59 @@ router.get('/me', (req, res) => {
     }
 });
 
-// 2. Update my profile (username/password)
+/**
+ * @openapi
+ * /api/users/profile:
+ *   put:
+ *     summary: Update my profile (username and/or password)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: New username
+ *               currentPassword:
+ *                 type: string
+ *                 description: Current password (required when changing password)
+ *               newPassword:
+ *                 type: string
+ *                 description: New password
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Validation error (e.g. username taken, missing current password)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Current password is incorrect
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put('/profile', async (req, res) => {
     try {
         const { username, currentPassword, newPassword } = req.body;
@@ -72,7 +156,41 @@ router.put('/profile', async (req, res) => {
 
 // --- ADMIN ROUTES ---
 
-// 3. Get all users
+/**
+ * @openapi
+ * /api/users:
+ *   get:
+ *     summary: List all users (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   username:
+ *                     type: string
+ *                   role:
+ *                     type: string
+ *                     enum: [user, admin]
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ *       403:
+ *         description: Permission denied — admins only
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/', requireAdmin, (req, res) => {
     try {
         const db = getDb();
@@ -83,7 +201,58 @@ router.get('/', requireAdmin, (req, res) => {
     }
 });
 
-// 4. Create new user
+/**
+ * @openapi
+ * /api/users:
+ *   post:
+ *     summary: Create a new user (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username, password]
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [user, admin]
+ *                 default: user
+ *     responses:
+ *       201:
+ *         description: User created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 username:
+ *                   type: string
+ *                 role:
+ *                   type: string
+ *                   enum: [user, admin]
+ *       400:
+ *         description: Validation error (missing fields or username taken)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Permission denied — admins only
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', requireAdmin, async (req, res) => {
     try {
         const { username, password, role } = req.body;
@@ -108,7 +277,50 @@ router.post('/', requireAdmin, async (req, res) => {
     }
 });
 
-// 5. Delete a user
+/**
+ * @openapi
+ * /api/users/{id}:
+ *   delete:
+ *     summary: Delete a user (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: User ID to delete
+ *     responses:
+ *       200:
+ *         description: User deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Cannot delete yourself
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Permission denied — admins only
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete('/:id', requireAdmin, (req, res) => {
     try {
         const id = parseInt(req.params.id);

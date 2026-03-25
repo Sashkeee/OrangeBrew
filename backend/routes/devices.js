@@ -8,7 +8,30 @@ const router = express.Router();
 
 // ─── Device listing ────────────────────────────────────────
 
-// GET /api/devices — devices owned by current user
+/**
+ * @openapi
+ * /api/devices:
+ *   get:
+ *     tags: [Devices]
+ *     summary: List devices owned by current user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of user's ESP32 devices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Device'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/', (req, res) => {
     try {
         const devices = deviceQueries.getAll(req.user.id);
@@ -18,7 +41,54 @@ router.get('/', (req, res) => {
     }
 });
 
-// PATCH /api/devices/:id — rename or change role (ownership check)
+/**
+ * @openapi
+ * /api/devices/{id}:
+ *   patch:
+ *     tags: [Devices]
+ *     summary: Rename device or change its role
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Device ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: New display name for the device
+ *                 example: Kitchen Brewery
+ *               role:
+ *                 type: string
+ *                 description: Device role
+ *                 example: fermenter
+ *     responses:
+ *       200:
+ *         description: Device updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.patch('/:id', (req, res) => {
     try {
         const { id } = req.params;
@@ -33,7 +103,46 @@ router.patch('/:id', (req, res) => {
     }
 });
 
-// DELETE /api/devices/:id (ownership check)
+/**
+ * @openapi
+ * /api/devices/{id}:
+ *   delete:
+ *     tags: [Devices]
+ *     summary: Delete a device
+ *     description: Removes an ESP32 device. Only the owner can delete their device.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Device ID
+ *     responses:
+ *       200:
+ *         description: Device deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *       404:
+ *         description: Device not found or not owned by user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete('/:id', (req, res) => {
     try {
         const result = deviceQueries.delete(req.params.id, req.user.id);
@@ -49,9 +158,43 @@ router.delete('/:id', (req, res) => {
 // ─── Device Pairing ────────────────────────────────────────
 
 /**
- * POST /api/devices/pair/init
- * Generates a 6-char pairing code valid for 15 minutes.
- * The user shows this code on the ESP32's captive portal / display.
+ * @openapi
+ * /api/devices/pair/init:
+ *   post:
+ *     tags: [Devices]
+ *     summary: Generate a 6-char pairing code
+ *     description: >
+ *       Creates a pairing code valid for 15 minutes. The user enters this code
+ *       on the ESP32's captive portal to link the device to their account.
+ *       Stale codes are cleaned up automatically.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Pairing code generated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pairing_code:
+ *                   type: string
+ *                   example: A3K7YN
+ *                   description: 6-char uppercase alphanumeric code (no 0/O/I/1)
+ *                 expires_at:
+ *                   type: string
+ *                   format: date-time
+ *                   description: ISO timestamp when the code expires
+ *                 expires_in:
+ *                   type: integer
+ *                   example: 900
+ *                   description: Seconds until expiration
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/pair/init', (req, res) => {
     try {
@@ -81,9 +224,77 @@ router.post('/pair/init', (req, res) => {
 });
 
 /**
- * GET /api/devices/pair/status?code=ABC123
- * Poll this from the frontend to know when the ESP32 completed pairing.
- * Returns { status: 'pending' } or { status: 'paired', device }
+ * @openapi
+ * /api/devices/pair/status:
+ *   get:
+ *     tags: [Devices]
+ *     summary: Poll pairing status
+ *     description: >
+ *       Frontend polls this endpoint to check whether the ESP32 has completed
+ *       the pairing handshake. Returns "pending" until the device connects,
+ *       or "paired" with device details once complete.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The 6-char pairing code from /pair/init
+ *         example: A3K7YN
+ *     responses:
+ *       200:
+ *         description: Pairing status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   properties:
+ *                     status:
+ *                       type: string
+ *                       enum: [pending]
+ *                     expires_at:
+ *                       type: string
+ *                       format: date-time
+ *                 - type: object
+ *                   properties:
+ *                     status:
+ *                       type: string
+ *                       enum: [paired]
+ *                     device:
+ *                       $ref: '#/components/schemas/Device'
+ *       400:
+ *         description: Missing code parameter
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Code belongs to another user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Pairing code not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       410:
+ *         description: Pairing code expired
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/pair/status', (req, res) => {
     try {

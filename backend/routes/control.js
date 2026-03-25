@@ -64,7 +64,42 @@ export function setPumpState(val, userId) {
     broadcastControl(state, userId);
 }
 
-// POST /api/control/heater — set heater power
+/**
+ * @openapi
+ * /api/control/heater:
+ *   post:
+ *     summary: Set heater power
+ *     tags: [Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [value]
+ *             properties:
+ *               value:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 100
+ *                 description: Heater power percentage
+ *     responses:
+ *       200:
+ *         description: Heater power updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 heater:
+ *                   type: integer
+ *       500:
+ *         description: Internal server error
+ */
 router.post('/heater', (req, res) => {
     try {
         const userId = req.user.id;
@@ -79,7 +114,42 @@ router.post('/heater', (req, res) => {
     }
 });
 
-// POST /api/control/cooler — set cooler power
+/**
+ * @openapi
+ * /api/control/cooler:
+ *   post:
+ *     summary: Set cooler power
+ *     tags: [Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [value]
+ *             properties:
+ *               value:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 100
+ *                 description: Cooler power percentage
+ *     responses:
+ *       200:
+ *         description: Cooler power updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 cooler:
+ *                   type: integer
+ *       500:
+ *         description: Internal server error
+ */
 router.post('/cooler', (req, res) => {
     try {
         const userId = req.user.id;
@@ -94,7 +164,40 @@ router.post('/cooler', (req, res) => {
     }
 });
 
-// POST /api/control/pump — toggle pump
+/**
+ * @openapi
+ * /api/control/pump:
+ *   post:
+ *     summary: Toggle pump on/off
+ *     tags: [Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [value]
+ *             properties:
+ *               value:
+ *                 type: boolean
+ *                 description: Pump state (true = on, false = off)
+ *     responses:
+ *       200:
+ *         description: Pump state updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 pump:
+ *                   type: boolean
+ *       500:
+ *         description: Internal server error
+ */
 router.post('/pump', (req, res) => {
     try {
         const userId = req.user.id;
@@ -110,7 +213,47 @@ router.post('/pump', (req, res) => {
     }
 });
 
-// POST /api/control/dephleg — set dephlegmator
+/**
+ * @openapi
+ * /api/control/dephleg:
+ *   post:
+ *     summary: Set dephlegmator power and mode
+ *     tags: [Control]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [value]
+ *             properties:
+ *               value:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 100
+ *                 description: Dephlegmator power percentage
+ *               mode:
+ *                 type: string
+ *                 description: Operating mode (e.g. "manual"). Defaults to current mode if omitted.
+ *     responses:
+ *       200:
+ *         description: Dephlegmator settings updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 dephleg:
+ *                   type: integer
+ *                 mode:
+ *                   type: string
+ *       500:
+ *         description: Internal server error
+ */
 router.post('/dephleg', (req, res) => {
     try {
         const userId = req.user.id;
@@ -127,7 +270,30 @@ router.post('/dephleg', (req, res) => {
     }
 });
 
-// POST /api/control/emergency-stop — emergency stop all
+/**
+ * @openapi
+ * /api/control/emergency-stop:
+ *   post:
+ *     summary: Emergency stop all outputs
+ *     description: Immediately sets heater, cooler, and dephlegmator to 0 and turns off the pump.
+ *     tags: [Control]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Emergency stop executed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Internal server error
+ */
 router.post('/emergency-stop', (req, res) => {
     try {
         const userId = req.user.id;
@@ -144,7 +310,38 @@ router.post('/emergency-stop', (req, res) => {
     }
 });
 
-// GET /api/control — get current control state
+/**
+ * @openapi
+ * /api/control:
+ *   get:
+ *     summary: Get current control state
+ *     tags: [Control]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current control state
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 heater:
+ *                   type: integer
+ *                   description: Heater power (0-100)
+ *                 cooler:
+ *                   type: integer
+ *                   description: Cooler power (0-100)
+ *                 pump:
+ *                   type: boolean
+ *                   description: Pump state
+ *                 dephleg:
+ *                   type: integer
+ *                   description: Dephlegmator power (0-100)
+ *                 dephlegMode:
+ *                   type: string
+ *                   description: Dephlegmator operating mode
+ */
 router.get('/', (req, res) => {
     res.json(getControlState(req.user.id));
 });

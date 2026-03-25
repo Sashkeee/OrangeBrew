@@ -27,8 +27,38 @@ const router = Router();
 // ─── Public Library ───────────────────────────────────────
 
 /**
- * GET /api/recipes/public — returns all public recipes (sorted by likes desc).
- * Includes author username, likes_count, comments_count.
+ * @openapi
+ * /api/recipes/public:
+ *   get:
+ *     tags: [Social]
+ *     summary: Public recipe library
+ *     description: Returns all public recipes sorted by likes descending. Includes author username, likes_count, comments_count.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50, maximum: 100 }
+ *         description: Max recipes to return
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, default: 0 }
+ *         description: Pagination offset
+ *     responses:
+ *       200:
+ *         description: Array of public recipes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/public', (req, res) => {
     const limit  = Math.min(parseInt(req.query.limit,  10) || 50, 100);
@@ -51,8 +81,46 @@ router.get('/public', (req, res) => {
 // ─── Search ───────────────────────────────────────────────
 
 /**
- * GET /api/recipes/search — FTS5 search across public recipes.
- * Query params: q (text), style, limit, offset
+ * @openapi
+ * /api/recipes/search:
+ *   get:
+ *     tags: [Social]
+ *     summary: FTS5 full-text search
+ *     description: Search across public recipes using SQLite FTS5. Supports text query and style filter.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema: { type: string, maxLength: 200 }
+ *         description: Search query text
+ *       - in: query
+ *         name: style
+ *         schema: { type: string }
+ *         description: Filter by beer style
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20, maximum: 50 }
+ *         description: Max results to return
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, default: 0 }
+ *         description: Pagination offset
+ *     responses:
+ *       200:
+ *         description: Array of matching recipes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       500:
+ *         description: Search failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/search', (req, res) => {
     const q      = (req.query.q     || '').slice(0, 200);
@@ -75,7 +143,29 @@ router.get('/search', (req, res) => {
 });
 
 /**
- * GET /api/recipes/styles — distinct styles for filter dropdown.
+ * @openapi
+ * /api/recipes/styles:
+ *   get:
+ *     tags: [Social]
+ *     summary: Distinct beer styles for filter
+ *     description: Returns a list of distinct beer styles from public recipes, for use in filter dropdowns.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of style strings
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/styles', (req, res) => {
     try {
@@ -88,9 +178,56 @@ router.get('/styles', (req, res) => {
 });
 
 /**
- * POST /api/recipes/:id/publish — toggle is_public for own recipe.
- * Body: { isPublic: boolean }
- * Returns updated recipe.
+ * @openapi
+ * /api/recipes/{id}/publish:
+ *   post:
+ *     tags: [Social]
+ *     summary: Toggle recipe public visibility
+ *     description: Set or unset is_public on own recipe. Only the recipe owner can toggle.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isPublic]
+ *             properties:
+ *               isPublic:
+ *                 type: boolean
+ *                 description: Whether the recipe should be public
+ *     responses:
+ *       200:
+ *         description: Updated recipe object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       400:
+ *         description: Invalid recipe id or missing isPublic
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Recipe not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/:id/publish', (req, res) => {
     const recipeId = parseInt(req.params.id, 10);
@@ -114,8 +251,38 @@ router.post('/:id/publish', (req, res) => {
 // ─── Trending & Similar ───────────────────────────────────
 
 /**
- * GET /api/recipes/trending — top recipes by engagement (likes*2 + comments).
- * Query params: days (default 7, max 90), limit (default 10, max 50)
+ * @openapi
+ * /api/recipes/trending:
+ *   get:
+ *     tags: [Social]
+ *     summary: Trending recipes
+ *     description: Returns top recipes ranked by engagement score (likes*2 + comments) within a time window.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema: { type: integer, default: 7, minimum: 1, maximum: 90 }
+ *         description: Time window in days
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10, minimum: 1, maximum: 50 }
+ *         description: Max recipes to return
+ *     responses:
+ *       200:
+ *         description: Array of trending recipes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/trending', (req, res) => {
     const days  = Math.min(Math.max(parseInt(req.query.days,  10) || 7,  1), 90);
@@ -136,9 +303,45 @@ router.get('/trending', (req, res) => {
 });
 
 /**
- * GET /api/recipes/:id/similar — similar public recipes by style.
- * Falls back to top-rated if style has no matches.
- * Query param: limit (default 5, max 20)
+ * @openapi
+ * /api/recipes/{id}/similar:
+ *   get:
+ *     tags: [Social]
+ *     summary: Similar recipes
+ *     description: Returns public recipes similar by style. Falls back to top-rated if no style matches.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 5, minimum: 1, maximum: 20 }
+ *         description: Max similar recipes to return
+ *     responses:
+ *       200:
+ *         description: Array of similar recipes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       400:
+ *         description: Invalid recipe id
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/similar', (req, res) => {
     const recipeId = parseInt(req.params.id, 10);
@@ -162,7 +365,48 @@ router.get('/:id/similar', (req, res) => {
 
 // ─── Likes ────────────────────────────────────────────────
 
-/** POST /api/recipes/:id/like — Toggle like. Returns { liked, count } */
+/**
+ * @openapi
+ * /api/recipes/{id}/like:
+ *   post:
+ *     tags: [Social]
+ *     summary: Toggle like
+ *     description: Toggle like on a recipe for the current user. Returns new liked state and total count.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *     responses:
+ *       200:
+ *         description: Like toggle result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 liked:
+ *                   type: boolean
+ *                   description: Whether the recipe is now liked by the user
+ *                 count:
+ *                   type: integer
+ *                   description: Total like count
+ *       400:
+ *         description: Invalid recipe id
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/:id/like', (req, res) => {
     const recipeId = parseInt(req.params.id, 10);
     if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
@@ -176,7 +420,48 @@ router.post('/:id/like', (req, res) => {
     }
 });
 
-/** GET /api/recipes/:id/likes — Returns { count, isLiked } */
+/**
+ * @openapi
+ * /api/recipes/{id}/likes:
+ *   get:
+ *     tags: [Social]
+ *     summary: Get like status
+ *     description: Returns the total like count and whether the current user has liked this recipe.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *     responses:
+ *       200:
+ *         description: Like status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                   description: Total like count
+ *                 isLiked:
+ *                   type: boolean
+ *                   description: Whether the current user liked this recipe
+ *       400:
+ *         description: Invalid recipe id
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/:id/likes', (req, res) => {
     const recipeId = parseInt(req.params.id, 10);
     if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
@@ -192,7 +477,57 @@ router.get('/:id/likes', (req, res) => {
 
 // ─── Comments ─────────────────────────────────────────────
 
-/** POST /api/recipes/:id/comments — Add comment. Returns { comment } */
+/**
+ * @openapi
+ * /api/recipes/{id}/comments:
+ *   post:
+ *     tags: [Social]
+ *     summary: Add comment
+ *     description: Add a comment to a recipe. Text must be 1-1000 characters.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 1000
+ *                 description: Comment text
+ *     responses:
+ *       201:
+ *         description: Created comment
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 comment:
+ *                   type: object
+ *       400:
+ *         description: Invalid recipe id or missing/invalid text
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/:id/comments', (req, res) => {
     const recipeId = parseInt(req.params.id, 10);
     if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
@@ -215,7 +550,56 @@ router.post('/:id/comments', (req, res) => {
     }
 });
 
-/** GET /api/recipes/:id/comments — List comments. Returns { comments, total } */
+/**
+ * @openapi
+ * /api/recipes/{id}/comments:
+ *   get:
+ *     tags: [Social]
+ *     summary: List comments
+ *     description: Returns paginated comments for a recipe with total count.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50, maximum: 100 }
+ *         description: Max comments to return
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, default: 0 }
+ *         description: Pagination offset
+ *     responses:
+ *       200:
+ *         description: Comments with total count
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 comments:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *       400:
+ *         description: Invalid recipe id
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/:id/comments', (req, res) => {
     const recipeId = parseInt(req.params.id, 10);
     if (!recipeId) return res.status(400).json({ error: 'Invalid recipe id' });
@@ -232,7 +616,61 @@ router.get('/:id/comments', (req, res) => {
     }
 });
 
-/** DELETE /api/recipes/:id/comments/:cid — Soft-delete (author only) */
+/**
+ * @openapi
+ * /api/recipes/{id}/comments/{cid}:
+ *   delete:
+ *     tags: [Social]
+ *     summary: Soft-delete comment
+ *     description: Soft-delete a comment. Only the comment author can delete their own comment.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Recipe ID
+ *       - in: path
+ *         name: cid
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Comment ID
+ *     responses:
+ *       200:
+ *         description: Comment deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *       400:
+ *         description: Invalid comment id
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Not the comment author
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Comment not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete('/:id/comments/:cid', (req, res) => {
     const commentId = parseInt(req.params.cid, 10);
     if (!commentId) return res.status(400).json({ error: 'Invalid comment id' });

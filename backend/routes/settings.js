@@ -12,7 +12,30 @@ const router = Router();
  */
 export default function createSettingsRouter() {
 
-    // GET /api/settings — settings for current user (merged with global defaults)
+    /**
+     * @openapi
+     * /api/settings:
+     *   get:
+     *     tags: [Settings]
+     *     summary: Get settings for current user
+     *     description: Returns global defaults merged with user-specific overrides.
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Key-value settings object (global defaults + user overrides)
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               additionalProperties: true
+     *       500:
+     *         description: Server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/Error'
+     */
     router.get('/', (req, res) => {
         try {
             // Global defaults first, then user overrides on top
@@ -24,7 +47,59 @@ export default function createSettingsRouter() {
         }
     });
 
-    // PUT /api/settings — bulk update settings for current user
+    /**
+     * @openapi
+     * /api/settings:
+     *   put:
+     *     tags: [Settings]
+     *     summary: Bulk update settings for current user
+     *     description: |
+     *       Saves key-value pairs to settings_v2 for the authenticated user.
+     *       If `telegram` key is present, reloads Telegram service config.
+     *       If `pid` key contains kp/ki/kd, applies tunings to the running PidManager.
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             additionalProperties: true
+     *             properties:
+     *               pid:
+     *                 type: object
+     *                 properties:
+     *                   kp:
+     *                     type: number
+     *                     example: 2.5
+     *                   ki:
+     *                     type: number
+     *                     example: 0.1
+     *                   kd:
+     *                     type: number
+     *                     example: 1.0
+     *               telegram:
+     *                 type: object
+     *                 description: Telegram settings (triggers config reload)
+     *     responses:
+     *       200:
+     *         description: Settings saved
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 ok:
+     *                   type: boolean
+     *                   example: true
+     *       500:
+     *         description: Server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/Error'
+     */
     router.put('/', (req, res) => {
         try {
             settingsQueries.setBulk(req.body, req.user.id);
@@ -50,14 +125,99 @@ export default function createSettingsRouter() {
         }
     });
 
-    // GET /api/settings/kalman — get Kalman filter status
+    /**
+     * @openapi
+     * /api/settings/kalman:
+     *   get:
+     *     tags: [Settings]
+     *     summary: Get Kalman filter status
+     *     description: Returns current Kalman filter parameters, gain, and raw/filtered input values from PidManager.
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Kalman filter status
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 enabled:
+     *                   type: boolean
+     *                   example: false
+     *                 q:
+     *                   type: number
+     *                   description: Process noise covariance
+     *                   example: 0.01
+     *                 r:
+     *                   type: number
+     *                   description: Measurement noise covariance
+     *                   example: 0.05
+     *                 gain:
+     *                   type: number
+     *                   nullable: true
+     *                   description: Current Kalman gain
+     *                 rawInput:
+     *                   type: number
+     *                   nullable: true
+     *                   description: Last raw sensor reading
+     *                 filteredInput:
+     *                   type: number
+     *                   nullable: true
+     *                   description: Last filtered sensor reading
+     */
     router.get('/kalman', (req, res) => {
         const pidManager = req.pidManager;
         if (!pidManager) return res.json({ enabled: false, q: 0.01, r: 0.05, gain: null, rawInput: null, filteredInput: null });
         res.json(pidManager.getKalmanStatus());
     });
 
-    // POST /api/settings/kalman — update Kalman filter parameters
+    /**
+     * @openapi
+     * /api/settings/kalman:
+     *   post:
+     *     tags: [Settings]
+     *     summary: Update Kalman filter parameters
+     *     description: Updates Kalman filter settings on the running PidManager and persists enabled flag to DB.
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               enabled:
+     *                 type: boolean
+     *                 description: Enable or disable Kalman filter
+     *                 example: true
+     *               q:
+     *                 type: number
+     *                 description: Process noise covariance
+     *                 example: 0.01
+     *               r:
+     *                 type: number
+     *                 description: Measurement noise covariance
+     *                 example: 0.05
+     *     responses:
+     *       200:
+     *         description: Parameters updated
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 ok:
+     *                   type: boolean
+     *                   example: true
+     *       500:
+     *         description: Server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/Error'
+     */
     router.post('/kalman', (req, res) => {
         try {
             const { enabled, q, r } = req.body;
@@ -73,13 +233,73 @@ export default function createSettingsRouter() {
         }
     });
 
-    // POST /api/settings/test-connection — test ESP32 connection
+    /**
+     * @openapi
+     * /api/settings/test-connection:
+     *   post:
+     *     tags: [Settings]
+     *     summary: Test ESP32 connection
+     *     description: Attempts to verify connectivity with the ESP32 hardware. Currently returns mock status.
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Connection test result
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 ok:
+     *                   type: boolean
+     *                   example: true
+     *                 status:
+     *                   type: string
+     *                   example: mock
+     *                 message:
+     *                   type: string
+     *                   example: Connection test not available in mock mode
+     */
     router.post('/test-connection', (req, res) => {
         // Will be implemented when serial manager is connected
         res.json({ ok: true, status: 'mock', message: 'Connection test not available in mock mode' });
     });
 
-    // POST /api/settings/test-telegram — send a test notification
+    /**
+     * @openapi
+     * /api/settings/test-telegram:
+     *   post:
+     *     tags: [Settings]
+     *     summary: Send test Telegram notification
+     *     description: Sends a test message via the configured Telegram bot to verify integration.
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Result of the test message send
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 ok:
+     *                   type: boolean
+     *                 message:
+     *                   type: string
+     *                   example: Сообщение отправлено
+     *       500:
+     *         description: Telegram API error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 ok:
+     *                   type: boolean
+     *                   example: false
+     *                 error:
+     *                   type: string
+     */
     router.post('/test-telegram', async (req, res) => {
         try {
             const result = await sendMessage('🧪 *Тестовое уведомление*\n\nOrangeBrew — Telegram интеграция работает!');
@@ -93,7 +313,33 @@ export default function createSettingsRouter() {
         }
     });
 
-    // POST /api/settings/reload-telegram — reload Telegram config from DB
+    /**
+     * @openapi
+     * /api/settings/reload-telegram:
+     *   post:
+     *     tags: [Settings]
+     *     summary: Reload Telegram config from DB
+     *     description: Re-reads Telegram bot token and chat ID from the database and reinitializes the Telegram service.
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Config reloaded
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 ok:
+     *                   type: boolean
+     *                   example: true
+     *       500:
+     *         description: Server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/Error'
+     */
     router.post('/reload-telegram', (req, res) => {
         try {
             reloadTelegramConfig();

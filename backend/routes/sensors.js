@@ -70,12 +70,92 @@ export function getSensorReadings() {
 
 // ─── Routes ────────────────────────────────────────────────
 
-// GET /api/sensors — current role-mapped readings (for WS init / legacy polling)
+/**
+ * @openapi
+ * /api/sensors:
+ *   get:
+ *     tags: [Sensors]
+ *     summary: Current role-mapped sensor readings
+ *     description: >
+ *       Returns the latest role-mapped temperature readings stored in memory.
+ *       Used for WS initialisation and legacy polling fallback.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Key-value map of sensor roles to their latest readings
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties:
+ *                 type: object
+ *                 properties:
+ *                   value:
+ *                     type: number
+ *                     description: Temperature value in °C
+ *                   timestamp:
+ *                     type: number
+ *                     description: Unix timestamp (ms) of the reading
+ *               example:
+ *                 boiler: { value: 65.3, timestamp: 1711360000000 }
+ *                 column: { value: 42.1, timestamp: 1711360000000 }
+ */
 router.get('/', (req, res) => {
     res.json(latestReadings);
 });
 
-// GET /api/sensors/history?minutes=10 — recent temperature history from DB
+/**
+ * @openapi
+ * /api/sensors/history:
+ *   get:
+ *     tags: [Sensors]
+ *     summary: Recent temperature history
+ *     description: Returns temperature log entries from the database for the last N minutes.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: minutes
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of minutes of history to return
+ *     responses:
+ *       200:
+ *         description: Array of temperature log entries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   session_id:
+ *                     type: integer
+ *                   boiler_temp:
+ *                     type: number
+ *                   column_temp:
+ *                     type: number
+ *                     nullable: true
+ *                   target_temp:
+ *                     type: number
+ *                     nullable: true
+ *                   heater_power:
+ *                     type: number
+ *                     nullable: true
+ *                   timestamp:
+ *                     type: string
+ *                     format: date-time
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/history', (req, res) => {
     try {
         const minutes = parseInt(req.query.minutes) || 10;
@@ -86,8 +166,53 @@ router.get('/history', (req, res) => {
     }
 });
 
-// GET /api/sensors/discovered — sensors currently visible on the OneWire bus
-// Merges in-memory discovered sensors with user's saved config (name, color, etc.)
+/**
+ * @openapi
+ * /api/sensors/discovered:
+ *   get:
+ *     tags: [Sensors]
+ *     summary: Discovered sensors with saved config
+ *     description: >
+ *       Returns sensors currently visible on the OneWire bus, merged with
+ *       the user's saved configuration (name, color, offset, enabled).
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of discovered sensors
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   address:
+ *                     type: string
+ *                     description: OneWire address (e.g. "28-3c01f096b4aa")
+ *                   temp:
+ *                     type: number
+ *                     description: Current temperature in °C
+ *                   lastSeen:
+ *                     type: number
+ *                     description: Unix timestamp (ms) of last reading
+ *                   name:
+ *                     type: string
+ *                     description: User-assigned sensor name
+ *                   color:
+ *                     type: string
+ *                     nullable: true
+ *                     description: HEX colour for UI charting
+ *                   offset:
+ *                     type: number
+ *                     description: Calibration offset in °C
+ *                   enabled:
+ *                     type: boolean
+ *                     description: Whether the sensor is enabled
+ *                   configured:
+ *                     type: boolean
+ *                     description: Whether a saved config exists for this sensor
+ */
 router.get('/discovered', authenticate, (req, res) => {
     const userId = req.user.id;
     const userMap = discoveredSensors.get(userId) || new Map();
@@ -115,7 +240,31 @@ router.get('/discovered', authenticate, (req, res) => {
     res.json(result);
 });
 
-// GET /api/sensors/config — named sensor configs for the current user
+/**
+ * @openapi
+ * /api/sensors/config:
+ *   get:
+ *     tags: [Sensors]
+ *     summary: Get named sensor configs
+ *     description: Returns all saved sensor configurations for the current user.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of sensor config objects
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/SensorConfig'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/config', authenticate, (req, res) => {
     try {
         const configs = sensorQueries.getAll(req.user.id);
@@ -125,8 +274,58 @@ router.get('/config', authenticate, (req, res) => {
     }
 });
 
-// PUT /api/sensors/config — save/update sensor configs
-// Body: { sensors: [{address, name, color, offset, enabled}, ...] }
+/**
+ * @openapi
+ * /api/sensors/config:
+ *   put:
+ *     tags: [Sensors]
+ *     summary: Save or update sensor configs
+ *     description: >
+ *       Upserts sensor configurations for the current user. Each sensor is
+ *       identified by its OneWire address. Existing configs are updated,
+ *       new ones are created.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [sensors]
+ *             properties:
+ *               sensors:
+ *                 type: array
+ *                 items:
+ *                   $ref: '#/components/schemas/SensorConfig'
+ *     responses:
+ *       200:
+ *         description: Saved sensor configs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ *                 sensors:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/SensorConfig'
+ *       400:
+ *         description: Invalid request body (sensors must be an array)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.put('/config', authenticate, (req, res) => {
     try {
         const { sensors } = req.body;
@@ -151,7 +350,40 @@ router.put('/config', authenticate, (req, res) => {
     }
 });
 
-// DELETE /api/sensors/config/:address — remove a sensor config
+/**
+ * @openapi
+ * /api/sensors/config/{address}:
+ *   delete:
+ *     tags: [Sensors]
+ *     summary: Remove a sensor config
+ *     description: Deletes the saved configuration for the given sensor address.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: URL-encoded OneWire sensor address (e.g. "28-3c01f096b4aa")
+ *     responses:
+ *       200:
+ *         description: Config deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete('/config/:address', authenticate, (req, res) => {
     try {
         const address = decodeURIComponent(req.params.address);
