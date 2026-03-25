@@ -123,6 +123,11 @@ const swaggerEnabled = process.env.SWAGGER_ENABLED
 if (swaggerEnabled) {
     app.use('/api-docs', apiLimiter, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
         customSiteTitle: 'OrangeBrew API Docs',
+        customCss: `
+            /* Move opening brace to its own line in Schemas section */
+            .model-box .model { display: block; }
+            .model .brace-open { display: block; }
+        `,
     }));
     app.get('/api-docs.json', apiLimiter, (req, res) => res.json(swaggerSpec));
     logger.info({ module: 'Server' }, 'Swagger UI enabled at /api-docs');
