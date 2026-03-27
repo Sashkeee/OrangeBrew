@@ -56,6 +56,7 @@ import devicesRouter from './routes/devices.js';
 import beerxmlRouter from './routes/beerxml.js';
 import recipeSocialRouter from './routes/recipe-social.js';
 import adminRouter from './routes/admin.js';
+import trainerRouter from './routes/trainer.js';
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { INTERVALS } from './config/constants.js';
@@ -162,6 +163,9 @@ app.use(['/api/beerxml', '/beerxml'], authenticate, beerxmlRouter);
 
 // Social features: likes + comments (mounted under /api/recipes)
 app.use(['/api/recipes', '/recipes'], authenticate, recipeSocialRouter);
+
+// SQL Trainer sandbox (isolated in-memory DB, no access to production data)
+app.use('/api/trainer', authenticate, trainerRouter);
 
 // Admin panel (requireAdmin is inside the router)
 app.use('/api/admin', authenticate, adminRouter);

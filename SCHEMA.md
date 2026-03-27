@@ -2,7 +2,7 @@
 
 Полная схема SQLite базы данных. Файл DDL: `backend/db/schema.sql`. Запросы: `backend/db/database.js`.
 Миграции (добавление колонок для мультитенантности): `backend/db/migrate.js`.
-Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`.
+Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`, `004_audit_log.sql`.
 
 ---
 
@@ -42,6 +42,8 @@ ESP32 устройства, подключённые к системе.
 - `rename(id, name, userId)`
 - `setRole(id, role, userId)`
 - `delete(id, userId)`
+- `deleteAllByUser(userId)` — удалить все устройства пользователя (admin action)
+- `resetAllOnline()` — пометить все устройства offline (вызывается при старте сервера)
 
 ---
 
@@ -227,6 +229,8 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 | `subscription_status` | TEXT | `'active'`, `'expired'`, `'cancelled'` |
 | `subscription_expires_at` | TEXT | Дата истечения подписки |
 | `consent_given_at` | TEXT | Дата согласия на обработку данных (152-ФЗ) |
+| `banned_at` | TEXT | datetime бана (NULL = не забанен). Добавлено через 004_audit_log.sql |
+| `banned_reason` | TEXT | Причина бана, default `''`. Добавлено через 004_audit_log.sql |
 
 **Query-объект:** `userQueries`
 - `getAll()` — все пользователи (без password_hash)
@@ -237,6 +241,8 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 - `updatePassword(id, password_hash)`
 - `updateSubscription(id, { tier, status, expiresAt })`
 - `setConsent(id)` — записать `consent_given_at = datetime('now')`
+- `ban(id, reason)` — установить `banned_at = datetime('now')`, `banned_reason`
+- `unban(id)` — очистить `banned_at` и `banned_reason`
 
 *Управление через `backend/routes/users.js`. Начальный admin создаётся через `backend/db/seedAuth.js`.*
 *Регистрация новых пользователей: `POST /auth/register`.*
@@ -407,6 +413,33 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 
 ---
 
+### `audit_log`
+
+Лог действий пользователей и админов. Хранится 30 дней (cleanup job каждые 24ч).
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `user_id` | INTEGER NOT NULL FK → `users(id)` | CASCADE DELETE — кто совершил действие |
+| `action` | TEXT NOT NULL | Тип действия (`user.login`, `recipe.create`, `control.heater` и т.д.) |
+| `detail` | TEXT | Человекочитаемое описание, default `''` |
+| `admin_id` | INTEGER FK → `users(id)` | SET NULL — какой админ выполнил действие (если применимо) |
+| `ip` | TEXT | IP-адрес запроса |
+| `created_at` | TEXT | datetime('now') |
+
+**Query-объект:** `auditQueries`
+- `insert({ userId, action, detail, adminId, ip })` — fire-and-forget вставка
+- `getByUser(userId, limit, offset)` — аудит-лог пользователя с пагинацией (JOIN admin_username)
+- `getRecent(limit, offset)` — глобальный лог (JOIN username + admin_username)
+- `countByUser(userId)` — количество записей для пользователя
+- `cleanup(days=30)` — удалить записи старше N дней
+
+**Индексы:**
+- `idx_audit_user (user_id, created_at)`
+- `idx_audit_created (created_at)`
+
+---
+
 ### `payments`
 
 История платежей / подписок (YooKassa).
@@ -468,6 +501,9 @@ devices           recipes           brew_sessions                           │
 device_pairings ◄──────────────────────────────────────────────────────────┘
 payments ◄─────────────────────────────────────────────────────────────────┘
 sensors ◄──────────────────────────────────────────────────────────────────┘
+
+audit_log ◄────────────────────────────────────────────────────────────────┘
+  (user_id FK → users, admin_id FK → users)
 
 settings_v2 — user_id FK → users(id), NULL = глобальный дефолт
 settings — legacy таблица (одиночный пользователь)

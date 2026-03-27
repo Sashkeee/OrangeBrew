@@ -1,0 +1,232 @@
+[
+  {
+    "id": 1,
+    "category": "SELECT",
+    "difficulty": "easy",
+    "title": "Все пользователи",
+    "task_markdown": "Выведите **все столбцы** из таблицы `users`.",
+    "hint": "Используйте `SELECT *`",
+    "expected_query": "SELECT * FROM users"
+  },
+  {
+    "id": 2,
+    "category": "SELECT",
+    "difficulty": "easy",
+    "title": "Имена и стили рецептов",
+    "task_markdown": "Выведите только **название** (`name`) и **стиль** (`style`) всех рецептов.",
+    "hint": "Перечислите нужные столбцы через запятую",
+    "expected_query": "SELECT name, style FROM recipes"
+  },
+  {
+    "id": 3,
+    "category": "WHERE",
+    "difficulty": "easy",
+    "title": "Крепкие рецепты",
+    "task_markdown": "Выведите **название** и **крепость** (`abv`) рецептов, у которых `abv` **больше 5**.",
+    "hint": "Используйте `WHERE abv > 5`",
+    "expected_query": "SELECT name, abv FROM recipes WHERE abv > 5"
+  },
+  {
+    "id": 4,
+    "category": "WHERE",
+    "difficulty": "easy",
+    "title": "Публичные рецепты",
+    "task_markdown": "Выведите **название** рецептов, которые **опубликованы** (`is_public = 1`).",
+    "hint": "Используйте `WHERE is_public = 1`",
+    "expected_query": "SELECT name FROM recipes WHERE is_public = 1"
+  },
+  {
+    "id": 5,
+    "category": "ORDER BY",
+    "difficulty": "easy",
+    "title": "Рецепты по крепости",
+    "task_markdown": "Выведите **название** и **крепость** всех рецептов, отсортированных по `abv` **по убыванию**.",
+    "hint": "Используйте `ORDER BY ... DESC`",
+    "expected_query": "SELECT name, abv FROM recipes ORDER BY abv DESC"
+  },
+  {
+    "id": 6,
+    "category": "COUNT",
+    "difficulty": "easy",
+    "title": "Сколько рецептов?",
+    "task_markdown": "Посчитайте **общее количество** рецептов в таблице. Назовите столбец `total`.",
+    "hint": "Используйте `COUNT(*) AS total`",
+    "expected_query": "SELECT COUNT(*) AS total FROM recipes"
+  },
+  {
+    "id": 7,
+    "category": "WHERE",
+    "difficulty": "medium",
+    "title": "Завершённые сессии",
+    "task_markdown": "Выведите `id`, `recipe_id` и `type` **завершённых** сессий (`status = 'completed'`).",
+    "hint": "Фильтруйте по `status`",
+    "expected_query": "SELECT id, recipe_id, type FROM brew_sessions WHERE status = 'completed'"
+  },
+  {
+    "id": 8,
+    "category": "JOIN",
+    "difficulty": "medium",
+    "title": "Сессии с названиями рецептов",
+    "task_markdown": "Выведите **тип сессии** (`brew_sessions.type`), **статус** (`brew_sessions.status`) и **название рецепта** (`recipes.name`) для всех сессий, у которых есть привязанный рецепт.\n\nИспользуйте `JOIN`.",
+    "hint": "JOIN recipes ON brew_sessions.recipe_id = recipes.id",
+    "expected_query": "SELECT brew_sessions.type, brew_sessions.status, recipes.name FROM brew_sessions JOIN recipes ON brew_sessions.recipe_id = recipes.id"
+  },
+  {
+    "id": 9,
+    "category": "JOIN",
+    "difficulty": "medium",
+    "title": "Кто что варил",
+    "task_markdown": "Выведите **имя пользователя** (`users.username`), **название рецепта** (`recipes.name`) и **тип сессии** (`brew_sessions.type`) для всех сессий.\n\nИспользуйте два `JOIN`.",
+    "hint": "JOIN users и JOIN recipes через brew_sessions",
+    "expected_query": "SELECT users.username, recipes.name, brew_sessions.type FROM brew_sessions JOIN users ON brew_sessions.user_id = users.id JOIN recipes ON brew_sessions.recipe_id = recipes.id"
+  },
+  {
+    "id": 10,
+    "category": "GROUP BY",
+    "difficulty": "medium",
+    "title": "Количество рецептов по авторам",
+    "task_markdown": "Посчитайте, **сколько рецептов** создал каждый пользователь. Выведите `username` и количество (`recipe_count`).",
+    "hint": "JOIN users + GROUP BY + COUNT",
+    "expected_query": "SELECT users.username, COUNT(*) AS recipe_count FROM recipes JOIN users ON recipes.user_id = users.id GROUP BY users.username"
+  },
+  {
+    "id": 11,
+    "category": "GROUP BY",
+    "difficulty": "medium",
+    "title": "Средняя крепость по стилям",
+    "task_markdown": "Выведите **стиль** (`style`) и **среднюю крепость** (`avg_abv`) для каждого стиля рецепта. Округлите до 1 знака.",
+    "hint": "Используйте `ROUND(AVG(abv), 1)`",
+    "expected_query": "SELECT style, ROUND(AVG(abv), 1) AS avg_abv FROM recipes GROUP BY style"
+  },
+  {
+    "id": 12,
+    "category": "GROUP BY",
+    "difficulty": "medium",
+    "title": "Самые залайканные стили",
+    "task_markdown": "Выведите **стиль** и **суммарное количество лайков** (`total_likes`) для каждого стиля. Отсортируйте по убыванию лайков.",
+    "hint": "SUM(likes_count) + GROUP BY style + ORDER BY",
+    "expected_query": "SELECT style, SUM(likes_count) AS total_likes FROM recipes GROUP BY style ORDER BY total_likes DESC"
+  },
+  {
+    "id": 13,
+    "category": "HAVING",
+    "difficulty": "medium",
+    "title": "Активные авторы",
+    "task_markdown": "Выведите **имя пользователя** и **количество рецептов**, но только для тех авторов, у которых **больше 2 рецептов**.",
+    "hint": "GROUP BY + HAVING COUNT(*) > 2",
+    "expected_query": "SELECT users.username, COUNT(*) AS recipe_count FROM recipes JOIN users ON recipes.user_id = users.id GROUP BY users.username HAVING COUNT(*) > 2"
+  },
+  {
+    "id": 14,
+    "category": "Subquery",
+    "difficulty": "hard",
+    "title": "Рецепты с лайками выше среднего",
+    "task_markdown": "Выведите **название** и **количество лайков** рецептов, у которых `likes_count` **выше среднего** значения по всем рецептам.",
+    "hint": "WHERE likes_count > (SELECT AVG(...) FROM recipes)",
+    "expected_query": "SELECT name, likes_count FROM recipes WHERE likes_count > (SELECT AVG(likes_count) FROM recipes)"
+  },
+  {
+    "id": 15,
+    "category": "Subquery",
+    "difficulty": "hard",
+    "title": "Пользователи без рецептов",
+    "task_markdown": "Выведите **имена пользователей**, которые **не создали ни одного рецепта**.",
+    "hint": "WHERE id NOT IN (SELECT user_id FROM recipes)",
+    "expected_query": "SELECT username FROM users WHERE id NOT IN (SELECT user_id FROM recipes)"
+  },
+  {
+    "id": 16,
+    "category": "JOIN",
+    "difficulty": "hard",
+    "title": "Температурный профиль сессии",
+    "task_markdown": "Выведите **название рецепта**, **датчик** (`sensor`), **температуру** (`value`) и **время замера** (`timestamp`) для сессии с `id = 1`.\n\nОтсортируйте по `timestamp`.",
+    "hint": "JOIN brew_sessions и recipes, фильтр по session_id",
+    "expected_query": "SELECT recipes.name, temperature_log.sensor, temperature_log.value, temperature_log.timestamp FROM temperature_log JOIN brew_sessions ON temperature_log.session_id = brew_sessions.id JOIN recipes ON brew_sessions.recipe_id = recipes.id WHERE temperature_log.session_id = 1 ORDER BY temperature_log.timestamp"
+  },
+  {
+    "id": 17,
+    "category": "GROUP BY",
+    "difficulty": "hard",
+    "title": "Мин и макс температура по сессиям",
+    "task_markdown": "Для каждой **сессии** (`session_id`) выведите **минимальную** и **максимальную** температуру из `temperature_log`. Назовите столбцы `min_temp` и `max_temp`.",
+    "hint": "MIN(value), MAX(value), GROUP BY session_id",
+    "expected_query": "SELECT session_id, MIN(value) AS min_temp, MAX(value) AS max_temp FROM temperature_log GROUP BY session_id"
+  },
+  {
+    "id": 18,
+    "category": "CASE",
+    "difficulty": "hard",
+    "title": "Категории крепости",
+    "task_markdown": "Выведите **название** рецепта и **категорию** крепости:\n- `abv < 5` → `'Light'`\n- `abv >= 5 AND abv < 7` → `'Medium'`\n- `abv >= 7` → `'Strong'`\n\nНазовите столбец `strength`.",
+    "hint": "Используйте `CASE WHEN ... THEN ... END`",
+    "expected_query": "SELECT name, CASE WHEN abv < 5 THEN 'Light' WHEN abv < 7 THEN 'Medium' ELSE 'Strong' END AS strength FROM recipes"
+  },
+  {
+    "id": 19,
+    "category": "LEFT JOIN",
+    "difficulty": "hard",
+    "title": "Все рецепты с количеством комментариев",
+    "task_markdown": "Выведите **название** рецепта и **фактическое количество неудалённых комментариев** (`comment_count`). Включите рецепты **без комментариев** (у них `comment_count = 0`).",
+    "hint": "LEFT JOIN recipe_comments + WHERE is_deleted = 0 или COALESCE",
+    "expected_query": "SELECT recipes.name, COUNT(recipe_comments.id) AS comment_count FROM recipes LEFT JOIN recipe_comments ON recipes.id = recipe_comments.recipe_id AND recipe_comments.is_deleted = 0 GROUP BY recipes.id ORDER BY comment_count DESC"
+  },
+  {
+    "id": 20,
+    "category": "Window",
+    "difficulty": "hard",
+    "title": "Рейтинг рецептов по лайкам",
+    "task_markdown": "Выведите **название**, **стиль**, **количество лайков** и **ранг** (`rank`) рецепта по убыванию `likes_count` с помощью **оконной функции** `RANK()`.",
+    "hint": "RANK() OVER (ORDER BY likes_count DESC)",
+    "expected_query": "SELECT name, style, likes_count, RANK() OVER (ORDER BY likes_count DESC) AS rank FROM recipes"
+  },
+  {
+    "id": 21,
+    "category": "DELETE",
+    "difficulty": "medium",
+    "title": "Удалить отменённые сессии",
+    "task_markdown": "Удалите все сессии варки (`brew_sessions`) со статусом `'cancelled'`.",
+    "hint": "DELETE FROM ... WHERE status = 'cancelled'",
+    "expected_query": "DELETE FROM brew_sessions WHERE status = 'cancelled'",
+    "verify_query": "SELECT COUNT(*) AS remaining FROM brew_sessions WHERE status = 'cancelled'"
+  },
+  {
+    "id": 22,
+    "category": "UPDATE",
+    "difficulty": "medium",
+    "title": "Сделать все рецепты публичными",
+    "task_markdown": "Обновите все рецепты — установите `is_public = 1` для **всех** записей.",
+    "hint": "UPDATE recipes SET ... (без WHERE — обновить все)",
+    "expected_query": "UPDATE recipes SET is_public = 1",
+    "verify_query": "SELECT COUNT(*) AS private_count FROM recipes WHERE is_public = 0"
+  },
+  {
+    "id": 23,
+    "category": "INSERT",
+    "difficulty": "medium",
+    "title": "Добавить нового пользователя",
+    "task_markdown": "Добавьте нового пользователя:\n- `username`: `'newbrewer'`\n- `role`: `'user'`\n- `email`: `'newbrewer@example.com'`\n- `subscription_tier`: `'trial'`",
+    "hint": "INSERT INTO users (username, role, email, subscription_tier) VALUES (...)",
+    "expected_query": "INSERT INTO users (username, role, email, subscription_tier) VALUES ('newbrewer', 'user', 'newbrewer@example.com', 'trial')",
+    "verify_query": "SELECT username, role, email, subscription_tier FROM users WHERE username = 'newbrewer'"
+  },
+  {
+    "id": 24,
+    "category": "UPDATE",
+    "difficulty": "hard",
+    "title": "Повысить крепость стаутов",
+    "task_markdown": "Увеличьте `abv` на **10%** для всех рецептов, в стиле которых есть слово `'Stout'`.\n\nНапример, `5.2` → `5.72`.",
+    "hint": "UPDATE ... SET abv = ROUND(abv * 1.1, 2) WHERE style LIKE '%Stout%'",
+    "expected_query": "UPDATE recipes SET abv = ROUND(abv * 1.1, 2) WHERE style LIKE '%Stout%'",
+    "verify_query": "SELECT name, abv FROM recipes WHERE style LIKE '%Stout%' ORDER BY name"
+  },
+  {
+    "id": 25,
+    "category": "DELETE",
+    "difficulty": "hard",
+    "title": "Удалить мягко удалённые комментарии",
+    "task_markdown": "Удалите **физически** все комментарии, которые были **мягко удалены** (`is_deleted = 1`).",
+    "hint": "DELETE FROM recipe_comments WHERE is_deleted = 1",
+    "expected_query": "DELETE FROM recipe_comments WHERE is_deleted = 1",
+    "verify_query": "SELECT COUNT(*) AS soft_deleted FROM recipe_comments WHERE is_deleted = 1"
+  }
+]

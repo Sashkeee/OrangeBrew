@@ -61,6 +61,17 @@ ALTER TABLE brew_sessions ADD COLUMN last_state_json TEXT;
 - Визуализация в `Grafana` для отслеживания стабильности системы под нагрузкой.
 
 ---
+
+## 📋 5. Swagger / OpenAPI документация
+
+Добавить интерактивную документацию API через `swagger-ui-express` + `swagger-jsdoc`.
+
+- Установить: `npm install swagger-ui-express swagger-jsdoc`
+- Подключить в `server.js` → доступна по `/api/docs`
+- Добавить JSDoc комментарии в каждый роут (`routes/*.js`)
+- Польза: QA может тестировать прямо из браузера, Postman коллекцию можно сгенерировать из OpenAPI spec автоматически
+
+---
 *Документ подготовлен как техническое задание для будущего развития проекта.*
 
 ## 🧠 Приложение: Анализ выбора технологии (Redis vs SQLite Snapshots)

@@ -26,6 +26,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import DevicePairing from './pages/DevicePairing';
 import AdminPanel from './pages/AdminPanel';
+import SqlTrainer from './pages/SqlTrainer';
 
 // Redirect to /login if not authenticated
 const PrivateRoute = ({ children }) => {
@@ -75,6 +76,7 @@ function AppRoutes() {
               <Route path="/rectification" element={<Rectification />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
+              <Route path="/trainer" element={<SqlTrainer />} />
               <Route path="/devices/pair" element={<DevicePairing />} />
               <Route path="/branding" element={<LogoShowcase />} />
             </Routes>

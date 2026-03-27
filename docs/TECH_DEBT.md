@@ -266,12 +266,76 @@ pm.on('notification', (notification) => {
 
 ---
 
+## Фаза 4: Multi-device архитектура
+
+> Текущая архитектура: один ProcessManager на пользователя. Все команды (`heater ON`, `pump ON`) через `sendToUserHardware()` отправляются **всем** устройствам пользователя. Это работает пока у пользователя одно устройство, но ломается при двух+.
+
+### 4.1 🔴 Команды привязать к конкретному deviceId
+
+**Проблема:** `sendToUserHardware(userId, cmd)` шлёт команду **всем** устройствам пользователя. Если у пользователя два контроллера — оба включат нагрев.
+
+**Файлы:** `ws/liveServer.js`, `routes/control.js`, `services/ProcessManager.js`
+
+**Решение:** `sendToDevice(deviceId, cmd)` вместо `sendToUserHardware(userId, cmd)`. ProcessManager должен знать свой `deviceId` и отправлять команды только на него.
+
+**Время:** 2-3 часа
+
+---
+
+### 4.2 🔴 ProcessManager per device, не per user
+
+**Проблема:** `processManagers = Map<userId, ProcessManager>` — один PM на пользователя. Невозможно параллельно вести затирание на одном устройстве и брожение на другом.
+
+**Решение:** `processManagers = Map<"userId:deviceId", ProcessManager>`. Ключ — составной. `getOrCreateProcessManager(userId, deviceId)`.
+
+**Файлы:** `server.js`, `routes/process.js`, `services/ProcessManager.js`
+
+**Влияние:**
+- `POST /api/process/start` — требует `deviceId` в теле (уже передаётся)
+- `GET /api/process/status` — нужен `?deviceId=` query param, или возвращать все процессы пользователя
+- WS broadcast `process` events — привязать к deviceId
+- Frontend `useProcess.js` — поддержка нескольких активных процессов
+
+**Время:** 1-2 дня
+
+---
+
+### 4.3 🟡 UI: выбор устройства на экранах процесса
+
+**Проблема:** DeviceSelector уже есть на странице Mashing/Boiling, но PID-настройки и список датчиков не фильтруются по выбранному устройству.
+
+**Доработки:**
+- Настройки PID → выбор устройства, к которому применяются коэффициенты
+- Страница датчиков → показывать к какому устройству принадлежит каждый датчик
+- Страница затирания → показывать только датчики выбранного устройства
+- Индикатор активного процесса → показывать на каком устройстве идёт процесс
+
+**Файлы:** `frontend/src/pages/Settings.jsx`, `frontend/src/pages/Mashing.jsx`, `frontend/src/hooks/useSensors.js`, `frontend/src/components/DeviceSelector.jsx`
+
+**Время:** 1 день
+
+---
+
+## Выполненные задачи (март 2026)
+
+| # | Задача | Дата |
+|---|--------|------|
+| ✅ | Миграция console.* → Pino structured logging (~85 вызовов, 18 файлов) | 24.03 |
+| ✅ | Vector pipeline: pino → Docker → Vector → Betterstack | 24.03 |
+| ✅ | Betterstack Dashboard (8 графиков) + Logs-to-Metrics | 25.03 |
+| ✅ | Удалены postcss.config.js / tailwind.config.js (мёртвый код, блокировал Docker build) | 24.03 |
+| ✅ | Vector: подъём heartbeat и device полей на верхний уровень | 25.03 |
+| ✅ | JWT_SECRET через .env на VPS (не хардкод в compose) | 25.03 |
+| ✅ | Фикс изоляции датчиков: broadcastSensors() per-user вместо broadcastAll() | 25.03 |
+| ✅ | ESP8266 firmware: добавлены WIFI и PAIR команды в Serial Monitor | 25.03 |
+
+---
+
 ## Сводка: дорожная карта
 
 ```
 Неделя 1:
   ├── [1 час]  Фаза 1: JWT fix + uncaught handlers + error middleware
-  ├── [1 день] Логирование: миграция console.* → pino (см. MIGRATION_LOGGING.md)
   └── [30 мин] Магические числа → constants.js
 
 Неделя 2:
@@ -279,7 +343,12 @@ pm.on('notification', (notification) => {
   ├── [2-3 часа] Разбить database.js
   └── [1-2 часа] Декаплинг Telegram
 
-Неделя 3+:
+Неделя 3:
+  ├── [2-3 часа] Команды привязать к deviceId (4.1)
+  ├── [1-2 дня]  ProcessManager per device (4.2)
+  └── [1 день]   UI: выбор устройства на экранах процесса (4.3)
+
+Неделя 4+:
   ├── [2-3 дня] Vitest: тесты на PID, auth, ProcessManager
   └── [ongoing] Постепенный переход на TypeScript
 ```

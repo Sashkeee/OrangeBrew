@@ -248,6 +248,17 @@ export const deviceApi = {
     pairStatus: (code) => request(`/devices/pair/status?code=${encodeURIComponent(code)}`),
 };
 
+// ─── SQL Trainer ─────────────────────────────────────────
+
+export const trainerApi = {
+    getTasks: () => request('/trainer/tasks'),
+    getSchema: () => request('/trainer/schema'),
+    execute: (taskId, userQuery) => request('/trainer/execute', {
+        method: 'POST',
+        body: { taskId, userQuery },
+    }),
+};
+
 // ─── Admin ───────────────────────────────────────────────
 
 export const adminApi = {
