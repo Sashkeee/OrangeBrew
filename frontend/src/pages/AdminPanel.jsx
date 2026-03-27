@@ -36,7 +36,7 @@ const panelStyle = {
 
 const tableRowStyle = {
     display: 'grid',
-    gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr',
+    gridTemplateColumns: '160px 220px 80px 80px 120px',
     gap: '0.5rem',
     padding: '0.75rem 1rem',
     alignItems: 'center',
@@ -106,8 +106,8 @@ function UserTable({ users, selectedId, onSelect }) {
                     onMouseEnter={e => { if (selectedId !== user.id) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
                     onMouseLeave={e => { if (selectedId !== user.id) e.currentTarget.style.background = 'transparent'; }}
                 >
-                    <span style={{ fontWeight: 500 }}>{user.username}</span>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{user.email || '—'}</span>
+                    <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.username}</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email || '—'}</span>
                     <span>
                         <span style={badgeStyle(user.role === 'admin' ? '#ff9800' : '#03a9f4')}>
                             {user.role}
@@ -370,7 +370,7 @@ export default function AdminPanel() {
 
                         {/* User info card */}
                         <div style={{
-                            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
                             gap: '0.75rem', marginBottom: '1.5rem',
                             padding: '1rem', borderRadius: '8px',
                             background: 'rgba(255,255,255,0.02)',
