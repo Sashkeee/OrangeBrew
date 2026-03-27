@@ -178,6 +178,17 @@ export const userQueries = {
     },
 
     delete: (id) => runSql('DELETE FROM users WHERE id = ?', [id]),
+
+    ban: (id, reason = '') => {
+        runSql(
+            `UPDATE users SET banned_at = datetime('now'), banned_reason = ? WHERE id = ?`,
+            [reason, id]
+        );
+    },
+
+    unban: (id) => {
+        runSql(`UPDATE users SET banned_at = NULL, banned_reason = '' WHERE id = ?`, [id]);
+    },
 };
 
 // ─── Recipes ──────────────────────────────────────────────
@@ -542,6 +553,8 @@ export const deviceQueries = {
     },
 
     delete: (id, userId) => runSql('DELETE FROM devices WHERE id = ? AND user_id = ?', [id, userId]),
+
+    deleteAllByUser: (userId) => runSql('DELETE FROM devices WHERE user_id = ?', [userId]),
 
     /** Mark all devices offline — called on server startup before any WS connections. */
     resetAllOnline: () => {
@@ -922,4 +935,45 @@ export const recipeTrendingQueries = {
 
         return similar;
     },
+};
+
+// ─── Audit Log ────────────────────────────────────────────
+
+export const auditQueries = {
+    insert: ({ userId, action, detail = '', adminId = null, ip = null }) => {
+        runSql(
+            `INSERT INTO audit_log (user_id, action, detail, admin_id, ip) VALUES (?, ?, ?, ?, ?)`,
+            [userId, action, detail, adminId, ip]
+        );
+    },
+
+    getByUser: (userId, limit = 100, offset = 0) => queryAll(
+        `SELECT al.*, u.username AS admin_username
+         FROM audit_log al
+         LEFT JOIN users u ON al.admin_id = u.id
+         WHERE al.user_id = ?
+         ORDER BY al.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [userId, limit, offset]
+    ),
+
+    getRecent: (limit = 100, offset = 0) => queryAll(
+        `SELECT al.*, u.username AS username, a.username AS admin_username
+         FROM audit_log al
+         JOIN users u ON al.user_id = u.id
+         LEFT JOIN users a ON al.admin_id = a.id
+         ORDER BY al.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+    ),
+
+    countByUser: (userId) => {
+        const row = queryOne('SELECT COUNT(*) AS total FROM audit_log WHERE user_id = ?', [userId]);
+        return row?.total || 0;
+    },
+
+    cleanup: (days = 30) => runSql(
+        `DELETE FROM audit_log WHERE created_at < datetime('now', ?)`,
+        [`-${days} days`]
+    ),
 };

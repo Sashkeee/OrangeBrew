@@ -30,6 +30,12 @@ async function request(path, options = {}) {
             window.location.href = '/login';
         }
         const error = await res.json().catch(() => ({ error: res.statusText }));
+        // Banned user — force logout
+        if (res.status === 403 && error.banned) {
+            localStorage.removeItem('orangebrew_token');
+            window.location.href = '/login';
+            return;
+        }
         throw new Error(error.error || `HTTP ${res.status}`);
     }
 
@@ -240,4 +246,17 @@ export const deviceApi = {
     delete: (id) => request(`/devices/${id}`, { method: 'DELETE' }),
     pairInit: () => request('/devices/pair/init', { method: 'POST' }),
     pairStatus: (code) => request(`/devices/pair/status?code=${encodeURIComponent(code)}`),
+};
+
+// ─── Admin ───────────────────────────────────────────────
+
+export const adminApi = {
+    getUsers:       ()                  => request('/admin/users'),
+    getUser:        (id)                => request(`/admin/users/${id}`),
+    getAudit:       (userId, params={}) => request(`/admin/audit/${userId}?${new URLSearchParams(params)}`),
+    getGlobalAudit: (params = {})       => request(`/admin/audit?${new URLSearchParams(params)}`),
+    banUser:        (id, reason)        => request(`/admin/users/${id}/ban`, { method: 'POST', body: { reason } }),
+    unbanUser:      (id)                => request(`/admin/users/${id}/unban`, { method: 'POST' }),
+    resetPassword:  (id, newPassword)   => request(`/admin/users/${id}/reset-password`, { method: 'POST', body: { newPassword } }),
+    deleteDevices:  (id)                => request(`/admin/users/${id}/devices`, { method: 'DELETE' }),
 };

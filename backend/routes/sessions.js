@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { sessionQueries, recipeQueries, temperatureQueries, fractionQueries, fermentationQueries } from '../db/database.js';
 import telegram from '../services/telegram.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Sessions' });
 const router = Router();
@@ -147,6 +148,7 @@ router.post('/', async (req, res) => {
             if (recipe) recipeName = recipe.name;
         }
 
+        writeAudit({ userId: req.user.id, action: 'session.create', detail: `Started ${req.body.type || 'brew'} session, recipe: ${recipeName}` });
         log.info({ type: req.body.type, recipeName }, 'Notifying Telegram');
         telegram.setCurrentProcessType(req.body.type || 'brew');
         await telegram.notifyPhaseChange(
@@ -260,6 +262,7 @@ router.post('/:id/complete', (req, res) => {
     try {
         const session = sessionQueries.complete(req.params.id, req.user.id);
         if (!session) return res.status(404).json({ error: 'Session not found' });
+        writeAudit({ userId: req.user.id, action: 'session.complete', detail: `Completed ${session.type || 'brew'} session #${req.params.id}` });
         telegram.notifyComplete(session.type || 'brew', { notes: session.notes });
         res.json(session);
     } catch (err) {

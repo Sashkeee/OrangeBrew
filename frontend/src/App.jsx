@@ -25,6 +25,7 @@ import { ActiveProcessIndicator } from './components/ActiveProcessIndicator';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import DevicePairing from './pages/DevicePairing';
+import AdminPanel from './pages/AdminPanel';
 
 // Redirect to /login if not authenticated
 const PrivateRoute = ({ children }) => {
@@ -36,6 +37,14 @@ const PrivateRoute = ({ children }) => {
 const PublicRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <Navigate to="/" replace /> : children;
+};
+
+// Admin-only route — redirect non-admins to /
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, user } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return children;
 };
 
 function AppRoutes() {
@@ -65,6 +74,7 @@ function AppRoutes() {
               <Route path="/distillation" element={<Distillation />} />
               <Route path="/rectification" element={<Rectification />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
               <Route path="/devices/pair" element={<DevicePairing />} />
               <Route path="/branding" element={<LogoShowcase />} />
             </Routes>

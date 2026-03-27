@@ -32,7 +32,7 @@ import {
     getClientCount,
     getHardwareCount
 } from './ws/liveServer.js';
-import { settingsQueries, sensorQueries, deviceQueries } from './db/database.js';
+import { settingsQueries, sensorQueries, deviceQueries, auditQueries } from './db/database.js';
 import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
@@ -55,6 +55,7 @@ import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import beerxmlRouter from './routes/beerxml.js';
 import recipeSocialRouter from './routes/recipe-social.js';
+import adminRouter from './routes/admin.js';
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { INTERVALS } from './config/constants.js';
@@ -161,6 +162,9 @@ app.use(['/api/beerxml', '/beerxml'], authenticate, beerxmlRouter);
 
 // Social features: likes + comments (mounted under /api/recipes)
 app.use(['/api/recipes', '/recipes'], authenticate, recipeSocialRouter);
+
+// Admin panel (requireAdmin is inside the router)
+app.use('/api/admin', authenticate, adminRouter);
 
 // Per-user ProcessManagers — Map<userId, ProcessManager>
 // Создаются лениво при первом обращении к /api/process
@@ -400,6 +404,20 @@ async function main() {
             uptime: Math.round(process.uptime()),
         }, 'Heartbeat');
     }, 5 * 60 * 1000);
+
+    // ─── Audit log cleanup (every 24h, delete entries older than 30 days) ──
+    const runAuditCleanup = () => {
+        try {
+            const { changes } = auditQueries.cleanup(30);
+            if (changes > 0) {
+                logger.info({ module: 'Audit', deleted: changes }, 'Audit log cleanup');
+            }
+        } catch (err) {
+            logger.error({ module: 'Audit', err }, 'Audit cleanup failed');
+        }
+    };
+    runAuditCleanup(); // run once at startup
+    setInterval(runAuditCleanup, 24 * 60 * 60 * 1000);
 
     // ─── Graceful Shutdown ────────────────────────────────────
 

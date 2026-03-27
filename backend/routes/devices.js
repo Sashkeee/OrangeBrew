@@ -2,6 +2,7 @@ import express from 'express';
 import { randomBytes } from 'crypto';
 import { deviceQueries, pairingQueries } from '../db/database.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Devices' });
 const router = express.Router();
@@ -148,6 +149,7 @@ router.delete('/:id', (req, res) => {
         const result = deviceQueries.delete(req.params.id, req.user.id);
         if (!result.changes) return res.status(404).json({ error: 'Device not found' });
         log.warn({ userId: req.user.id, deviceId: req.params.id }, 'Device deleted');
+        writeAudit({ userId: req.user.id, action: 'device.delete', detail: `Deleted device ${req.params.id}` });
         res.json({ success: true });
     } catch (err) {
         log.error({ err, userId: req.user.id, deviceId: req.params.id }, 'Error deleting device');
@@ -212,6 +214,7 @@ router.post('/pair/init', (req, res) => {
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
         const pairing = pairingQueries.create(req.user.id, code, expiresAt);
         log.info({ userId: req.user.id, code }, 'Pairing code generated');
+        writeAudit({ userId: req.user.id, action: 'device.pair', detail: `Initiated device pairing (code: ${code})` });
 
         res.json({
             pairing_code: pairing.pairing_code,

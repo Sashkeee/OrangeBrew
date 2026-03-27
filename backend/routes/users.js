@@ -1,19 +1,12 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import { getDb } from '../db/database.js';
+import { requireAdmin } from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Users' });
 const router = express.Router();
-
-// Middleware to Ensure Admin
-const requireAdmin = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
-        next();
-    } else {
-        res.status(403).json({ error: 'Permission denied. Admins only.' });
-    }
-};
 
 // --- PROFILE ROUTES (For authenticated users to manage themselves) ---
 
@@ -330,6 +323,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
         const user = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
         if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
 
+        writeAudit({ userId: id, action: 'admin.delete_user', detail: `User deleted by admin`, adminId: req.user.id, ip: req.ip });
         db.prepare('DELETE FROM users WHERE id = ?').run(id);
         log.warn({ adminId: req.user.id, deletedUserId: id }, 'User deleted');
         res.json({ message: 'Пользователь удален' });

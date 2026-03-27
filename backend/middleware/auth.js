@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import config from '../config/env.js';
 import logger from '../utils/logger.js';
+import { userQueries } from '../db/database.js';
 
 const { JWT_SECRET } = config;
 const log = logger.child({ module: 'Auth' });
@@ -22,6 +23,14 @@ export function authenticate(req, res, next) {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
+
+        // Check if user is banned (synchronous better-sqlite3 call, sub-ms)
+        const user = userQueries.getById(decoded.id);
+        if (user?.banned_at) {
+            log.warn({ userId: decoded.id, ip: req.ip }, 'Banned user attempted access');
+            return res.status(403).json({ error: 'Account is banned', banned: true, reason: user.banned_reason || '' });
+        }
+
         req.user = decoded; // Attach user payload to request
         next();
     } catch (error) {
@@ -31,5 +40,13 @@ export function authenticate(req, res, next) {
             log.warn({ ip: req.ip, userAgent: req.headers['user-agent'] }, 'Invalid token');
         }
         return res.status(401).json({ error: 'Invalid or expired token', expired: error.name === 'TokenExpiredError' });
+    }
+}
+
+export function requireAdmin(req, res, next) {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ error: 'Permission denied. Admins only.' });
     }
 }

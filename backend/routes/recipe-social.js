@@ -20,6 +20,7 @@ import {
     recipeQueries, recipeSearchQueries, recipeTrendingQueries,
 } from '../db/database.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Social' });
 const router = Router();
@@ -241,6 +242,7 @@ router.post('/:id/publish', (req, res) => {
     try {
         const recipe = recipeQueries.setPublic(recipeId, req.user.id, isPublic);
         if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+        writeAudit({ userId: req.user.id, action: 'recipe.publish', detail: `${isPublic ? 'Published' : 'Unpublished'} recipe "${recipe.name || '#' + recipeId}"` });
         res.json(recipe);
     } catch (err) {
         log.error({ err }, 'Publish toggle failed');

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { recipeQueries } from '../db/database.js';
 import { scaleRecipe } from '../utils/scaleRecipe.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Recipes' });
 const router = Router();
@@ -507,6 +508,7 @@ router.post('/', (req, res) => {
     try {
         const recipe = recipeQueries.create(req.body, req.user.id);
         log.info({ userId: req.user.id, recipeName: recipe.name }, 'Recipe created');
+        writeAudit({ userId: req.user.id, action: 'recipe.create', detail: `Created recipe "${recipe.name}"` });
         res.status(201).json(parseRecipe(recipe));
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -639,6 +641,7 @@ router.delete('/:id', (req, res) => {
         const result = recipeQueries.delete(req.params.id, req.user.id);
         if (!result.changes) return res.status(404).json({ error: 'Recipe not found' });
         log.warn({ userId: req.user.id, recipeId: req.params.id }, 'Recipe deleted');
+        writeAudit({ userId: req.user.id, action: 'recipe.delete', detail: `Deleted recipe #${req.params.id}` });
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

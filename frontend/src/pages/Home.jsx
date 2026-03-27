@@ -2,15 +2,19 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { MashingIcon, FermentationIcon, DistillationIcon, RectificationIcon } from '../components/Icons';
-import { Settings } from 'lucide-react';
+import { Settings, Shield } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const Home = () => {
+  const { user } = useAuth();
+
   const menuItems = [
     { title: 'Пивоварение', icon: <MashingIcon size={32} />, path: '/brewing', color: 'var(--primary-color)' },
     { title: 'Брожение', icon: <FermentationIcon size={32} />, path: '/fermentation', color: '#4caf50' },
     { title: 'Дистилляция', icon: <DistillationIcon size={32} />, path: '/distillation', color: '#03a9f4' },
     { title: 'Ректификация', icon: <RectificationIcon size={32} />, path: '/rectification', color: '#e91e63' },
     { title: 'Настройки', icon: <Settings size={32} />, path: '/settings', color: 'var(--secondary-color)' },
+    ...(user?.role === 'admin' ? [{ title: 'Админ-панель', icon: <Shield size={32} />, path: '/admin', color: '#ff9800' }] : []),
   ];
 
   return (

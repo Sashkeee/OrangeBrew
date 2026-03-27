@@ -5,6 +5,7 @@ import { userQueries } from '../db/database.js';
 import { authenticate } from '../middleware/auth.js';
 import config from '../config/env.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Auth' });
 const router = express.Router();
@@ -80,10 +81,12 @@ router.post('/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
             log.warn({ username, ip: req.ip }, 'Failed login attempt — wrong password');
+            writeAudit({ userId: user.id, action: 'user.login_failed', detail: `Wrong password from ${req.ip}`, ip: req.ip });
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
         const token = makeToken(user);
+        writeAudit({ userId: user.id, action: 'user.login', detail: `Login from ${req.ip}`, ip: req.ip });
 
         res.json({
             message: 'Logged in successfully',
@@ -194,6 +197,7 @@ router.post('/register', async (req, res) => {
         userQueries.setConsent(user.id);
 
         log.info({ username, email }, 'User registered');
+        writeAudit({ userId: user.id, action: 'user.register', detail: `User '${username}' registered`, ip: req.ip });
 
         const token = makeToken(user);
 

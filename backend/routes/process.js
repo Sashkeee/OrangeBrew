@@ -1,4 +1,5 @@
 import express from 'express';
+import { writeAudit } from '../utils/audit.js';
 
 /**
  * Process router — читает req.processManager, который инжектируется middleware в server.js.
@@ -106,6 +107,7 @@ router.post('/start', (req, res) => {
             return res.status(400).json({ error: 'Recipe is required' });
         }
         req.processManager.start(recipe, sessionId, mode, deviceId || 'local_serial', sensorAddress);
+        writeAudit({ userId: req.user.id, action: 'process.start', detail: `Started ${mode || 'brew'} process` });
         res.json({ ok: true, state: req.processManager.getState() });
     } catch (err) {
         res.status(400).json({ error: err.message });
@@ -145,6 +147,7 @@ router.post('/start', (req, res) => {
  */
 router.post('/stop', (req, res) => {
     req.processManager.stop();
+    writeAudit({ userId: req.user.id, action: 'process.stop', detail: 'Stopped process' });
     res.json({ ok: true, state: req.processManager.getState() });
 });
 
