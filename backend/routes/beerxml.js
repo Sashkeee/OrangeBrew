@@ -13,6 +13,7 @@ import { beerxmlToOrangeBrew } from '../beerxml/mapper.js';
 import { orangeBrewToBeerxml } from '../beerxml/mapper.js';
 import { generateBeerXmlString, generateMultipleRecipes } from '../beerxml/generator.js';
 import { validateRecipe } from '../beerxml/parser.js';
+import { writeAudit } from '../utils/audit.js';
 
 const router = Router();
 
@@ -138,6 +139,7 @@ router.post('/import', upload.single('file'), async (req, res) => {
             }
         }
 
+        writeAudit({ userId: req.user.id, action: 'beerxml.import', detail: `BeerXML import: ${results.length} imported, ${errors.length} failed`, ip: req.ip });
         res.json({
             ok:       true,
             imported: results.length,

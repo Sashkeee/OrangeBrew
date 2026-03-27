@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { settingsQueries } from '../db/database.js';
 import { sendMessage, reloadTelegramConfig } from '../services/telegram.js';
 import logger from '../utils/logger.js';
+import { writeAudit } from '../utils/audit.js';
 
 const log = logger.child({ module: 'Settings' });
 const router = Router();
@@ -119,6 +120,8 @@ export default function createSettingsRouter() {
                 }
             }
 
+            const sections = Object.keys(req.body).join(', ');
+            writeAudit({ userId: req.user.id, action: 'settings.update', detail: `Updated: ${sections}`, ip: req.ip });
             res.json({ ok: true });
         } catch (err) {
             res.status(500).json({ error: err.message });

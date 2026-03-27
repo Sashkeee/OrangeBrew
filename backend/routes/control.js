@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import telegram from '../services/telegram.js';
 import { broadcastControl } from '../ws/liveServer.js';
+import { writeAudit } from '../utils/audit.js';
 
 const router = Router();
 
@@ -108,6 +109,7 @@ router.post('/heater', (req, res) => {
         state.heater = value;
         commandSenders.get(userId)?.({ cmd: 'setHeater', value });
         broadcastControl(state, userId);
+        writeAudit({ userId, action: 'control.heater', detail: `Heater → ${value}%`, ip: req.ip });
         res.json({ ok: true, heater: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -158,6 +160,7 @@ router.post('/cooler', (req, res) => {
         state.cooler = value;
         commandSenders.get(userId)?.({ cmd: 'setCooler', value });
         broadcastControl(state, userId);
+        writeAudit({ userId, action: 'control.cooler', detail: `Cooler → ${value}%`, ip: req.ip });
         res.json({ ok: true, cooler: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -207,6 +210,7 @@ router.post('/pump', (req, res) => {
         commandSenders.get(userId)?.({ cmd: 'setPump', value });
         broadcastControl(state, userId);
         telegram.notifyPumpChange(value);
+        writeAudit({ userId, action: 'control.pump', detail: `Pump → ${value ? 'ON' : 'OFF'}`, ip: req.ip });
         res.json({ ok: true, pump: value });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -264,6 +268,7 @@ router.post('/dephleg', (req, res) => {
         state.dephlegMode = mode;
         commandSenders.get(userId)?.({ cmd: 'setDephleg', value, mode });
         broadcastControl(state, userId);
+        writeAudit({ userId, action: 'control.dephleg', detail: `Dephleg → ${value}% (${mode})`, ip: req.ip });
         res.json({ ok: true, dephleg: value, mode });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -304,6 +309,7 @@ router.post('/emergency-stop', (req, res) => {
         state.dephleg = 0;
         commandSenders.get(userId)?.({ cmd: 'emergencyStop' });
         broadcastControl(state, userId);
+        writeAudit({ userId, action: 'control.emergency_stop', detail: 'Emergency stop', ip: req.ip });
         res.json({ ok: true, message: 'Emergency stop executed' });
     } catch (err) {
         res.status(500).json({ error: err.message });

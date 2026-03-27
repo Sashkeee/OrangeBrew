@@ -140,6 +140,10 @@ router.put('/profile', async (req, res) => {
         db.prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ?')
             .run(newUsername, newHash, req.user.id);
 
+        const changes = [];
+        if (newUsername !== user.username) changes.push('username');
+        if (newPassword) changes.push('password');
+        writeAudit({ userId: req.user.id, action: 'user.profile_update', detail: `Updated: ${changes.join(', ')}`, ip: req.ip });
         res.json({ message: 'Профиль успешно обновлен' });
     } catch (err) {
         res.status(500).json({ error: err.message });

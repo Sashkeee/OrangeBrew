@@ -246,6 +246,7 @@ router.post('/import', (req, res) => {
         }
 
         log.info({ userId: req.user.id, imported, skipped, total: recipes.length }, 'Recipes imported');
+        writeAudit({ userId: req.user.id, action: 'recipe.import', detail: `JSON import: ${imported} imported, ${skipped} skipped`, ip: req.ip });
         res.json({ ok: true, imported, skipped, total: recipes.length });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -591,6 +592,7 @@ router.put('/:id', (req, res) => {
     try {
         const recipe = recipeQueries.update(req.params.id, req.body, req.user.id);
         if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+        writeAudit({ userId: req.user.id, action: 'recipe.update', detail: `Updated recipe "${recipe.name}"`, ip: req.ip });
         res.json(parseRecipe(recipe));
     } catch (err) {
         res.status(500).json({ error: err.message });
