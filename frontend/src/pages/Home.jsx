@@ -2,20 +2,26 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { MashingIcon, FermentationIcon, DistillationIcon, RectificationIcon } from '../components/Icons';
-import { Settings, Shield } from 'lucide-react';
+import { Settings, Shield, Database, LogOut, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const Home = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const menuItems = [
     { title: 'Пивоварение', icon: <MashingIcon size={32} />, path: '/brewing', color: 'var(--primary-color)' },
     { title: 'Брожение', icon: <FermentationIcon size={32} />, path: '/fermentation', color: '#4caf50' },
     { title: 'Дистилляция', icon: <DistillationIcon size={32} />, path: '/distillation', color: '#03a9f4' },
     { title: 'Ректификация', icon: <RectificationIcon size={32} />, path: '/rectification', color: '#e91e63' },
-    { title: 'Настройки', icon: <Settings size={32} />, path: '/settings', color: 'var(--secondary-color)' },
-    ...(user?.role === 'admin' ? [{ title: 'Админ-панель', icon: <Shield size={32} />, path: '/admin', color: '#ff9800' }] : []),
+    { title: 'SQL Trainer', icon: <Database size={32} />, path: '/trainer', color: '#90caf9' },
   ];
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div className="home-container" style={{
@@ -24,8 +30,61 @@ const Home = () => {
       alignItems: 'center',
       justifyContent: 'center',
       minHeight: '100vh',
-      padding: '2rem'
+      padding: '2rem',
+      position: 'relative'
     }}>
+      {/* Top-right toolbar */}
+      <div style={{
+        position: 'absolute',
+        top: '1.5rem',
+        right: '1.5rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '1rem',
+      }}>
+        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <User size={15} />
+          {user?.username}
+        </span>
+        {user?.role === 'admin' && (
+          <Link
+            to="/admin"
+            title="Админ-панель"
+            style={{ color: '#ff9800', display: 'flex', opacity: 0.8, transition: 'opacity 0.2s' }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+          >
+            <Shield size={20} />
+          </Link>
+        )}
+        <Link
+          to="/settings"
+          title="Настройки"
+          style={{ color: 'var(--text-secondary)', display: 'flex', opacity: 0.8, transition: 'opacity 0.2s' }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+        >
+          <Settings size={20} />
+        </Link>
+        <button
+          onClick={handleLogout}
+          title="Выйти"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            padding: 0,
+            opacity: 0.8,
+            transition: 'opacity 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+        >
+          <LogOut size={20} />
+        </button>
+      </div>
       <motion.div
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}

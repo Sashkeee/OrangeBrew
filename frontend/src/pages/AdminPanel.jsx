@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAdmin, useAuditLog } from '../hooks/useAdmin';
-import { Shield, Users, ArrowLeft, RefreshCw, Ban, Unlock, KeyRound, Trash2, Clock, User, AlertTriangle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Shield, Users, ArrowLeft, RefreshCw, Ban, Unlock, KeyRound, Trash2, Clock, User, AlertTriangle, Home } from 'lucide-react';
 
 // ─── Action labels (human-readable, RU) ─────────────────
 const ACTION_LABELS = {
@@ -15,9 +16,18 @@ const ACTION_LABELS = {
     'session.complete':    'Завершение сессии',
     'device.pair':         'Паринг устройства',
     'device.delete':       'Удаление устройства',
+    'recipe.update':       'Редактирование рецепта',
+    'recipe.import':       'Импорт рецептов (JSON)',
+    'beerxml.import':      'Импорт рецептов (BeerXML)',
+    'user.profile_update': 'Обновление профиля',
     'process.start':       'Запуск процесса',
     'process.stop':        'Остановка процесса',
     'settings.update':     'Изменение настроек',
+    'control.heater':      'Управление нагревателем',
+    'control.cooler':      'Управление охладителем',
+    'control.pump':        'Управление насосом',
+    'control.dephleg':     'Управление дефлегматором',
+    'control.emergency_stop': 'Аварийная остановка',
     'admin.ban':           'Заблокирован администратором',
     'admin.unban':         'Разблокирован администратором',
     'admin.reset_password': 'Сброс пароля администратором',
@@ -313,6 +323,12 @@ export default function AdminPanel() {
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <Link to="/" style={{ display: 'flex', alignItems: 'center', color: 'var(--text-secondary)', transition: 'color 0.2s' }}
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--primary-color)'}
+                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+                    >
+                        <ArrowLeft size={22} />
+                    </Link>
                     <Shield size={28} color="var(--primary-color)" />
                     <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Админ-панель</h1>
                 </div>
