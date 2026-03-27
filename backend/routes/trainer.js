@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 // Load seed SQL and tasks once at startup
 const seedSql = readFileSync(path.join(__dirname, '../db/trainer-seed.sql'), 'utf-8');
-const tasks = JSON.parse(readFileSync(path.join(__dirname, '../data/sql-tasks.json'), 'utf-8'));
+const tasks = JSON.parse(readFileSync(path.join(__dirname, '../db/sql-tasks.json'), 'utf-8'));
 
 /**
  * Create a fresh in-memory SQLite database with seed data.
