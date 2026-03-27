@@ -15,7 +15,6 @@ const Home = () => {
     { title: 'Брожение', icon: <FermentationIcon size={32} />, path: '/fermentation', color: '#4caf50' },
     { title: 'Дистилляция', icon: <DistillationIcon size={32} />, path: '/distillation', color: '#03a9f4' },
     { title: 'Ректификация', icon: <RectificationIcon size={32} />, path: '/rectification', color: '#e91e63' },
-    { title: 'SQL Trainer', icon: <Database size={32} />, path: '/trainer', color: '#90caf9' },
   ];
 
   const handleLogout = () => {
@@ -47,15 +46,26 @@ const Home = () => {
           {user?.username}
         </span>
         {user?.role === 'admin' && (
-          <Link
-            to="/admin"
-            title="Админ-панель"
-            style={{ color: '#ff9800', display: 'flex', opacity: 0.8, transition: 'opacity 0.2s' }}
-            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-            onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
-          >
-            <Shield size={20} />
-          </Link>
+          <>
+            <Link
+              to="/trainer"
+              title="SQL Trainer"
+              style={{ color: '#90caf9', display: 'flex', opacity: 0.8, transition: 'opacity 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+            >
+              <Database size={20} />
+            </Link>
+            <Link
+              to="/admin"
+              title="Админ-панель"
+              style={{ color: '#ff9800', display: 'flex', opacity: 0.8, transition: 'opacity 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+            >
+              <Shield size={20} />
+            </Link>
+          </>
         )}
         <Link
           to="/settings"
