@@ -65,7 +65,9 @@ OrangeBrew/
 │   │   ├── migrate.js         # Миграции: применяет файлы из migrations/
 │   │   ├── migrations/        # SQL-миграции (001_multitenancy, 002_sensors_table, 002_recipe_social_v1, 003_recipe_search, 004_audit_log)
 │   │   ├── seedAuth.js        # Создание дефолтного admin при первом запуске
-│   │   └── migrateDevices.js  # Миграция устройств (legacy)
+│   │   ├── migrateDevices.js  # Миграция устройств (legacy)
+│   │   ├── trainer-seed.sql   # DDL + тестовые данные для SQL Trainer (in-memory sandbox)
+│   │   └── sql-tasks.json     # 43 SQL-задачи для тренажёра (SELECT/JOIN/DML/Window)
 │   ├── services/
 │   │   ├── ProcessManager.js  # Конечный автомат варки (EventEmitter, per-user instance)
 │   │   └── telegram.js        # Telegram-уведомления
@@ -333,7 +335,7 @@ const log = logger.child({ module: 'Auth' });
 log.warn({ username, ip: req.ip }, 'Failed login attempt');
 ```
 
-**Модули:** `Auth`, `WS`, `DB`, `Server`, `Health`, `Telegram`, `PidTuner`, `MockSerial`, `RealSerial`, `Migration`, `Sessions`, `Social`, `Settings`, `Devices`, `Recipes`, `Users`, `ESP32`
+**Модули:** `Auth`, `WS`, `DB`, `Server`, `Health`, `Telegram`, `PidTuner`, `MockSerial`, `RealSerial`, `Migration`, `Sessions`, `Social`, `Settings`, `Devices`, `Recipes`, `Users`, `ESP32`, `Admin`, `Trainer`
 
 **Уровни логирования:**
 - `error` — критические ошибки (краш, safety stop PID)
@@ -383,6 +385,28 @@ Sub-компоненты (`SelectField`, `SettingRow`, `Toggle`) и объект
 `swagger-jsdoc` собирает `@openapi` JSDoc аннотации из всех route-файлов. `swagger-ui-express` отдаёт UI на `/api-docs`.
 Включается через `SWAGGER_ENABLED` env var (default: `true` в dev, `false` в prod).
 JSON-спецификация доступна на `/api-docs.json`.
+
+---
+
+### 16. SQL Trainer — интерактивный тренажёр
+**Backend:** `routes/trainer.js` — три эндпоинта (`/tasks`, `/schema`, `/execute`). Каждый запрос создаёт свежую **in-memory SQLite** БД из `db/trainer-seed.sql` — полная изоляция, нет доступа к production данным.
+
+**Данные тренажёра** (хранятся в `backend/db/`, **не в `data/`** — иначе Docker volume затирает):
+- `db/trainer-seed.sql` — DDL + тестовые данные (5 пользователей, 7 рецептов, 10 сессий, датчики, лайки, комментарии, устройства)
+- `db/sql-tasks.json` — 43 задачи с `expected_query` и опциональным `verify_query` для DML
+
+**Категории задач (14):** `SELECT`, `WHERE`, `ORDER BY`, `COUNT`, `JOIN`, `LEFT JOIN`, `GROUP BY`, `HAVING`, `Subquery`, `CASE`, `Window`, `INSERT`, `UPDATE`, `DELETE`
+
+**Проверка ответов:**
+- SELECT-задачи: сравнение результатов через `normalizeResults()` (case-insensitive ключи, сортировка строк)
+- DML-задачи (INSERT/UPDATE/DELETE): выполнение `verify_query` на пользовательской и эталонной БД, сравнение состояния после мутации
+
+**Frontend:** `SqlTrainer.jsx` — CodeMirror SQL editor с подсветкой SQLite, панель задач с фильтром по категориям, прогресс-бар, три панели:
+- **Schema** — интроспекция таблиц sandbox-БД (PRAGMA table_info)
+- **SQL Cheat Sheet** — шпаргалка по синтаксису (SELECT/WHERE/ORDER BY/JOIN/INSERT/UPDATE/DELETE/CASE, 10 секций)
+- **Free Mode** — выполнение произвольных SQL без привязки к задаче
+
+Прогресс решённых задач хранится в `localStorage` (`trainer_completed`).
 
 ---
 
