@@ -144,7 +144,7 @@ describe('POST /api/trainer/execute', () => {
         expect(res.status).toBe(200);
         const data = await res.json();
         expect(data.success).toBeNull(); // free-form — no pass/fail
-        expect(data.userResult.length).toBe(4);
+        expect(data.userResult.length).toBe(5);
         expect(data.userResult[0].username).toBe('brewmaster');
     });
 
@@ -197,13 +197,13 @@ describe('Database isolation', () => {
         const data1 = await res1.json();
         expect(data1.userResult[0].changes).toBe(1);
 
-        // Next request should still have only 4 users (fresh DB)
+        // Next request should still have only 5 users (fresh DB)
         const res2 = await api('/api/trainer/execute', {
             method: 'POST',
             body: { userQuery: 'SELECT COUNT(*) AS total FROM users' },
         });
         const data2 = await res2.json();
-        expect(data2.userResult[0].total).toBe(4);
+        expect(data2.userResult[0].total).toBe(5);
     });
 
     it('DELETE should not persist between requests', async () => {

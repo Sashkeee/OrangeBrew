@@ -86,7 +86,8 @@ INSERT INTO users (id, username, role, email, subscription_tier, created_at) VAL
 (1, 'brewmaster',  'admin', 'brewmaster@orangebrew.io', 'pro',   '2025-01-15 10:00:00'),
 (2, 'hophead',     'user',  'hophead@example.com',      'trial', '2025-02-20 14:30:00'),
 (3, 'maltking',    'user',  'maltking@example.com',     'free',  '2025-03-01 09:00:00'),
-(4, 'yeastwhisp',  'user',  'yeast@example.com',        'pro',   '2025-03-10 16:45:00');
+(4, 'yeastwhisp',  'user',  'yeast@example.com',        'pro',   '2025-03-10 16:45:00'),
+(5, 'tempuser',    'user',  'temp@example.com',         'free',  '2025-04-01 12:00:00');
 
 INSERT INTO recipes (id, name, style, og, fg, ibu, abv, batch_size, boil_time, ingredients, mash_steps, hop_additions, notes, is_public, likes_count, comments_count, user_id, created_at) VALUES
 (1, 'Pale Ale Classic',    'American Pale Ale', 1.050, 1.010, 35, 5.3, 20, 60,

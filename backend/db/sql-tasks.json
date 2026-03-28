@@ -228,5 +228,177 @@
     "hint": "DELETE FROM recipe_comments WHERE is_deleted = 1",
     "expected_query": "DELETE FROM recipe_comments WHERE is_deleted = 1",
     "verify_query": "SELECT COUNT(*) AS soft_deleted FROM recipe_comments WHERE is_deleted = 1"
+  },
+  {
+    "id": 26,
+    "category": "INSERT",
+    "difficulty": "easy",
+    "title": "Добавить рецепт",
+    "task_markdown": "Добавьте новый рецепт:\n- `name`: `'Amber Ale'`\n- `style`: `'American Amber Ale'`\n- `abv`: `5.5`\n- `ibu`: `30`\n- `user_id`: `2`",
+    "hint": "INSERT INTO recipes (name, style, abv, ibu, user_id) VALUES (...)",
+    "expected_query": "INSERT INTO recipes (name, style, abv, ibu, user_id) VALUES ('Amber Ale', 'American Amber Ale', 5.5, 30, 2)",
+    "verify_query": "SELECT name, style, abv, ibu, user_id FROM recipes WHERE name = 'Amber Ale'"
+  },
+  {
+    "id": 27,
+    "category": "INSERT",
+    "difficulty": "medium",
+    "title": "Добавить комментарий к рецепту",
+    "task_markdown": "Добавьте комментарий к рецепту с `id = 4` от пользователя с `id = 1`:\n- `text`: `'Nice session IPA, very drinkable!'`",
+    "hint": "INSERT INTO recipe_comments (recipe_id, user_id, text) VALUES (...)",
+    "expected_query": "INSERT INTO recipe_comments (recipe_id, user_id, text) VALUES (4, 1, 'Nice session IPA, very drinkable!')",
+    "verify_query": "SELECT recipe_id, user_id, text FROM recipe_comments WHERE recipe_id = 4 AND user_id = 1"
+  },
+  {
+    "id": 28,
+    "category": "DELETE",
+    "difficulty": "easy",
+    "title": "Удалить пользователя",
+    "task_markdown": "Удалите пользователя с `username = 'tempuser'` из таблицы `users`.",
+    "hint": "DELETE FROM users WHERE username = '...'",
+    "expected_query": "DELETE FROM users WHERE username = 'tempuser'",
+    "verify_query": "SELECT COUNT(*) AS remaining FROM users WHERE username = 'tempuser'"
+  },
+  {
+    "id": 29,
+    "category": "DELETE",
+    "difficulty": "medium",
+    "title": "Удалить рецепты без лайков",
+    "task_markdown": "Удалите все рецепты, у которых `likes_count = 0`.",
+    "hint": "DELETE FROM recipes WHERE likes_count = 0",
+    "expected_query": "DELETE FROM recipes WHERE likes_count = 0",
+    "verify_query": "SELECT COUNT(*) AS no_likes FROM recipes WHERE likes_count = 0"
+  },
+  {
+    "id": 30,
+    "category": "UPDATE",
+    "difficulty": "easy",
+    "title": "Переименовать устройство",
+    "task_markdown": "Переименуйте устройство `'Temp Monitor'` — измените его `name` на `'Kitchen Thermometer'`.",
+    "hint": "UPDATE devices SET name = '...' WHERE name = '...'",
+    "expected_query": "UPDATE devices SET name = 'Kitchen Thermometer' WHERE name = 'Temp Monitor'",
+    "verify_query": "SELECT id, name FROM devices WHERE id = 'ESP8266-11:22:33:44'"
+  },
+  {
+    "id": 31,
+    "category": "UPDATE",
+    "difficulty": "medium",
+    "title": "Обновить email пользователя",
+    "task_markdown": "Измените `email` пользователя `'hophead'` на `'hophead@newmail.com'`.",
+    "hint": "UPDATE users SET email = '...' WHERE username = '...'",
+    "expected_query": "UPDATE users SET email = 'hophead@newmail.com' WHERE username = 'hophead'",
+    "verify_query": "SELECT username, email FROM users WHERE username = 'hophead'"
+  },
+  {
+    "id": 32,
+    "category": "UPDATE",
+    "difficulty": "medium",
+    "title": "Скрыть рецепты с малым числом лайков",
+    "task_markdown": "Установите `is_public = 0` для всех рецептов, у которых `likes_count < 3`.",
+    "hint": "UPDATE recipes SET is_public = 0 WHERE likes_count < 3",
+    "expected_query": "UPDATE recipes SET is_public = 0 WHERE likes_count < 3",
+    "verify_query": "SELECT name, is_public, likes_count FROM recipes ORDER BY name"
+  },
+  {
+    "id": 33,
+    "category": "JOIN",
+    "difficulty": "easy",
+    "title": "Рецепты с авторами",
+    "task_markdown": "Выведите **название рецепта** и **имя автора** (`username`) для всех рецептов.\n\nИспользуйте `JOIN`.",
+    "hint": "JOIN users ON recipes.user_id = users.id",
+    "expected_query": "SELECT recipes.name, users.username FROM recipes JOIN users ON recipes.user_id = users.id"
+  },
+  {
+    "id": 34,
+    "category": "JOIN",
+    "difficulty": "medium",
+    "title": "Кто какие устройства имеет",
+    "task_markdown": "Выведите **имя пользователя** (`username`), **название устройства** (`devices.name`) и **статус** (`devices.status`) для всех устройств.",
+    "hint": "JOIN users ON devices.user_id = users.id",
+    "expected_query": "SELECT users.username, devices.name, devices.status FROM devices JOIN users ON devices.user_id = users.id"
+  },
+  {
+    "id": 35,
+    "category": "JOIN",
+    "difficulty": "medium",
+    "title": "Комментарии с именами авторов",
+    "task_markdown": "Выведите **имя пользователя**, **текст комментария** и **название рецепта** для всех **неудалённых** комментариев.\n\nИспользуйте два `JOIN`.",
+    "hint": "JOIN users + JOIN recipes, WHERE is_deleted = 0",
+    "expected_query": "SELECT users.username, recipe_comments.text, recipes.name FROM recipe_comments JOIN users ON recipe_comments.user_id = users.id JOIN recipes ON recipe_comments.recipe_id = recipes.id WHERE recipe_comments.is_deleted = 0"
+  },
+  {
+    "id": 36,
+    "category": "JOIN",
+    "difficulty": "hard",
+    "title": "Лайки с деталями",
+    "task_markdown": "Выведите **имя пользователя**, **название рецепта** и **дату лайка** (`recipe_likes.created_at`) для всех лайков. Отсортируйте по дате лайка по убыванию.",
+    "hint": "JOIN users + JOIN recipes через recipe_likes",
+    "expected_query": "SELECT users.username, recipes.name, recipe_likes.created_at FROM recipe_likes JOIN users ON recipe_likes.user_id = users.id JOIN recipes ON recipe_likes.recipe_id = recipes.id ORDER BY recipe_likes.created_at DESC"
+  },
+  {
+    "id": 37,
+    "category": "LEFT JOIN",
+    "difficulty": "medium",
+    "title": "Пользователи и их устройства",
+    "task_markdown": "Выведите **имя пользователя** и **количество устройств** (`device_count`). Включите пользователей **без устройств** (у них `device_count = 0`).",
+    "hint": "LEFT JOIN devices + COUNT + GROUP BY",
+    "expected_query": "SELECT users.username, COUNT(devices.id) AS device_count FROM users LEFT JOIN devices ON users.id = devices.user_id GROUP BY users.username"
+  },
+  {
+    "id": 38,
+    "category": "LEFT JOIN",
+    "difficulty": "hard",
+    "title": "Рецепты без сессий",
+    "task_markdown": "Выведите **названия** рецептов, для которых **не было ни одной сессии варки**.",
+    "hint": "LEFT JOIN brew_sessions ... WHERE brew_sessions.id IS NULL",
+    "expected_query": "SELECT recipes.name FROM recipes LEFT JOIN brew_sessions ON recipes.id = brew_sessions.recipe_id WHERE brew_sessions.id IS NULL"
+  },
+  {
+    "id": 39,
+    "category": "GROUP BY",
+    "difficulty": "hard",
+    "title": "Статистика сессий по пользователям",
+    "task_markdown": "Для каждого пользователя выведите **имя** (`username`), **общее количество сессий** (`total_sessions`) и **количество завершённых** (`completed`). Отсортируйте по `total_sessions` по убыванию.",
+    "hint": "JOIN + COUNT + SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)",
+    "expected_query": "SELECT users.username, COUNT(*) AS total_sessions, SUM(CASE WHEN brew_sessions.status = 'completed' THEN 1 ELSE 0 END) AS completed FROM brew_sessions JOIN users ON brew_sessions.user_id = users.id GROUP BY users.username ORDER BY total_sessions DESC"
+  },
+  {
+    "id": 40,
+    "category": "Subquery",
+    "difficulty": "hard",
+    "title": "Автор самого популярного рецепта",
+    "task_markdown": "Выведите **имя пользователя** (`username`), который является автором рецепта с **наибольшим количеством лайков**.",
+    "hint": "WHERE user_id = (SELECT user_id FROM recipes ORDER BY likes_count DESC LIMIT 1)",
+    "expected_query": "SELECT username FROM users WHERE id = (SELECT user_id FROM recipes ORDER BY likes_count DESC LIMIT 1)"
+  },
+  {
+    "id": 41,
+    "category": "DELETE",
+    "difficulty": "hard",
+    "title": "Удалить офлайн-устройства",
+    "task_markdown": "Удалите все устройства (`devices`) со статусом `'offline'`.",
+    "hint": "DELETE FROM devices WHERE status = '...'",
+    "expected_query": "DELETE FROM devices WHERE status = 'offline'",
+    "verify_query": "SELECT COUNT(*) AS offline FROM devices WHERE status = 'offline'"
+  },
+  {
+    "id": 42,
+    "category": "UPDATE",
+    "difficulty": "hard",
+    "title": "Повысить подписку активным пользователям",
+    "task_markdown": "Установите `subscription_tier = 'pro'` для всех пользователей, у которых есть **хотя бы 2 рецепта**.\n\nИспользуйте подзапрос.",
+    "hint": "UPDATE users SET ... WHERE id IN (SELECT user_id FROM recipes GROUP BY user_id HAVING COUNT(*) >= 2)",
+    "expected_query": "UPDATE users SET subscription_tier = 'pro' WHERE id IN (SELECT user_id FROM recipes GROUP BY user_id HAVING COUNT(*) >= 2)",
+    "verify_query": "SELECT username, subscription_tier FROM users ORDER BY username"
+  },
+  {
+    "id": 43,
+    "category": "INSERT",
+    "difficulty": "hard",
+    "title": "Скопировать рецепт другому пользователю",
+    "task_markdown": "Создайте копию рецепта `'Pale Ale Classic'` для пользователя с `id = 3`. Скопируйте поля `name`, `style`, `og`, `fg`, `ibu`, `abv` из оригинала, но добавьте суффикс `' (Copy)'` к названию.",
+    "hint": "INSERT INTO recipes (...) SELECT ... FROM recipes WHERE name = 'Pale Ale Classic'",
+    "expected_query": "INSERT INTO recipes (name, style, og, fg, ibu, abv, user_id) SELECT name || ' (Copy)', style, og, fg, ibu, abv, 3 FROM recipes WHERE name = 'Pale Ale Classic'",
+    "verify_query": "SELECT name, style, og, fg, ibu, abv, user_id FROM recipes WHERE name = 'Pale Ale Classic (Copy)'"
   }
 ]

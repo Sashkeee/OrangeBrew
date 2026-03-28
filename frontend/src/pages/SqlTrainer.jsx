@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, CheckCircle, XCircle, Database, ChevronDown, ChevronRight, Lightbulb, Table2, Code2 } from 'lucide-react';
+import { ArrowLeft, Play, CheckCircle, XCircle, Database, ChevronDown, ChevronRight, Lightbulb, Table2, Code2, BookOpen } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql, SQLite } from '@codemirror/lang-sql';
 import { trainerApi } from '../api/client';
 
-const CATEGORIES = ['all', 'SELECT', 'WHERE', 'ORDER BY', 'COUNT', 'JOIN', 'LEFT JOIN', 'GROUP BY', 'HAVING', 'Subquery', 'CASE', 'Window'];
+const CATEGORIES = ['all', 'SELECT', 'WHERE', 'ORDER BY', 'COUNT', 'JOIN', 'LEFT JOIN', 'GROUP BY', 'HAVING', 'Subquery', 'CASE', 'Window', 'INSERT', 'UPDATE', 'DELETE'];
 const DIFFICULTY_COLORS = { easy: '#4caf50', medium: '#ff9800', hard: '#f44336' };
 const DIFFICULTY_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 
@@ -22,6 +22,7 @@ export default function SqlTrainer() {
     const [category, setCategory] = useState('all');
     const [showHint, setShowHint] = useState(false);
     const [showSchema, setShowSchema] = useState(false);
+    const [showCheatSheet, setShowCheatSheet] = useState(false);
     const [completedTasks, setCompletedTasks] = useState(() => {
         try {
             return JSON.parse(localStorage.getItem('trainer_completed') || '[]');
@@ -97,24 +98,46 @@ export default function SqlTrainer() {
                         {completedCount}/{totalCount} solved
                     </span>
                 </div>
-                <button
-                    onClick={() => setShowSchema(v => !v)}
-                    style={{
-                        background: showSchema ? 'var(--primary-color)' : 'rgba(255,255,255,0.1)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: '#fff',
-                        borderRadius: '8px',
-                        padding: '0.5rem 1rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        fontSize: '0.85rem',
-                    }}
-                >
-                    <Table2 size={16} /> Schema
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        onClick={() => { setShowCheatSheet(v => !v); if (!showCheatSheet) setShowSchema(false); }}
+                        style={{
+                            background: showCheatSheet ? 'var(--primary-color)' : 'rgba(255,255,255,0.1)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: '#fff',
+                            borderRadius: '8px',
+                            padding: '0.5rem 1rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            fontSize: '0.85rem',
+                        }}
+                    >
+                        <BookOpen size={16} /> SQL
+                    </button>
+                    <button
+                        onClick={() => { setShowSchema(v => !v); if (!showSchema) setShowCheatSheet(false); }}
+                        style={{
+                            background: showSchema ? 'var(--primary-color)' : 'rgba(255,255,255,0.1)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            color: '#fff',
+                            borderRadius: '8px',
+                            padding: '0.5rem 1rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            fontSize: '0.85rem',
+                        }}
+                    >
+                        <Table2 size={16} /> Schema
+                    </button>
+                </div>
             </header>
+
+            {/* Cheat Sheet Panel */}
+            {showCheatSheet && <CheatSheet />}
 
             {/* Schema Panel */}
             {showSchema && <SchemaPanel schema={schema} />}
@@ -437,6 +460,150 @@ function markdownToHtml(md) {
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/`(.*?)`/g, '<code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px;font-size:0.85em">$1</code>')
         .replace(/\n/g, '<br/>');
+}
+
+// ─── SQL Cheat Sheet ──────────────────────────────────────
+const CHEAT_SECTIONS = [
+    {
+        title: 'SELECT — выборка данных',
+        items: [
+            { sql: 'SELECT * FROM users;', desc: 'Все столбцы из таблицы' },
+            { sql: 'SELECT name, abv FROM recipes;', desc: 'Конкретные столбцы' },
+            { sql: 'SELECT DISTINCT style FROM recipes;', desc: 'Уникальные значения' },
+            { sql: "SELECT name AS recipe_name FROM recipes;", desc: 'Переименование столбца (alias)' },
+        ],
+    },
+    {
+        title: 'WHERE — фильтрация',
+        items: [
+            { sql: 'SELECT * FROM recipes WHERE abv > 5;', desc: 'Сравнение: =, <>, <, >, <=, >=' },
+            { sql: "SELECT * FROM recipes WHERE style LIKE '%Stout%';", desc: 'Поиск по подстроке (% — любые символы)' },
+            { sql: 'SELECT * FROM recipes WHERE abv BETWEEN 4 AND 6;', desc: 'Диапазон значений' },
+            { sql: "SELECT * FROM recipes WHERE style IN ('IPA', 'Pilsner');", desc: 'Одно из списка значений' },
+            { sql: 'SELECT * FROM devices WHERE last_seen IS NULL;', desc: 'Проверка на NULL' },
+            { sql: "SELECT * FROM recipes WHERE abv > 5 AND is_public = 1;", desc: 'AND / OR — комбинация условий' },
+        ],
+    },
+    {
+        title: 'ORDER BY — сортировка',
+        items: [
+            { sql: 'SELECT * FROM recipes ORDER BY abv;', desc: 'По возрастанию (ASC — по умолчанию)' },
+            { sql: 'SELECT * FROM recipes ORDER BY abv DESC;', desc: 'По убыванию' },
+            { sql: 'SELECT * FROM recipes ORDER BY style, abv DESC;', desc: 'По нескольким столбцам' },
+            { sql: 'SELECT * FROM recipes ORDER BY abv DESC LIMIT 3;', desc: 'Топ-3 результата' },
+        ],
+    },
+    {
+        title: 'Агрегатные функции',
+        items: [
+            { sql: 'SELECT COUNT(*) FROM recipes;', desc: 'Количество строк' },
+            { sql: 'SELECT AVG(abv) FROM recipes;', desc: 'Среднее значение' },
+            { sql: 'SELECT SUM(likes_count) FROM recipes;', desc: 'Сумма' },
+            { sql: 'SELECT MIN(abv), MAX(abv) FROM recipes;', desc: 'Минимум и максимум' },
+            { sql: 'SELECT ROUND(AVG(abv), 1) AS avg_abv FROM recipes;', desc: 'Округление' },
+        ],
+    },
+    {
+        title: 'GROUP BY + HAVING',
+        items: [
+            { sql: 'SELECT style, COUNT(*) AS cnt FROM recipes GROUP BY style;', desc: 'Группировка с подсчётом' },
+            { sql: 'SELECT style, AVG(abv) FROM recipes GROUP BY style HAVING AVG(abv) > 5;', desc: 'Фильтр по агрегату (HAVING)' },
+        ],
+    },
+    {
+        title: 'JOIN — соединение таблиц',
+        items: [
+            { sql: 'SELECT r.name, u.username\nFROM recipes r\nJOIN users u ON r.user_id = u.id;', desc: 'INNER JOIN — только совпадения' },
+            { sql: 'SELECT u.username, COUNT(r.id) AS cnt\nFROM users u\nLEFT JOIN recipes r ON u.id = r.user_id\nGROUP BY u.username;', desc: 'LEFT JOIN — все из левой + совпадения' },
+            { sql: 'SELECT u.username, r.name, bs.type\nFROM brew_sessions bs\nJOIN users u ON bs.user_id = u.id\nJOIN recipes r ON bs.recipe_id = r.id;', desc: 'Несколько JOIN подряд' },
+        ],
+    },
+    {
+        title: 'INSERT — добавление',
+        items: [
+            { sql: "INSERT INTO users (username, email)\nVALUES ('john', 'john@mail.com');", desc: 'Добавить одну строку' },
+            { sql: "INSERT INTO recipes (name, style, user_id)\nSELECT name || ' (Copy)', style, 3\nFROM recipes WHERE id = 1;", desc: 'INSERT ... SELECT (копирование)' },
+        ],
+    },
+    {
+        title: 'UPDATE — изменение',
+        items: [
+            { sql: "UPDATE users SET email = 'new@mail.com'\nWHERE username = 'john';", desc: 'Обновить конкретную строку' },
+            { sql: 'UPDATE recipes SET is_public = 1;', desc: 'Обновить все строки (без WHERE)' },
+            { sql: "UPDATE recipes SET abv = ROUND(abv * 1.1, 2)\nWHERE style LIKE '%Stout%';", desc: 'Обновить с вычислением' },
+        ],
+    },
+    {
+        title: 'DELETE — удаление',
+        items: [
+            { sql: "DELETE FROM users WHERE username = 'john';", desc: 'Удалить конкретную строку' },
+            { sql: 'DELETE FROM recipes WHERE likes_count = 0;', desc: 'Удалить по условию' },
+            { sql: 'DELETE FROM brew_sessions\nWHERE user_id NOT IN (SELECT id FROM users);', desc: 'Удалить с подзапросом' },
+        ],
+    },
+    {
+        title: 'Подзапросы и CASE',
+        items: [
+            { sql: 'SELECT * FROM recipes\nWHERE likes_count > (SELECT AVG(likes_count) FROM recipes);', desc: 'Подзапрос в WHERE' },
+            { sql: 'SELECT * FROM users\nWHERE id IN (SELECT user_id FROM recipes);', desc: 'IN с подзапросом' },
+            { sql: "SELECT name,\n  CASE\n    WHEN abv < 5 THEN 'Light'\n    WHEN abv < 7 THEN 'Medium'\n    ELSE 'Strong'\n  END AS strength\nFROM recipes;", desc: 'CASE — условные выражения' },
+        ],
+    },
+];
+
+function CheatSheet() {
+    return (
+        <div style={{
+            marginBottom: '1.5rem',
+            padding: '1rem',
+            background: 'rgba(18,18,18,0.8)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '8px',
+        }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <BookOpen size={16} /> SQL Cheat Sheet
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '0.75rem' }}>
+                {CHEAT_SECTIONS.map(section => (
+                    <div key={section.title} style={{
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '6px',
+                        padding: '0.75rem',
+                    }}>
+                        <div style={{
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            color: '#ff9800',
+                            marginBottom: '0.5rem',
+                        }}>
+                            {section.title}
+                        </div>
+                        {section.items.map((item, i) => (
+                            <div key={i} style={{ marginBottom: i < section.items.length - 1 ? '0.5rem' : 0 }}>
+                                <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '2px' }}>
+                                    {item.desc}
+                                </div>
+                                <pre style={{
+                                    margin: 0,
+                                    padding: '0.35rem 0.5rem',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    borderRadius: '4px',
+                                    fontSize: '0.75rem',
+                                    fontFamily: 'monospace',
+                                    color: '#90caf9',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.4,
+                                }}>
+                                    {item.sql}
+                                </pre>
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 }
 
 // ─── Schema Panel ─────────────────────────────────────────
