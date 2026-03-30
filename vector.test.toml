@@ -99,7 +99,7 @@ method = "newline_delimited"
 
 [sinks.betterstack.auth]
 strategy = "bearer"
-token    = "HWuVWvojze9W3bHHR1gAmsuj"
+token    = "${BETTERSTACK_TOKEN}"
 
 # NOTE: request.headers must come AFTER [sinks.betterstack.request] in TOML
 [sinks.betterstack.request]
