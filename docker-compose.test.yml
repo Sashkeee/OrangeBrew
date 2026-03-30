@@ -1,6 +1,6 @@
 services:
   backend-test:
-    image: ghcr.io/sashkeee/anti-orangebrew/backend-test:latest
+    image: ghcr.io/sashkeee/orangebrew/backend-test:latest
     container_name: orangebrew-backend-test
     ports:
       - "3001:3001"
@@ -22,7 +22,7 @@ services:
           memory: 1G
 
   frontend-test:
-    image: ghcr.io/sashkeee/anti-orangebrew/frontend-test:latest
+    image: ghcr.io/sashkeee/orangebrew/frontend-test:latest
     container_name: orangebrew-frontend-test
     ports:
       - "8081:80"

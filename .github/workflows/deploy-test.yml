@@ -29,14 +29,14 @@ jobs:
         with:
           context: ./backend
           push: true
-          tags: ghcr.io/sashkeee/anti-orangebrew/backend-test:latest
+          tags: ghcr.io/sashkeee/orangebrew/backend-test:latest
 
       - name: Build and push frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          tags: ghcr.io/sashkeee/anti-orangebrew/frontend-test:latest
+          tags: ghcr.io/sashkeee/orangebrew/frontend-test:latest
 
       - name: Copy deploy files via scp
         uses: appleboy/scp-action@master
