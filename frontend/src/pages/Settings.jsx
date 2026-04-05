@@ -185,8 +185,8 @@ const SettingsPage = () => {
                     if (!local) return fresh;
                     return { ...fresh, name: local.name, color: local.color, offset: local.offset, enabled: local.enabled };
                 });
-                // Добавляем офлайн-датчики которых нет в свежем списке
-                prev.forEach(s => { if (!merged.find(m => m.address === s.address)) merged.push(s); });
+                // Не сохраняем офлайн-датчики из prev — сервер с TTL 60s является источником правды.
+                // Датчики исчезают из списка, когда ESP32 перестаёт отправлять данные.
                 return merged;
             });
         } catch { /* API may not be available */ }
@@ -204,15 +204,22 @@ const SettingsPage = () => {
     useEffect(() => {
         if (activeSection !== 'sensors' || !rawSensors.length) return;
         setDiscoveredSensors(prev => {
+            const now = Date.now();
             let changed = false;
             const next = prev.map(s => {
                 const live = rawSensors.find(r => r.address === s.address);
-                if (live && s.temp !== live.temp) { changed = true; return { ...s, temp: live.temp }; }
+                if (live) {
+                    // Update temp and lastSeen for sensors currently active on the bus
+                    if (s.temp !== live.temp || !s.lastSeen || now - s.lastSeen > 2000) {
+                        changed = true;
+                        return { ...s, temp: live.temp, lastSeen: now };
+                    }
+                }
                 return s;
             });
             for (const rs of rawSensors) {
                 if (!next.find(s => s.address === rs.address)) {
-                    next.push({ address: rs.address, temp: rs.temp, lastSeen: Date.now(), name: '', color: null, offset: 0, enabled: true, configured: false });
+                    next.push({ address: rs.address, temp: rs.temp, lastSeen: now, name: '', color: null, offset: 0, enabled: true, configured: false });
                     changed = true;
                 }
             }

@@ -7,10 +7,9 @@ const router = Router();
 // ─── In-memory stores ──────────────────────────────────────
 
 /**
- * Latest role-mapped sensor readings for REST polling.
- * @type {Record<string, {value: number, timestamp: number}>}
+ * Latest role-mapped sensor readings per user: Map<userId, Record<string, {value, timestamp}>>
  */
-let latestReadings = {};
+const latestReadingsMap = new Map();
 
 /**
  * Discovered sensors per user: Map<userId, Map<address, {temp, lastSeen}>>
@@ -21,19 +20,27 @@ const discoveredSensors = new Map();
 // ─── Exported update functions (called from server.js) ────
 
 /**
- * Update the latest role-mapped readings.
+ * Update the latest role-mapped readings for a specific user.
  * Filters out metadata keys — only stores actual sensor values.
+ * @param {object} readings
+ * @param {number} userId
  */
-export function updateSensorReadings(readings) {
+export function updateSensorReadings(readings, userId) {
+    if (userId == null) return;
     const now = Date.now();
     const skipKeys = ['type', 'timestamp', 'deviceId', 'sensors'];
+
+    if (!latestReadingsMap.has(userId)) {
+        latestReadingsMap.set(userId, {});
+    }
+    const userReadings = latestReadingsMap.get(userId);
 
     for (const [sensor, value] of Object.entries(readings)) {
         if (skipKeys.includes(sensor)) continue;
         if (typeof value === 'number') {
-            latestReadings[sensor] = { value, timestamp: now };
+            userReadings[sensor] = { value, timestamp: now };
         } else if (typeof value === 'object' && value !== null && 'value' in value) {
-            latestReadings[sensor] = { value: value.value, timestamp: now };
+            userReadings[sensor] = { value: value.value, timestamp: now };
         }
     }
 }
@@ -62,10 +69,13 @@ export function updateDiscoveredSensors(userId, sensors) {
 }
 
 /**
- * Get current role-mapped readings.
+ * Get current role-mapped readings for a specific user.
+ * @param {number} [userId]
+ * @returns {Record<string, {value: number, timestamp: number}>}
  */
-export function getSensorReadings() {
-    return latestReadings;
+export function getSensorReadings(userId = null) {
+    if (userId == null) return {};
+    return latestReadingsMap.get(userId) || {};
 }
 
 // ─── Routes ────────────────────────────────────────────────
@@ -102,7 +112,7 @@ export function getSensorReadings() {
  *                 column: { value: 42.1, timestamp: 1711360000000 }
  */
 router.get('/', (req, res) => {
-    res.json(latestReadings);
+    res.json(getSensorReadings(req.user.id));
 });
 
 /**
@@ -222,8 +232,11 @@ router.get('/discovered', authenticate, (req, res) => {
         configs = sensorQueries.getAll(userId);
     } catch { /* sensors table may not exist yet */ }
 
+    const TTL_MS = 60_000; // sensors not heard from in 60s are considered stale
+    const now = Date.now();
     const result = [];
     for (const [address, data] of userMap) {
+        if (now - data.lastSeen > TTL_MS) continue; // skip stale entries
         const cfg = configs.find(c => c.address === address);
         result.push({
             address,

@@ -347,11 +347,14 @@ async function main() {
         const isSensorMsg = data.type === 'sensors_raw' || data.type === 'sensors' || hasSensors;
         if (!isSensorMsg) return;
 
-        // Track discovered sensors (per-user, in-memory)
-        if (hasSensors && userId != null) {
+        // Reject sensor data from unauthenticated devices — prevents leaking to all users via broadcastAll
+        if (userId == null) {
+            logger.warn({ module: 'Server', deviceId }, 'Sensor data from unauthenticated device — ignored. Check device pairing.');
+            return;
+        }
+
+        if (hasSensors) {
             updateDiscoveredSensors(userId, data.sensors);
-        } else if (hasSensors && userId == null) {
-            logger.warn({ module: 'Server', deviceId }, 'Sensor data received from device with null user_id — discovered sensors not updated. Check device pairing.');
         }
 
         // Маппинг адресов сенсоров с user-scoped настройками
@@ -364,7 +367,7 @@ async function main() {
             lastHwDataLog = now;
         }
 
-        updateSensorReadings(mappedData);
+        updateSensorReadings(mappedData, userId);
         // Include raw sensors array in broadcast so frontend can show individual sensors
         // Per-user isolation: only broadcast to the device owner
         broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData }, userId);

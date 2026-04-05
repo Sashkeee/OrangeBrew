@@ -150,13 +150,26 @@ async function handlePairingMessage(ws, msg) {
     // Generate per-device api_key
     const api_key = randomUUID();
 
+    // If the hardware deviceId is already taken by a DIFFERENT user, assign a
+    // server-generated UUID so records don't collide (e.g. all ESP32s sending
+    // the same hardcoded deviceId in firmware).
+    const existing = deviceQueries.getById(deviceId);
+    const serverDeviceId = (existing && existing.user_id !== pairing.user_id)
+        ? randomUUID()
+        : deviceId;
+
+    if (existing && existing.user_id !== pairing.user_id) {
+        wsLog.warn({ hardwareId: deviceId, serverDeviceId, userId: pairing.user_id },
+            'Hardware deviceId already owned by another user — assigning new server ID');
+    }
+
     // Create/upsert device record owned by the user who initiated pairing
-    deviceQueries.upsert(deviceId, name, pairing.user_id, api_key);
+    deviceQueries.upsert(serverDeviceId, name, pairing.user_id, api_key);
 
     // Mark pairing as used
-    pairingQueries.markUsed(pairing.id, deviceId);
+    pairingQueries.markUsed(pairing.id, serverDeviceId);
 
-    wsLog.info({ deviceId, userId: pairing.user_id }, 'Device paired');
+    wsLog.info({ deviceId: serverDeviceId, hardwareId: deviceId, userId: pairing.user_id }, 'Device paired');
 
     // Tell ESP32 its new api_key (it should store in NVS and reconnect with type:'auth')
     ws.send(JSON.stringify({ type: 'paired', api_key }));
@@ -173,7 +186,7 @@ function setupUiClient(ws, userId) {
 
     ws.send(JSON.stringify({
         type: 'init',
-        sensors: getSensorReadings(),
+        sensors: getSensorReadings(userId),
         control: getControlState(),
     }));
 
