@@ -183,6 +183,9 @@ const SettingsPage = () => {
                 const merged = list.map(fresh => {
                     const local = prev.find(s => s.address === fresh.address);
                     if (!local) return fresh;
+                    // If local entry was auto-created by WS sync (configured: false)
+                    // but server has a saved config — prefer server values (name, role, etc.)
+                    if (!local.configured && fresh.configured) return fresh;
                     return { ...fresh, name: local.name, color: local.color, offset: local.offset, enabled: local.enabled, role: local.role };
                 });
                 // Не сохраняем офлайн-датчики из prev — сервер с TTL 60s является источником правды.
