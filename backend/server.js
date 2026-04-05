@@ -396,6 +396,12 @@ async function main() {
         // only configured sensors with a role appear on dashboard)
         const sensors = data.sensors || [];
         if (hasSensors) {
+            // DEBUG: log when a sensor address appears on a device owned by a different user
+            for (const s of sensors) {
+                if (s.address === '28ff36e07116047a' && deviceId !== 'ESP32S3_206EF1B0E020') {
+                    logger.warn({ module: 'Server', deviceId, userId, address: s.address }, 'Cross-talk? Sensor from test1 device seen on another device');
+                }
+            }
             updateDiscoveredSensors(userId, sensors, deviceId);
         }
 
