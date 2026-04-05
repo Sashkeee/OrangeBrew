@@ -24,6 +24,14 @@ const discoveredSensors = new Map();
  */
 const addressReporters = new Map();
 
+/**
+ * Per-device sensor baseline: tracks the minimum number of sensors
+ * a device has ever reported.  Intermittent cross-talk adds extra
+ * sensors to some scans — the minimum is the stable "native" count.
+ * Map<deviceId, { minCount: number, samples: number }>
+ */
+const deviceSensorBaseline = new Map();
+
 // ─── Exported update functions (called from server.js) ────
 
 /**
@@ -177,6 +185,48 @@ export function removeDeviceFromReporters(deviceId) {
             addressReporters.delete(address);
         }
     }
+}
+
+/**
+ * Cap the sensor array to the device's stable baseline count.
+ * If a device sometimes reports 1 sensor and sometimes 2, the stable
+ * count is 1 — the extra is intermittent cross-talk.
+ * Needs ≥ 3 samples before capping (avoids premature filtering on startup).
+ *
+ * @param {string} deviceId
+ * @param {Array} sensors
+ * @returns {Array} sensors trimmed to baseline length (or unchanged if baseline not yet established)
+ */
+export function applyDeviceBaseline(deviceId, sensors) {
+    if (!Array.isArray(sensors) || sensors.length === 0) return sensors;
+
+    const count = sensors.length;
+
+    if (!deviceSensorBaseline.has(deviceId)) {
+        deviceSensorBaseline.set(deviceId, { minCount: count, samples: 1 });
+        return sensors;
+    }
+
+    const baseline = deviceSensorBaseline.get(deviceId);
+    baseline.samples++;
+    if (count < baseline.minCount) {
+        baseline.minCount = count;
+    }
+
+    // Wait for a few samples before enforcing the cap
+    if (baseline.samples < 3) return sensors;
+
+    if (sensors.length > baseline.minCount) {
+        return sensors.slice(0, baseline.minCount);
+    }
+    return sensors;
+}
+
+/**
+ * Reset baseline for a device (called on device disconnect).
+ */
+export function resetDeviceBaseline(deviceId) {
+    deviceSensorBaseline.delete(deviceId);
 }
 
 // ─── Routes ────────────────────────────────────────────────

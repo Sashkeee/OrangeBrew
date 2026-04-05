@@ -33,7 +33,7 @@ import {
     getHardwareCount
 } from './ws/liveServer.js';
 import { settingsQueries, sensorQueries, deviceQueries, auditQueries } from './db/database.js';
-import { updateSensorReadings, updateDiscoveredSensors, trackSensorReporters, filterCrossTalkSensors } from './routes/sensors.js';
+import { updateSensorReadings, updateDiscoveredSensors, trackSensorReporters, filterCrossTalkSensors, applyDeviceBaseline } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
 import { mapSensors } from './utils/sensorMapper.js';
@@ -371,6 +371,9 @@ async function main() {
             } catch { userConfigAddresses = new Set(); }
 
             sensorsToUse = filterCrossTalkSensors(userId, data.sensors, userConfigAddresses);
+            // Cap to device baseline: if device alternates between 1 and 2 sensors,
+            // the stable count is 1 — extras are intermittent cross-talk
+            sensorsToUse = applyDeviceBaseline(deviceId, sensorsToUse);
             updateDiscoveredSensors(userId, sensorsToUse);
         }
 
