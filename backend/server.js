@@ -33,7 +33,7 @@ import {
     getHardwareCount
 } from './ws/liveServer.js';
 import { settingsQueries, sensorQueries, deviceQueries, auditQueries } from './db/database.js';
-import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
+import { updateSensorReadings, updateDiscoveredSensors, trackSensorReporters, filterCrossTalkSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
 import { mapSensors } from './utils/sensorMapper.js';
@@ -323,20 +323,24 @@ async function main() {
     });
 
     // Pass Serial sensor data (local USB / mock device)
+    // Mock serial is single-user — route to the PM that controls 'local_serial'
     serial.on('data', (data) => {
         if (data.type !== 'sensors') return; // ignore control/ack events from MockSerial
-        const deviceId = 'local_serial';
-        updateSensorReadings(data);
-        broadcastSensors({ deviceId, sensors: data.sensors });
-        telegram.updateSensorData(data);
 
-        // Роутим данные в тот PM, который контролирует local_serial
-        for (const pm of processManagers.values()) {
+        const deviceId = 'local_serial';
+        // Find the user whose PM owns local_serial (if any)
+        let ownerUserId = null;
+        for (const [uid, pm] of processManagers) {
             if (pm.state.deviceId === 'local_serial') {
+                ownerUserId = uid;
                 pm.handleSensorData(deviceId, data);
                 break;
             }
         }
+
+        updateSensorReadings(data, ownerUserId);
+        broadcastSensors({ deviceId, sensors: data.sensors, ...data }, ownerUserId);
+        telegram.updateSensorData(data);
     });
 
     // Pass WebSocket sensor data (WiFi ESP32 devices)
@@ -353,30 +357,43 @@ async function main() {
             return;
         }
 
+        // ── Cross-talk filtering ──────────────────────────────
+        // On a shared breadboard OneWire buses can pick up sensors from
+        // neighbouring ESPs.  Track which users report each address and
+        // filter out addresses that are also reported by other users.
+        let sensorsToUse = data.sensors || [];
         if (hasSensors) {
-            updateDiscoveredSensors(userId, data.sensors);
+            trackSensorReporters(userId, deviceId, data.sensors);
+
+            let userConfigAddresses;
+            try {
+                userConfigAddresses = new Set(sensorQueries.getAll(userId).map(c => c.address));
+            } catch { userConfigAddresses = new Set(); }
+
+            sensorsToUse = filterCrossTalkSensors(userId, data.sensors, userConfigAddresses);
+            updateDiscoveredSensors(userId, sensorsToUse);
         }
 
         // Маппинг адресов сенсоров с user-scoped настройками
-        const mappedData = mapSensors(deviceId, data, userId, sensorMapperDeps);
+        const filteredData = { ...data, sensors: sensorsToUse };
+        const mappedData = mapSensors(deviceId, filteredData, userId, sensorMapperDeps);
 
         // Periodic log
         const now = Date.now();
         if (now - lastHwDataLog > INTERVALS.HW_DATA_LOG_MS) {
-            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, sensors: data.sensors?.length || 0 }, 'WiFi sensor data received');
+            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, raw: data.sensors?.length || 0, filtered: sensorsToUse.length }, 'WiFi sensor data received');
             lastHwDataLog = now;
         }
 
         updateSensorReadings(mappedData, userId);
-        // Include raw sensors array in broadcast so frontend can show individual sensors
-        // Per-user isolation: only broadcast to the device owner
-        broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData }, userId);
+        // Include filtered sensors array in broadcast — per-user isolation
+        broadcastSensors({ deviceId, sensors: sensorsToUse, ...mappedData }, userId);
 
         // Роутим только в PM владельца устройства
         if (userId != null) {
             const pm = processManagers.get(userId);
             if (pm) {
-                const enrichedData = { ...mappedData, sensors: data.sensors };
+                const enrichedData = { ...mappedData, sensors: sensorsToUse };
                 pm.handleSensorData(deviceId, enrichedData);
             }
         }

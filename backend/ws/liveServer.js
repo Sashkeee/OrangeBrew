@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import url from 'url';
-import { getSensorReadings } from '../routes/sensors.js';
+import { getSensorReadings, removeDeviceFromReporters } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
 import { deviceQueries, pairingQueries } from '../db/database.js';
 import logger from '../utils/logger.js';
@@ -107,6 +107,7 @@ export function initWebSocket(server) {
         for (const [deviceId, entry] of hardwareClients) {
             if (entry.ws.isAlive === false) {
                 hardwareClients.delete(deviceId);
+                removeDeviceFromReporters(deviceId);
                 deviceQueries.updateStatus(deviceId, 'offline');
                 if (entry.userId != null) {
                     broadcastToUser(entry.userId, 'device_status', { deviceId, status: 'offline' });
@@ -233,6 +234,7 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
 
     ws.on('close', () => {
         hardwareClients.delete(deviceId);
+        removeDeviceFromReporters(deviceId);
         deviceQueries.updateStatus(deviceId, 'offline');
         if (userId != null) {
             broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
@@ -242,6 +244,7 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
 
     ws.on('error', () => {
         hardwareClients.delete(deviceId);
+        removeDeviceFromReporters(deviceId);
         deviceQueries.updateStatus(deviceId, 'offline');
         if (userId != null) {
             broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });

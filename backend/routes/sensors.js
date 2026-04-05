@@ -17,6 +17,13 @@ const latestReadingsMap = new Map();
  */
 const discoveredSensors = new Map();
 
+/**
+ * Cross-talk detection: tracks which users' devices report each sensor address.
+ * On a shared breadboard, OneWire buses can pick up sensors from neighbouring ESPs.
+ * Map<address, Map<userId, { deviceId, lastSeen }>>
+ */
+const addressReporters = new Map();
+
 // ─── Exported update functions (called from server.js) ────
 
 /**
@@ -76,6 +83,100 @@ export function updateDiscoveredSensors(userId, sensors) {
 export function getSensorReadings(userId = null) {
     if (userId == null) return {};
     return latestReadingsMap.get(userId) || {};
+}
+
+// ─── Cross-talk detection (called from server.js) ─────────
+
+/**
+ * Record that a user's device reported certain sensor addresses.
+ * Builds up the addressReporters map for cross-talk detection.
+ */
+export function trackSensorReporters(userId, deviceId, sensors) {
+    if (!Array.isArray(sensors)) return;
+    const now = Date.now();
+    for (const s of sensors) {
+        if (!s.address) continue;
+        if (!addressReporters.has(s.address)) {
+            addressReporters.set(s.address, new Map());
+        }
+        addressReporters.get(s.address).set(userId, { deviceId, lastSeen: now });
+    }
+}
+
+/**
+ * Filter out cross-talk sensors: addresses that are also reported by
+ * a DIFFERENT user's device within the TTL window.
+ *
+ * Priority:
+ *  1. User-configured addresses (sensors table) → always pass
+ *  2. Addresses reported ONLY by this user's devices → pass
+ *  3. Addresses reported by multiple users → blocked (cross-talk)
+ *
+ * Fallback: if ALL sensors would be blocked (full cross-talk with no
+ * configuration), return the single best candidate — the address with
+ * the fewest other active reporters.
+ *
+ * @param {number} userId
+ * @param {Array<{address: string, temp: number}>} sensors
+ * @param {Set<string>} userConfiguredAddresses
+ * @returns {Array<{address: string, temp: number}>}
+ */
+export function filterCrossTalkSensors(userId, sensors, userConfiguredAddresses = new Set()) {
+    if (!Array.isArray(sensors) || sensors.length === 0) return sensors;
+
+    const REPORTER_TTL = 30_000; // 30 s — reporter considered "active" within this window
+    const now = Date.now();
+
+    const filtered = sensors.filter(s => {
+        if (!s.address) return true;
+        if (userConfiguredAddresses.has(s.address)) return true;
+
+        const reporters = addressReporters.get(s.address);
+        if (!reporters) return true;
+
+        for (const [uid, info] of reporters) {
+            if (uid !== userId && (now - info.lastSeen) < REPORTER_TTL) {
+                return false; // another user's device also reports this → cross-talk
+            }
+        }
+        return true;
+    });
+
+    // Full cross-talk fallback: pick the sensor with fewest competing reporters
+    if (filtered.length === 0 && sensors.length > 0) {
+        let best = sensors[0];
+        let bestScore = Infinity;
+        for (const s of sensors) {
+            if (!s.address) continue;
+            const reporters = addressReporters.get(s.address);
+            const otherCount = reporters
+                ? [...reporters.entries()].filter(([uid, info]) => uid !== userId && (now - info.lastSeen) < REPORTER_TTL).length
+                : 0;
+            if (otherCount < bestScore) {
+                bestScore = otherCount;
+                best = s;
+            }
+        }
+        return [best];
+    }
+
+    return filtered;
+}
+
+/**
+ * Remove a device from the reporters map (called on device disconnect).
+ */
+export function removeDeviceFromReporters(deviceId) {
+    for (const [address, reporters] of addressReporters) {
+        for (const [userId, info] of reporters) {
+            if (info.deviceId === deviceId) {
+                reporters.delete(userId);
+            }
+        }
+        if (reporters.size === 0) {
+            addressReporters.delete(address);
+        }
+    }
 }
 
 // ─── Routes ────────────────────────────────────────────────
