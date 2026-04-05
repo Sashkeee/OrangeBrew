@@ -62,6 +62,7 @@ export function initWebSocket(server) {
             clearTimeout(authTimeout);
             try {
                 const msg = JSON.parse(raw.toString());
+                wsLog.info({ type: msg.type, deviceId: msg.deviceId || msg.device_id || 'N/A', hasApiKey: !!msg.api_key }, 'HW first message');
 
                 // ── Pairing flow: ESP32 has no api_key yet ──
                 if (msg.type === 'pair') {
@@ -86,8 +87,10 @@ export function initWebSocket(server) {
                     return;
                 }
 
+                wsLog.warn({ type: msg.type, deviceId: msg.deviceId || 'N/A' }, 'Unexpected first message type — expected auth or pair');
                 ws.close(4000, 'Expected type:auth or type:pair');
-            } catch {
+            } catch (err) {
+                wsLog.warn({ err: err.message, raw: raw.toString().substring(0, 200) }, 'HW first message parse error');
                 ws.close(4000, 'Invalid JSON');
             }
         });
@@ -232,19 +235,30 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
     });
 
     ws.on('close', () => {
-        hardwareClients.delete(deviceId);
-        deviceQueries.updateStatus(deviceId, 'offline');
-        if (userId != null) {
-            broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
+        // Only remove if WE are still the active connection for this deviceId.
+        // Prevents race condition: old connection close handler removing a newer connection
+        // that replaced it after a WiFi reconnect.
+        const current = hardwareClients.get(deviceId);
+        if (current?.ws === ws) {
+            hardwareClients.delete(deviceId);
+            deviceQueries.updateStatus(deviceId, 'offline');
+            if (userId != null) {
+                broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
+            }
+            wsLog.info({ deviceId }, 'Hardware disconnected');
+        } else {
+            wsLog.debug({ deviceId }, 'Stale connection closed (replaced by newer)');
         }
-        wsLog.info({ deviceId }, 'Hardware disconnected');
     });
 
     ws.on('error', () => {
-        hardwareClients.delete(deviceId);
-        deviceQueries.updateStatus(deviceId, 'offline');
-        if (userId != null) {
-            broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
+        const current = hardwareClients.get(deviceId);
+        if (current?.ws === ws) {
+            hardwareClients.delete(deviceId);
+            deviceQueries.updateStatus(deviceId, 'offline');
+            if (userId != null) {
+                broadcastToUser(userId, 'device_status', { deviceId, status: 'offline' });
+            }
         }
     });
 }
