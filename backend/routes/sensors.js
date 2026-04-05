@@ -12,25 +12,10 @@ const router = Router();
 const latestReadingsMap = new Map();
 
 /**
- * Discovered sensors per user: Map<userId, Map<address, {temp, lastSeen}>>
+ * Discovered sensors per user: Map<userId, Map<address, {temp, lastSeen, deviceId}>>
  * Populated whenever WiFi hardware sends sensor data.
  */
 const discoveredSensors = new Map();
-
-/**
- * Cross-talk detection: tracks which users' devices report each sensor address.
- * On a shared breadboard, OneWire buses can pick up sensors from neighbouring ESPs.
- * Map<address, Map<userId, { deviceId, lastSeen }>>
- */
-const addressReporters = new Map();
-
-/**
- * Per-device sensor baseline: tracks the minimum number of sensors
- * a device has ever reported.  Intermittent cross-talk adds extra
- * sensors to some scans — the minimum is the stable "native" count.
- * Map<deviceId, { minCount: number, samples: number }>
- */
-const deviceSensorBaseline = new Map();
 
 // ─── Exported update functions (called from server.js) ────
 
@@ -63,10 +48,13 @@ export function updateSensorReadings(readings, userId) {
 /**
  * Update the in-memory discovered sensors store.
  * Called from server.js whenever hardware sensor data arrives.
+ * Stores deviceId alongside each sensor entry so the frontend
+ * can show which device reported each sensor.
  * @param {number} userId
  * @param {Array<{address: string, temp: number}>} sensors
+ * @param {string} [deviceId]
  */
-export function updateDiscoveredSensors(userId, sensors) {
+export function updateDiscoveredSensors(userId, sensors, deviceId = null) {
     if (!Array.isArray(sensors) || sensors.length === 0) return;
     if (!discoveredSensors.has(userId)) {
         discoveredSensors.set(userId, new Map());
@@ -78,6 +66,7 @@ export function updateDiscoveredSensors(userId, sensors) {
             userMap.set(s.address, {
                 temp: parseFloat(s.temp ?? s.value ?? 0),
                 lastSeen: now,
+                deviceId,
             });
         }
     }
@@ -91,142 +80,6 @@ export function updateDiscoveredSensors(userId, sensors) {
 export function getSensorReadings(userId = null) {
     if (userId == null) return {};
     return latestReadingsMap.get(userId) || {};
-}
-
-// ─── Cross-talk detection (called from server.js) ─────────
-
-/**
- * Record that a user's device reported certain sensor addresses.
- * Builds up the addressReporters map for cross-talk detection.
- */
-export function trackSensorReporters(userId, deviceId, sensors) {
-    if (!Array.isArray(sensors)) return;
-    const now = Date.now();
-    for (const s of sensors) {
-        if (!s.address) continue;
-        if (!addressReporters.has(s.address)) {
-            addressReporters.set(s.address, new Map());
-        }
-        addressReporters.get(s.address).set(userId, { deviceId, lastSeen: now });
-    }
-}
-
-/**
- * Filter out cross-talk sensors: addresses that are also reported by
- * a DIFFERENT user's device within the TTL window.
- *
- * Priority:
- *  1. User-configured addresses (sensors table) → always pass
- *  2. Addresses reported ONLY by this user's devices → pass
- *  3. Addresses reported by multiple users → blocked (cross-talk)
- *
- * Fallback: if ALL sensors would be blocked (full cross-talk with no
- * configuration), return the single best candidate — the address with
- * the fewest other active reporters.
- *
- * @param {number} userId
- * @param {Array<{address: string, temp: number}>} sensors
- * @param {Set<string>} userConfiguredAddresses
- * @returns {Array<{address: string, temp: number}>}
- */
-export function filterCrossTalkSensors(userId, sensors, userConfiguredAddresses = new Set()) {
-    if (!Array.isArray(sensors) || sensors.length === 0) return sensors;
-
-    const REPORTER_TTL = 30_000; // 30 s — reporter considered "active" within this window
-    const now = Date.now();
-
-    const filtered = sensors.filter(s => {
-        if (!s.address) return true;
-        if (userConfiguredAddresses.has(s.address)) return true;
-
-        const reporters = addressReporters.get(s.address);
-        if (!reporters) return true;
-
-        for (const [uid, info] of reporters) {
-            if (uid !== userId && (now - info.lastSeen) < REPORTER_TTL) {
-                return false; // another user's device also reports this → cross-talk
-            }
-        }
-        return true;
-    });
-
-    // Full cross-talk fallback: pick the sensor with fewest competing reporters
-    if (filtered.length === 0 && sensors.length > 0) {
-        let best = sensors[0];
-        let bestScore = Infinity;
-        for (const s of sensors) {
-            if (!s.address) continue;
-            const reporters = addressReporters.get(s.address);
-            const otherCount = reporters
-                ? [...reporters.entries()].filter(([uid, info]) => uid !== userId && (now - info.lastSeen) < REPORTER_TTL).length
-                : 0;
-            if (otherCount < bestScore) {
-                bestScore = otherCount;
-                best = s;
-            }
-        }
-        return [best];
-    }
-
-    return filtered;
-}
-
-/**
- * Remove a device from the reporters map (called on device disconnect).
- */
-export function removeDeviceFromReporters(deviceId) {
-    for (const [address, reporters] of addressReporters) {
-        for (const [userId, info] of reporters) {
-            if (info.deviceId === deviceId) {
-                reporters.delete(userId);
-            }
-        }
-        if (reporters.size === 0) {
-            addressReporters.delete(address);
-        }
-    }
-}
-
-/**
- * Cap the sensor array to the device's stable baseline count.
- * If a device sometimes reports 1 sensor and sometimes 2, the stable
- * count is 1 — the extra is intermittent cross-talk.
- * Needs ≥ 3 samples before capping (avoids premature filtering on startup).
- *
- * @param {string} deviceId
- * @param {Array} sensors
- * @returns {Array} sensors trimmed to baseline length (or unchanged if baseline not yet established)
- */
-export function applyDeviceBaseline(deviceId, sensors) {
-    if (!Array.isArray(sensors) || sensors.length === 0) return sensors;
-
-    const count = sensors.length;
-
-    if (!deviceSensorBaseline.has(deviceId)) {
-        deviceSensorBaseline.set(deviceId, { minCount: count, samples: 1 });
-        return sensors;
-    }
-
-    const baseline = deviceSensorBaseline.get(deviceId);
-    baseline.samples++;
-    if (count < baseline.minCount) {
-        baseline.minCount = count;
-    }
-
-    // Wait for a few samples before enforcing the cap
-    if (baseline.samples < 3) return sensors;
-
-    if (sensors.length > baseline.minCount) {
-        return sensors.slice(0, baseline.minCount);
-    }
-    return sensors;
-}
-
-/**
- * Reset baseline for a device (called on device disconnect).
- */
-export function resetDeviceBaseline(deviceId) {
-    deviceSensorBaseline.delete(deviceId);
 }
 
 // ─── Routes ────────────────────────────────────────────────
@@ -335,7 +188,7 @@ router.get('/history', (req, res) => {
  *     summary: Discovered sensors with saved config
  *     description: >
  *       Returns sensors currently visible on the OneWire bus, merged with
- *       the user's saved configuration (name, color, offset, enabled).
+ *       the user's saved configuration (name, color, offset, enabled, role).
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -357,6 +210,10 @@ router.get('/history', (req, res) => {
  *                   lastSeen:
  *                     type: number
  *                     description: Unix timestamp (ms) of last reading
+ *                   deviceId:
+ *                     type: string
+ *                     nullable: true
+ *                     description: ID of the device that reported this sensor
  *                   name:
  *                     type: string
  *                     description: User-assigned sensor name
@@ -370,6 +227,10 @@ router.get('/history', (req, res) => {
  *                   enabled:
  *                     type: boolean
  *                     description: Whether the sensor is enabled
+ *                   role:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Sensor role (boiler, column, dephleg, output, ambient)
  *                   configured:
  *                     type: boolean
  *                     description: Whether a saved config exists for this sensor
@@ -393,10 +254,12 @@ router.get('/discovered', authenticate, (req, res) => {
             address,
             temp: data.temp,
             lastSeen: data.lastSeen,
+            deviceId: data.deviceId ?? null,
             name: cfg?.name ?? '',
             color: cfg?.color ?? null,
             offset: cfg?.offset ?? 0,
             enabled: cfg ? (cfg.enabled !== 0) : true,
+            role: cfg?.role ?? null,
             configured: !!cfg,
         });
     }
@@ -438,6 +301,8 @@ router.get('/config', authenticate, (req, res) => {
     }
 });
 
+const VALID_ROLES = ['boiler', 'column', 'dephleg', 'output', 'ambient'];
+
 /**
  * @openapi
  * /api/sensors/config:
@@ -447,7 +312,8 @@ router.get('/config', authenticate, (req, res) => {
  *     description: >
  *       Upserts sensor configurations for the current user. Each sensor is
  *       identified by its OneWire address. Existing configs are updated,
- *       new ones are created.
+ *       new ones are created. The `role` field assigns a dashboard role
+ *       (boiler, column, dephleg, output, ambient) or null for display-only.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -500,11 +366,13 @@ router.put('/config', authenticate, (req, res) => {
         const saved = [];
         for (const s of sensors) {
             if (!s.address) continue;
+            const role = VALID_ROLES.includes(s.role) ? s.role : null;
             const row = sensorQueries.upsert(userId, s.address, {
                 name: s.name ?? '',
                 color: s.color ?? null,
                 offset: parseFloat(s.offset) || 0,
                 enabled: s.enabled !== false ? 1 : 0,
+                role,
             });
             saved.push(row);
         }

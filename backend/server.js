@@ -33,7 +33,7 @@ import {
     getHardwareCount
 } from './ws/liveServer.js';
 import { settingsQueries, sensorQueries, deviceQueries, auditQueries } from './db/database.js';
-import { updateSensorReadings, updateDiscoveredSensors, trackSensorReporters, filterCrossTalkSensors, applyDeviceBaseline } from './routes/sensors.js';
+import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
 import { mapSensors } from './utils/sensorMapper.js';
@@ -277,6 +277,41 @@ async function main() {
     // Reset stale "online" statuses — devices will be marked online when they reconnect via WS
     deviceQueries.resetAllOnline();
 
+    // One-time migration: copy role assignments from legacy settings_v2 'sensors'
+    // into the new `sensors.role` column (added in migration 005).
+    try {
+        const users = settingsQueries.getAll?.() || [];
+        // settingsQueries.getAll returns all settings — we need per-user 'sensors' keys
+        // Instead, iterate known users and check their settings
+        const allUsers = (await import('./db/database.js')).userQueries.getAll();
+        for (const user of allUsers) {
+            try {
+                const legacyCfg = settingsQueries.get('sensors', user.id);
+                if (!legacyCfg) continue;
+                const parsed = typeof legacyCfg === 'string' ? JSON.parse(legacyCfg) : legacyCfg;
+                if (!parsed || typeof parsed !== 'object') continue;
+
+                for (const [role, config] of Object.entries(parsed)) {
+                    if (!config?.address || !config?.enabled) continue;
+                    // Only set role if sensor exists in the new table and has no role yet
+                    const existing = sensorQueries.getByAddress(user.id, config.address);
+                    if (existing && !existing.role) {
+                        sensorQueries.upsert(user.id, config.address, {
+                            name: existing.name || role,
+                            color: existing.color,
+                            offset: existing.offset ?? parseFloat(config.offset || 0),
+                            enabled: existing.enabled,
+                            role,
+                        });
+                        logger.info({ module: 'Migration', userId: user.id, address: config.address, role }, 'Legacy sensor role migrated');
+                    }
+                }
+            } catch { /* ignore per-user errors */ }
+        }
+    } catch (err) {
+        logger.warn({ module: 'Migration', err: err.message }, 'Legacy sensor role migration skipped');
+    }
+
     // HTTP + WebSocket server
     const server = createServer(app);
     initWebSocket(server);
@@ -315,7 +350,7 @@ async function main() {
     }
 
     // mapSensors dependencies — passed to utils/sensorMapper.js
-    const sensorMapperDeps = { sensorQueries, settingsQueries, logger };
+    const sensorMapperDeps = { sensorQueries, logger };
 
     // Global Serial error handler to prevent Node.js crashes if USB disconnects
     serial.on('error', (err) => {
@@ -357,48 +392,30 @@ async function main() {
             return;
         }
 
-        // ── Cross-talk filtering ──────────────────────────────
-        // On a shared breadboard OneWire buses can pick up sensors from
-        // neighbouring ESPs.  Track which users report each address and
-        // filter out addresses that are also reported by other users.
-        let sensorsToUse = data.sensors || [];
+        // Store all raw sensors as discovered (no cross-talk filtering —
+        // only configured sensors with a role appear on dashboard)
+        const sensors = data.sensors || [];
         if (hasSensors) {
-            trackSensorReporters(userId, deviceId, data.sensors);
-
-            let userConfigAddresses;
-            try {
-                userConfigAddresses = new Set(sensorQueries.getAll(userId).map(c => c.address));
-            } catch { userConfigAddresses = new Set(); }
-
-            sensorsToUse = filterCrossTalkSensors(userId, data.sensors, userConfigAddresses);
-            // Cap to device baseline: if device alternates between 1 and 2 sensors,
-            // the stable count is 1 — extras are intermittent cross-talk
-            sensorsToUse = applyDeviceBaseline(deviceId, sensorsToUse);
-            updateDiscoveredSensors(userId, sensorsToUse);
+            updateDiscoveredSensors(userId, sensors, deviceId);
         }
 
-        // Маппинг адресов сенсоров с user-scoped настройками
-        const filteredData = { ...data, sensors: sensorsToUse };
-        const mappedData = mapSensors(deviceId, filteredData, userId, sensorMapperDeps);
+        // Map configured sensor addresses to roles (boiler, column, etc.)
+        const mappedData = mapSensors(deviceId, { ...data, sensors }, userId, sensorMapperDeps);
 
         // Periodic log
         const now = Date.now();
         if (now - lastHwDataLog > INTERVALS.HW_DATA_LOG_MS) {
-            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, raw: data.sensors?.length || 0, filtered: sensorsToUse.length }, 'WiFi sensor data received');
+            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, raw: sensors.length }, 'WiFi sensor data received');
             lastHwDataLog = now;
         }
 
         updateSensorReadings(mappedData, userId);
-        // Include filtered sensors array in broadcast — per-user isolation
-        broadcastSensors({ deviceId, sensors: sensorsToUse, ...mappedData }, userId);
+        broadcastSensors({ deviceId, sensors, ...mappedData }, userId);
 
-        // Роутим только в PM владельца устройства
-        if (userId != null) {
-            const pm = processManagers.get(userId);
-            if (pm) {
-                const enrichedData = { ...mappedData, sensors: sensorsToUse };
-                pm.handleSensorData(deviceId, enrichedData);
-            }
+        // Route to ProcessManager of the device owner
+        const pm = processManagers.get(userId);
+        if (pm) {
+            pm.handleSensorData(deviceId, { ...mappedData, sensors });
         }
     });
 

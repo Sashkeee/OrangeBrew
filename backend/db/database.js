@@ -644,21 +644,29 @@ export const sensorQueries = {
     /**
      * Upsert a sensor config. Returns the sensor row.
      */
-    upsert: (userId, address, { name = '', color, offset = 0, enabled = 1 } = {}) => {
+    upsert: (userId, address, { name = '', color, offset = 0, enabled = 1, role = null } = {}) => {
         // Assign a default color based on current count if not provided
         if (!color) {
             const count = queryOne('SELECT COUNT(*) as cnt FROM sensors WHERE user_id = ?', [userId])?.cnt || 0;
             color = SENSOR_DEFAULT_COLORS[count % SENSOR_DEFAULT_COLORS.length];
         }
+        // Clear role from any other sensor of this user before assigning
+        if (role) {
+            runSql(
+                'UPDATE sensors SET role = NULL WHERE user_id = ? AND role = ? AND address != ?',
+                [userId, role, address]
+            );
+        }
         runSql(
-            `INSERT INTO sensors (user_id, address, name, color, offset, enabled)
-             VALUES (?, ?, ?, ?, ?, ?)
+            `INSERT INTO sensors (user_id, address, name, color, offset, enabled, role)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(user_id, address) DO UPDATE SET
                name    = excluded.name,
                color   = excluded.color,
                offset  = excluded.offset,
-               enabled = excluded.enabled`,
-            [userId, address, name, color, offset, enabled ? 1 : 0]
+               enabled = excluded.enabled,
+               role    = excluded.role`,
+            [userId, address, name, color, offset, enabled ? 1 : 0, role]
         );
         return queryOne('SELECT * FROM sensors WHERE user_id = ? AND address = ?', [userId, address]);
     },

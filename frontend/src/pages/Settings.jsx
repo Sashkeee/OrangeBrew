@@ -183,7 +183,7 @@ const SettingsPage = () => {
                 const merged = list.map(fresh => {
                     const local = prev.find(s => s.address === fresh.address);
                     if (!local) return fresh;
-                    return { ...fresh, name: local.name, color: local.color, offset: local.offset, enabled: local.enabled };
+                    return { ...fresh, name: local.name, color: local.color, offset: local.offset, enabled: local.enabled, role: local.role };
                 });
                 // Не сохраняем офлайн-датчики из prev — сервер с TTL 60s является источником правды.
                 // Датчики исчезают из списка, когда ESP32 перестаёт отправлять данные.
@@ -244,6 +244,7 @@ const SettingsPage = () => {
                 color: s.color || '#FF6B35',
                 offset: parseFloat(s.offset) || 0,
                 enabled: s.enabled !== false,
+                role: s.role || null,
             })));
             setSensorsDirty(false);
             setSensorsSaved(true);
@@ -601,6 +602,32 @@ const SettingsPage = () => {
                                                             onChange={e => updateDiscoveredSensor(sensor.address, 'offset', parseFloat(e.target.value) || 0)}
                                                             style={{ ...inputStyle, textAlign: 'center' }}
                                                         />
+                                                    </div>
+                                                </div>
+                                                <div style={{
+                                                    padding: '0 1rem 0.8rem', background: 'rgba(0,0,0,0.25)',
+                                                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem',
+                                                    alignItems: 'end',
+                                                }}>
+                                                    <div>
+                                                        <label style={labelStyle}>Роль на дашборде</label>
+                                                        <SelectField
+                                                            value={sensor.role || ''}
+                                                            onChange={e => updateDiscoveredSensor(sensor.address, 'role', e.target.value || null)}
+                                                            width="100%"
+                                                        >
+                                                            <option value="">Без роли</option>
+                                                            <option value="boiler" disabled={discoveredSensors.some(s => s.role === 'boiler' && s.address !== sensor.address)}>Куб</option>
+                                                            <option value="column" disabled={discoveredSensors.some(s => s.role === 'column' && s.address !== sensor.address)}>Колонна</option>
+                                                            <option value="dephleg" disabled={discoveredSensors.some(s => s.role === 'dephleg' && s.address !== sensor.address)}>Дефлегматор</option>
+                                                            <option value="output" disabled={discoveredSensors.some(s => s.role === 'output' && s.address !== sensor.address)}>Выход</option>
+                                                            <option value="ambient" disabled={discoveredSensors.some(s => s.role === 'ambient' && s.address !== sensor.address)}>Комната</option>
+                                                        </SelectField>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.7rem', color: '#555', paddingBottom: '0.3rem' }}>
+                                                        {sensor.deviceId && (
+                                                            <span>Устройство: <span style={{ fontFamily: 'var(--font-mono)', color: '#888' }}>{sensor.deviceId}</span></span>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div style={{ padding: '0.4rem 1rem 0.7rem', background: 'rgba(0,0,0,0.25)', fontSize: '0.7rem', color: '#555' }}>
