@@ -2,7 +2,7 @@
 
 Полная схема SQLite базы данных. Файл DDL: `backend/db/schema.sql`. Запросы: `backend/db/database.js`.
 Миграции (добавление колонок для мультитенантности): `backend/db/migrate.js`.
-Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`, `004_audit_log.sql`.
+Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`, `004_audit_log.sql`, `005_sensor_roles.sql`.
 
 ---
 
@@ -262,6 +262,7 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 | `color` | TEXT NOT NULL | Hex-цвет для графиков, default `'#FF6B35'` (одна из 10 цветов палитры) |
 | `offset` | REAL NOT NULL | Калибровочное смещение (°C), default `0` |
 | `enabled` | INTEGER NOT NULL | 0/1, default `1` |
+| `role` | TEXT | Роль датчика (`'boiler'`, `'column'` и т.д.), nullable. Добавлено через `005_sensor_roles.sql` |
 | `created_at` | TEXT | datetime('now') |
 
 **UNIQUE:** `(user_id, address)`
@@ -269,7 +270,7 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 **Query-объект:** `sensorQueries`
 - `getAll(userId)` — все настроенные датчики пользователя, `ORDER BY id ASC`
 - `getByAddress(userId, address)` — датчик по адресу для пользователя
-- `upsert(userId, address, { name, color, offset, enabled })` — INSERT OR UPDATE с цветом по умолчанию из палитры если не указан
+- `upsert(userId, address, { name, color, offset, enabled, role })` — INSERT OR UPDATE с цветом по умолчанию из палитры если не указан; если `role` не передан — поле очищается (NULL)
 - `delete(userId, address)` — удалить конфигурацию датчика
 
 **Индекс:**
@@ -469,10 +470,19 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 | Плата | OneWire DATA | HEATER_PIN | PUMP_PIN | LED_PIN | BOOT_PIN |
 |-------|-------------|-----------|---------|--------|---------|
 | **Node32** (ESP32) | GPIO **13** | GPIO 14 | GPIO 12 | — | GPIO 0 |
-| **ESP32-C3 Super Mini** | GPIO **5** | GPIO 3 | GPIO 4 | GPIO 8 (HIGH active) | GPIO 9 |
+| **ESP32-C3 Super Mini** | GPIO **5** | GPIO 6 | GPIO 7 | GPIO 8 (HIGH active) | GPIO 9 |
+| **ESP32-S3 Super Mini** | GPIO **4** | GPIO 5 | GPIO 6 | GPIO 21 (HIGH active) | GPIO 0 |
 | **ESP8266** | GPIO **14** (D5) | GPIO 13 (D7) | GPIO 12 (D6) | GPIO 2 D4 (LOW active) | GPIO 0 (D3) |
 
 Резистор подтяжки OneWire: **4.7 кОм** между DATA и 3.3V. Один резистор на шину (не на датчик).
+
+### ESP32-S3 LED поведение (firmware v1.2.0)
+
+| Состояние | Паттерн |
+|-----------|---------|
+| WebSocket подключён | Горит постоянно |
+| WiFi OK, WS не подключён | Двойная вспышка + 1с пауза (цикл: 100мс/100мс/100мс/1000мс) |
+| Нет WiFi / режим портала | 2 раза в секунду (250мс вкл / 250мс выкл) |
 
 ---
 

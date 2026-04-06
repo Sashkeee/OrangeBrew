@@ -277,6 +277,41 @@ async function main() {
     // Reset stale "online" statuses — devices will be marked online when they reconnect via WS
     deviceQueries.resetAllOnline();
 
+    // One-time migration: copy role assignments from legacy settings_v2 'sensors'
+    // into the new `sensors.role` column (added in migration 005).
+    try {
+        const users = settingsQueries.getAll?.() || [];
+        // settingsQueries.getAll returns all settings — we need per-user 'sensors' keys
+        // Instead, iterate known users and check their settings
+        const allUsers = (await import('./db/database.js')).userQueries.getAll();
+        for (const user of allUsers) {
+            try {
+                const legacyCfg = settingsQueries.get('sensors', user.id);
+                if (!legacyCfg) continue;
+                const parsed = typeof legacyCfg === 'string' ? JSON.parse(legacyCfg) : legacyCfg;
+                if (!parsed || typeof parsed !== 'object') continue;
+
+                for (const [role, config] of Object.entries(parsed)) {
+                    if (!config?.address || !config?.enabled) continue;
+                    // Only set role if sensor exists in the new table and has no role yet
+                    const existing = sensorQueries.getByAddress(user.id, config.address);
+                    if (existing && !existing.role) {
+                        sensorQueries.upsert(user.id, config.address, {
+                            name: existing.name || role,
+                            color: existing.color,
+                            offset: existing.offset ?? parseFloat(config.offset || 0),
+                            enabled: existing.enabled,
+                            role,
+                        });
+                        logger.info({ module: 'Migration', userId: user.id, address: config.address, role }, 'Legacy sensor role migrated');
+                    }
+                }
+            } catch { /* ignore per-user errors */ }
+        }
+    } catch (err) {
+        logger.warn({ module: 'Migration', err: err.message }, 'Legacy sensor role migration skipped');
+    }
+
     // HTTP + WebSocket server
     const server = createServer(app);
     initWebSocket(server);
@@ -315,7 +350,7 @@ async function main() {
     }
 
     // mapSensors dependencies — passed to utils/sensorMapper.js
-    const sensorMapperDeps = { sensorQueries, settingsQueries, logger };
+    const sensorMapperDeps = { sensorQueries, logger };
 
     // Global Serial error handler to prevent Node.js crashes if USB disconnects
     serial.on('error', (err) => {
@@ -323,20 +358,24 @@ async function main() {
     });
 
     // Pass Serial sensor data (local USB / mock device)
+    // Mock serial is single-user — route to the PM that controls 'local_serial'
     serial.on('data', (data) => {
         if (data.type !== 'sensors') return; // ignore control/ack events from MockSerial
-        const deviceId = 'local_serial';
-        updateSensorReadings(data);
-        broadcastSensors({ deviceId, sensors: data.sensors });
-        telegram.updateSensorData(data);
 
-        // Роутим данные в тот PM, который контролирует local_serial
-        for (const pm of processManagers.values()) {
+        const deviceId = 'local_serial';
+        // Find the user whose PM owns local_serial (if any)
+        let ownerUserId = null;
+        for (const [uid, pm] of processManagers) {
             if (pm.state.deviceId === 'local_serial') {
+                ownerUserId = uid;
                 pm.handleSensorData(deviceId, data);
                 break;
             }
         }
+
+        updateSensorReadings(data, ownerUserId);
+        broadcastSensors({ deviceId, sensors: data.sensors, ...data }, ownerUserId);
+        telegram.updateSensorData(data);
     });
 
     // Pass WebSocket sensor data (WiFi ESP32 devices)
@@ -347,35 +386,42 @@ async function main() {
         const isSensorMsg = data.type === 'sensors_raw' || data.type === 'sensors' || hasSensors;
         if (!isSensorMsg) return;
 
-        // Track discovered sensors (per-user, in-memory)
-        if (hasSensors && userId != null) {
-            updateDiscoveredSensors(userId, data.sensors);
-        } else if (hasSensors && userId == null) {
-            logger.warn({ module: 'Server', deviceId }, 'Sensor data received from device with null user_id — discovered sensors not updated. Check device pairing.');
+        // Reject sensor data from unauthenticated devices — prevents leaking to all users via broadcastAll
+        if (userId == null) {
+            logger.warn({ module: 'Server', deviceId }, 'Sensor data from unauthenticated device — ignored. Check device pairing.');
+            return;
         }
 
-        // Маппинг адресов сенсоров с user-scoped настройками
-        const mappedData = mapSensors(deviceId, data, userId, sensorMapperDeps);
+        // Store all raw sensors as discovered (no cross-talk filtering —
+        // only configured sensors with a role appear on dashboard)
+        const sensors = data.sensors || [];
+        if (hasSensors) {
+            // DEBUG: log when a sensor address appears on a device owned by a different user
+            for (const s of sensors) {
+                if (s.address === '28ff36e07116047a' && deviceId !== 'ESP32S3_206EF1B0E020') {
+                    logger.warn({ module: 'Server', deviceId, userId, address: s.address }, 'Cross-talk? Sensor from test1 device seen on another device');
+                }
+            }
+            updateDiscoveredSensors(userId, sensors, deviceId);
+        }
+
+        // Map configured sensor addresses to roles (boiler, column, etc.)
+        const mappedData = mapSensors(deviceId, { ...data, sensors }, userId, sensorMapperDeps);
 
         // Periodic log
         const now = Date.now();
         if (now - lastHwDataLog > INTERVALS.HW_DATA_LOG_MS) {
-            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, sensors: data.sensors?.length || 0 }, 'WiFi sensor data received');
+            logger.info({ module: 'Server', deviceId, userId, boiler: mappedData.boiler, raw: sensors.length }, 'WiFi sensor data received');
             lastHwDataLog = now;
         }
 
-        updateSensorReadings(mappedData);
-        // Include raw sensors array in broadcast so frontend can show individual sensors
-        // Per-user isolation: only broadcast to the device owner
-        broadcastSensors({ deviceId, sensors: data.sensors, ...mappedData }, userId);
+        updateSensorReadings(mappedData, userId);
+        broadcastSensors({ deviceId, sensors, ...mappedData }, userId);
 
-        // Роутим только в PM владельца устройства
-        if (userId != null) {
-            const pm = processManagers.get(userId);
-            if (pm) {
-                const enrichedData = { ...mappedData, sensors: data.sensors };
-                pm.handleSensorData(deviceId, enrichedData);
-            }
+        // Route to ProcessManager of the device owner
+        const pm = processManagers.get(userId);
+        if (pm) {
+            pm.handleSensorData(deviceId, { ...mappedData, sensors });
         }
     });
 

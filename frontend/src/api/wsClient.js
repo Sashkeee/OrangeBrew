@@ -18,14 +18,23 @@ class WsClient {
 
     /**
      * Connect to the WebSocket server.
+     * If the JWT token changed (user switched), forces a reconnect.
      */
     connect() {
+        const token = localStorage.getItem('orangebrew_token');
+
         if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-            return;
+            // Token changed (user logged out/in or another tab changed user) — reconnect
+            if (this._token !== token) {
+                this.disconnect();
+            } else {
+                return;
+            }
         }
 
+        this._token = token;
+
         try {
-            const token = localStorage.getItem('orangebrew_token');
             const wsUrlWithAuth = token ? `${WS_URL}?token=${token}` : WS_URL;
             this.ws = new WebSocket(wsUrlWithAuth);
 

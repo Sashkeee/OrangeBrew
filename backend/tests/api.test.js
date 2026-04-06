@@ -309,7 +309,7 @@ describe('Sessions API', () => {
 
 describe('Sensors API', () => {
     it('GET /api/sensors — should return current readings', async () => {
-        updateSensorReadings({ boiler: 65.5, column: 60.0 });
+        updateSensorReadings({ boiler: 65.5, column: 60.0 }, 1);
         const res = await api('/api/sensors');
         expect(res.status).toBe(200);
         const data = await res.json();

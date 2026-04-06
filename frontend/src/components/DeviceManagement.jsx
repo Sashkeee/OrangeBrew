@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Cpu, Edit2, Check, X, Trash2, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Cpu, Edit2, Check, X, Trash2, RefreshCw, Wifi, WifiOff, PlusCircle } from 'lucide-react';
 import { deviceApi } from '../api/client';
 
 /**
@@ -12,6 +13,7 @@ import { deviceApi } from '../api/client';
  * - Last fetch error is shown to user
  */
 export default function DeviceManagement() {
+    const navigate = useNavigate();
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -84,27 +86,49 @@ export default function DeviceManagement() {
                         </div>
                     )}
                 </div>
-                <button
-                    onClick={handleRefresh}
-                    disabled={loading}
-                    title="Обновить список"
-                    style={{
-                        background: 'none',
-                        border: '1px solid #333',
-                        borderRadius: '6px',
-                        color: loading ? '#444' : 'var(--accent-blue)',
-                        cursor: loading ? 'default' : 'pointer',
-                        padding: '0.4rem 0.6rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.3rem',
-                        fontSize: '0.75rem',
-                        transition: 'all 0.2s'
-                    }}
-                >
-                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                    Обновить
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        onClick={() => navigate('/devices/pair')}
+                        title="Подключить новое устройство"
+                        style={{
+                            background: 'none',
+                            border: '1px solid #2ecc71',
+                            borderRadius: '6px',
+                            color: '#2ecc71',
+                            cursor: 'pointer',
+                            padding: '0.4rem 0.6rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.75rem',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        <PlusCircle size={14} />
+                        Подключить
+                    </button>
+                    <button
+                        onClick={handleRefresh}
+                        disabled={loading}
+                        title="Обновить список"
+                        style={{
+                            background: 'none',
+                            border: '1px solid #333',
+                            borderRadius: '6px',
+                            color: loading ? '#444' : 'var(--accent-blue)',
+                            cursor: loading ? 'default' : 'pointer',
+                            padding: '0.4rem 0.6rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.75rem',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                        Обновить
+                    </button>
+                </div>
             </div>
 
             {/* Error banner */}

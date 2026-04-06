@@ -1,255 +1,277 @@
-# 🍺 OrangeBrew
+# OrangeBrew
 
-**OrangeBrew** — система управления и мониторинга процессов пивоварения и дистилляции.  
-Позволяет контролировать затирание, кипячение, ферментацию, дистилляцию и ректификацию через единый веб-интерфейс с реальным оборудованием или программным симулятором.
+**OrangeBrew** — IoT-платформа для автоматизации пивоварения и дистилляции.
+Управление процессом через единый веб-интерфейс: затирание, кипячение, ферментация, дистилляция, ректификация.
+ESP32/ESP8266 собирают данные с датчиков DS18B20, backend управляет ПИД-регулятором и ведёт сценарий варки.
 
----
-
-## 📦 Стек технологий
-
-| Слой        | Технологии                                                           |
-|-------------|----------------------------------------------------------------------|
-| **Frontend**| React 19, Vite, React Router, Recharts, Framer Motion, Lucide React |
-| **Backend** | Node.js (ESM), Express.js, WebSocket (`ws`), CORS, dotenv           |
-| **Database**| SQLite через `sql.js` (in-process, без нативных зависимостей)        |
-| **Hardware**| ESP32 через serial или `MockSerial` (программная симуляция)           |
-| **PID**     | Собственный PID-контроллер для автоматического управления нагревом    |
-| **Infrastructure**| Docker, Docker Compose, Caddy (Reverse Proxy), GitHub Actions  |
-| **Тесты**   | Vitest, @testing-library/react, jsdom                                |
+Multi-tenant SaaS архитектура: данные изолированы по пользователям, каждый пользователь имеет свой набор устройств и процессов.
 
 ---
 
-## 🗂 Структура проекта
+## Стек технологий
+
+| Слой | Технологии |
+|------|-----------|
+| **Frontend** | React 19, Vite 7, React Router 7, Recharts, Framer Motion, Lucide React, CodeMirror |
+| **Backend** | Node.js (ESM), Express 4, WebSocket (`ws`), JWT auth, bcrypt, Pino structured logging |
+| **Database** | SQLite (better-sqlite3), FTS5 полнотекстовый поиск |
+| **Hardware** | ESP32 / ESP32-C3 / ESP32-S3 / ESP8266 через WiFi WebSocket или MockSerial (симуляция) |
+| **PID** | PID-контроллер с двумя режимами (heating/holding), Kalman-фильтр, автотюнинг (relay-метод) |
+| **Infrastructure** | Docker, Caddy (reverse proxy), GitHub Actions CI/CD, Vector + Betterstack (логи) |
+| **Тесты** | Vitest, @testing-library/react, Playwright |
+
+---
+
+## Быстрый старт
+
+```bash
+# 1. Backend
+cd backend
+npm install
+cp .env.example .env   # настроить JWT_SECRET
+node --watch server.js  # http://localhost:3001
+
+# 2. Frontend (в другом терминале)
+cd frontend
+npm install
+npm run dev             # http://localhost:5173
+```
+
+При первом запуске создаётся пользователь `admin` (пароль: `admin`). Измените пароль после входа.
+
+---
+
+## Структура проекта
 
 ```
 OrangeBrew/
 ├── backend/
-│   ├── server.js              # Точка входа: Express + WebSocket + Serial
-│   ├── .env                   # Переменные окружения
+│   ├── server.js              # Точка входа: Express + WS + per-user ProcessManager
+│   ├── swagger.js             # Swagger/OpenAPI конфигурация
+│   ├── config/                # env.js (валидация), constants.js (именованные константы)
+│   ├── utils/                 # logger.js (Pino), audit.js, sensorMapper.js, scaleRecipe.js
+│   ├── beerxml/               # BeerXML импорт/экспорт (parser, generator, mapper)
 │   ├── db/
-│   │   ├── database.js        # Инициализация БД и все query-функции
-│   │   └── schema.sql         # SQL-схема таблиц
-│   ├── routes/
-│   │   ├── recipes.js         # CRUD рецептов
-│   │   ├── sessions.js        # CRUD сессий + температуры/фракции/ферментация
-│   │   ├── sensors.js         # Текущие показания и история датчиков
-│   │   ├── control.js         # Управление оборудованием + аварийная остановка
-│   │   └── settings.js        # Настройки приложения
-│   ├── serial/
-│   │   └── mockSerial.js      # Симулятор ESP32 с физической моделью
-│   ├── pid/
-│   │   ├── PidController.js   # PID-алгоритм (P + I + D + anti-windup)
-│   │   └── PidManager.js      # Менеджер PID: слушает датчики, управляет нагревом
-│   ├── ws/
-│   │   └── liveServer.js      # WebSocket-сервер для real-time данных
-│   └── tests/                 # Тесты бэкенда
-│       ├── pidController.test.js
-│       ├── mockSerial.test.js
-│       ├── database.test.js
-│       └── api.test.js
+│   │   ├── database.js        # better-sqlite3, все query-объекты
+│   │   ├── schema.sql         # DDL схема
+│   │   ├── migrate.js         # Система миграций
+│   │   ├── migrations/        # SQL-миграции (001–005)
+│   │   ├── trainer-seed.sql   # Данные для SQL Trainer (in-memory sandbox)
+│   │   └── sql-tasks.json     # 43 SQL-задачи
+│   ├── services/              # ProcessManager (конечный автомат), Telegram
+│   ├── pid/                   # PidController, PidManager, PidTuner, KalmanFilter
+│   ├── ws/liveServer.js       # WebSocket сервер (UI + ESP32 + паринг + keepalive)
+│   ├── serial/                # MockSerial (симулятор), RealSerial (deprecated)
+│   ├── routes/                # REST API (auth, recipes, sessions, sensors, control, process, settings, devices, admin, trainer, beerxml, recipe-social)
+│   └── middleware/            # JWT authenticate, requireAdmin, ban check, errorHandler
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx            # Роутинг приложения
-│   │   ├── pages/
-│   │   │   ├── Mashing.jsx    # Затирание
-│   │   │   ├── Boiling.jsx    # Кипячение
-│   │   │   ├── Fermentation.jsx # Ферментация
-│   │   │   ├── Distillation.jsx # Дистилляция
-│   │   │   ├── Rectification.jsx # Ректификация
-│   │   │   └── pages.css      # Общие стили страниц
-│   │   ├── components/        # Переиспользуемые компоненты
-│   │   │   ├── PageHeader.jsx
-│   │   │   ├── SensorCard.jsx
-│   │   │   ├── ProcessChart.jsx
-│   │   │   ├── PhaseList.jsx
-│   │   │   ├── FractionLog.jsx
-│   │   │   ├── SafetyCheck.jsx
-│   │   │   └── StartButton.jsx
-│   │   ├── api/
-│   │   │   ├── client.js      # HTTP-клиент (fetch-обёртка)
-│   │   │   └── wsClient.js    # WebSocket-клиент с очередью команд
-│   │   ├── hooks/
-│   │   │   └── useControl.js  # Хук управления оборудованием
-│   │   ├── utils/
-│   │   │   ├── constants.js   # API_BASE, WS_URL, debugPost
-│   │   │   └── formatTime.js  # Форматирование времени
-│   │   └── __tests__/         # Тесты фронтенда
-│   │       ├── components.test.jsx
-│   │       ├── formatTime.test.js
-│   │       └── constants.test.js
-│   └── vitest.config.js
-└── README.md
+│   │   ├── App.jsx            # Роутер (PrivateRoute, PublicRoute, AdminRoute)
+│   │   ├── contexts/          # AuthContext (JWT, login/logout, wsClient disconnect)
+│   │   ├── api/               # HTTP client (централизованный fetch), WebSocket client (singleton)
+│   │   ├── hooks/             # useProcess, useSensors, useControl, useRecipes, useSession, useAdmin
+│   │   ├── pages/             # ~20 страниц (Brewing, Mashing, Boiling, Fermentation, Distillation, Rectification, RecipeConstructor, Settings, AdminPanel, SqlTrainer и др.)
+│   │   ├── components/        # DeviceSelector, SensorSelector, ConnectionIndicator, ActiveProcessIndicator
+│   │   └── utils/             # constants, formatTime, ingredients (справочники)
+│   └── package.json
+├── firmware/
+│   ├── esp32/                 # Прошивка Node32 (ESP32)
+│   ├── esp32c3/               # Прошивка ESP32-C3 Super Mini + диагностика
+│   ├── esp32s3/               # Прошивка ESP32-S3 Super Mini v1.2.0 + диагностика
+│   └── esp8266/               # Прошивка ESP8266
+├── docker-compose.prod.yml    # Production
+├── docker-compose.test.yml    # Test + Vector
+├── CLAUDE.md                  # Руководство для Claude AI
+└── SCHEMA.md                  # Схема БД
 ```
 
 ---
 
-## ⚙️ Переменные окружения
+## Архитектура
 
-Файл `backend/.env`:
+### Multi-tenant SaaS
+- Все данные изолированы по `user_id` (устройства, рецепты, сессии, датчики, настройки)
+- Per-user `ProcessManager` — каждый пользователь имеет свой конечный автомат варки
+- Per-device `api_key` — ESP32 аутентифицируются индивидуально (не глобальный ключ)
+- Паринг устройств через 6-символьный код → WebSocket handshake
 
-| Переменная          | По умолчанию         | Описание                                        |
-|---------------------|----------------------|-------------------------------------------------|
-| `PORT`              | `3001`               | Порт Express-сервера                             |
-| `SERIAL_PORT`       | `COM3`               | COM-порт для подключения к ESP32                 |
-| `BAUD_RATE`         | `115200`             | Скорость serial-соединения                       |
-| `CONNECTION_TYPE`   | `mock`               | `mock` — симулятор, иначе — реальный serial      |
-| `TELEGRAM_BOT_TOKEN`| _(пусто)_            | Токен Telegram-бота для оповещений               |
-| `TELEGRAM_CHAT_ID` | _(пусто)_            | Chat ID для Telegram-уведомлений                 |
-| `DB_PATH`           | `./data/orangebrew.db` | Путь к файлу SQLite-базы данных                |
+### Процесс варки (ProcessManager)
+Конечный автомат: `IDLE → HEATING → HOLDING → COMPLETED` (+ `PAUSED`).
+Управляет ПИД-регулятором, логирует температуры, уведомляет через Telegram.
 
-Файл `frontend/src/utils/constants.js`:
+### WebSocket
+- **UI-клиенты**: JWT в query string, per-user broadcast
+- **Hardware-клиенты**: per-device `api_key`, ping/pong keepalive (10s)
+- Race condition защита: close/error handlers проверяют `ws === current.ws`
+- Token change detection: wsClient переподключается при смене JWT
 
-| Переменная     | Значение                         | Описание                      |
-|----------------|----------------------------------|-------------------------------|
-| `API_BASE`     | `http://localhost:3001/api`      | Базовый URL REST API          |
-| `WS_URL`       | `ws://localhost:3001/ws`         | URL WebSocket-соединения      |
+### PID-регулятор
+- Два режима: `heating` (быстрый нагрев) и `holding` (поддержание через PID)
+- Kalman-фильтр для шумоподавления датчиков
+- Автотюнинг relay-методом (PidTuner)
 
----
-
-## 🔬 Принципы и архитектура
-
-### Backend
-
-- **ESM**: весь бэкенд использует ES-модули (`import/export`).
-- **Разделение ответственности**: маршруты (`routes/`), данные (`db/`), оборудование (`serial/`), PID (`pid/`) — в отдельных модулях.
-- **MockSerial**: физическая модель сопряжения: бойлер нагревает → колонна следует с задержкой → дефлегматор охлаждает → выход охлаждается кулером. Шум ±0.1°C.
-- **PID-контроллер**: пропорциональный + интегральный + дифференциальный с anti-windup (ограничение интеграла) и derivative-on-input (для предотвращения скачков при смене уставки). Выход зажимается в [0, 100]%.
-- **WebSocket**: сервер периодически рассылает данные датчиков и состояние управления всем подключённым клиентам.
-- **SQLite**: sql.js — полностью in-process, не требует установки нативных модулей. Схема создаётся автоматически при первом запуске.
-
-### Frontend
-
-- **Компонентная архитектура**: общие компоненты (`SensorCard`, `ProcessChart`, `PhaseList`, `PageHeader`) используются на всех страницах процессов.
-- **Централизация**: URL-ы, утилиты времени и CSS-классы вынесены в общие модули для устранения дублирования.
-- **Real-time**: WebSocket-клиент с очередью команд обеспечивает отображение данных в реальном времени.
-- **Визуализация**: Recharts для графиков температур, Framer Motion для анимаций, Lucide для иконок.
+### Рецепты
+- CRUD + BeerXML импорт/экспорт + масштабирование
+- Социальные функции: публикация, лайки, комментарии, trending, FTS5 поиск
 
 ---
 
-## 🧪 Логика процессов
+## Переменные окружения
+
+| Переменная | По умолчанию | Описание |
+|-----------|-------------|---------|
+| `PORT` | `3001` | Порт backend |
+| `DB_PATH` | `./data/orangebrew.db` | Путь к SQLite |
+| `CONNECTION_TYPE` | `mock` | `mock` или `wifi` |
+| `JWT_SECRET` | *обязателен* | Секрет для JWT токенов |
+| `LOG_FORMAT` | auto | `json` для Docker |
+| `LOG_LEVEL` | `debug`/`info` | Уровень логирования |
+| `NODE_ENV` | `development` | Влияет на логи и CORS |
+| `FRONTEND_URL` | `http://localhost:5173` | URL фронтенда для CORS |
+| `SWAGGER_ENABLED` | `true` (dev) | Swagger UI на `/api-docs` |
+| `VITE_API_URL` | `http://localhost:3001` | URL backend для frontend |
+
+---
+
+## Процессы
 
 ### Затирание (Mashing)
-Пошаговый нагрев сусла с паузами на конкретных температурах для активации ферментов:
-- **Стадии**: Нагрев → Белковая пауза (52°C) → Мальтозная пауза (62°C) → Осахаривание (72°C) → Мэш-аут (78°C)
-- **Контроль безопасности**: блокировка нагрева без подтверждения покрытия ТЭН водой
+Пошаговый нагрев сусла с паузами для активации ферментов.
+Выбор конкретного датчика и устройства перед запуском.
 
 ### Кипячение (Boiling)
-Кипячение сусла с добавками хмеля по расписанию. Обратный отсчёт.
+Кипячение с расписанием добавки хмеля. Обратный отсчёт.
 
 ### Ферментация (Fermentation)
-Длительный мониторинг (дни/недели):
-- Запись температуры, плотности (gravity), рассчёт ABV
-- Стадии: primary / secondary / conditioning
-- Формат времени `Xд Yч Zм` для длительных процессов
+Длительный мониторинг: температура, плотность, ABV. Стадии: primary / secondary / conditioning.
 
-### Дистилляция (Distillation)
-Разделение погона на фракции:
-- **Фазы**: Нагрев → Головы → Тело → Хвосты
-- Лог фракций: объём, ABV, температуры бойлера/колонны
-- Контроль дефлегматора и охладителя
-
-### Ректификация (Rectification)
-Аналогична дистилляции, но с более точным разделением:
-- Управление рефлюксным соотношением
-- Целевой ABV (по умолчанию 96%)
-- PID-контроль температуры колонны
+### Дистилляция / Ректификация
+Разделение на фракции (головы/тело/хвосты), управление дефлегматором, PID-контроль.
 
 ---
 
-## 🗃 Схема базы данных
+## API
 
-| Таблица                  | Назначение                              |
-|--------------------------|-----------------------------------------|
-| `recipes`                | Рецепты: ингредиенты, шаги затирания, хмель |
-| `brew_sessions`          | Сессии варки с типом и статусом         |
-| `temperature_log`        | Лог температур датчиков по сессиям      |
-| `fermentation_entries`   | Записи ферментации (плотность, ABV)     |
-| `distillation_sessions`  | Параметры дистилляции (рефлюкс, ABV)    |
-| `fraction_log`           | Лог фракций (heads/hearts/tails)        |
-| `settings`               | Key-value настройки приложения          |
+Базовый URL: `http://localhost:3001`
+
+### Аутентификация
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `POST` | `/auth/login` | Вход (username + password) |
+| `POST` | `/auth/register` | Регистрация |
+| `POST` | `/auth/logout` | Выход |
+| `GET` | `/auth/me` | Текущий пользователь |
+
+### Рецепты
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `GET/POST` | `/api/recipes` | Список / создание |
+| `GET/PUT/DELETE` | `/api/recipes/:id` | Чтение / обновление / удаление |
+| `GET/POST` | `/api/recipes/export`, `/import` | Экспорт / импорт JSON |
+| `POST` | `/api/recipes/:id/scale` | Масштабирование |
+| `GET` | `/api/recipes/public` | Публичные рецепты |
+| `GET` | `/api/recipes/trending` | Трендовые рецепты |
+| `GET` | `/api/recipes/search?q=` | FTS5 поиск |
+| `POST` | `/api/recipes/:id/like` | Лайк/анлайк |
+| `GET/POST` | `/api/recipes/:id/comments` | Комментарии |
+| `POST/GET` | `/api/beerxml/import`, `/export/:id` | BeerXML |
+
+### Процесс
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `GET` | `/api/process/status` | Состояние процесса |
+| `POST` | `/api/process/start` | Запуск |
+| `POST` | `/api/process/stop` | Остановка |
+| `POST` | `/api/process/pause` | Пауза |
+| `POST` | `/api/process/resume` | Продолжение |
+| `POST` | `/api/process/skip` | Пропуск шага |
+
+### Управление оборудованием
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `POST` | `/api/control/heater` | Нагреватель (0-100%) |
+| `POST` | `/api/control/cooler` | Охладитель |
+| `POST` | `/api/control/pump` | Насос |
+| `POST` | `/api/control/dephleg` | Дефлегматор |
+| `POST` | `/api/control/emergency-stop` | Аварийная остановка |
+
+### Датчики
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `GET` | `/api/sensors` | Текущие показания |
+| `GET` | `/api/sensors/discovered` | Обнаруженные датчики |
+| `GET/PUT` | `/api/sensors/config` | Конфигурация датчиков |
+
+### Устройства
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `GET` | `/api/devices` | Список устройств |
+| `POST` | `/api/devices/pair/init` | Инициировать паринг |
+| `GET` | `/api/devices/pair/status` | Статус паринга |
+
+### Админ-панель (admin only)
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `GET` | `/api/admin/users` | Пользователи |
+| `GET` | `/api/admin/audit` | Аудит-лог |
+| `POST` | `/api/admin/users/:id/ban` | Бан |
+| `POST` | `/api/admin/users/:id/unban` | Разбан |
+
+### SQL Trainer
+| Метод | Эндпоинт | Описание |
+|-------|----------|---------|
+| `GET` | `/api/trainer/tasks` | Список задач |
+| `GET` | `/api/trainer/schema` | Схема учебной БД |
+| `POST` | `/api/trainer/execute` | Выполнить SQL |
+
+Полная документация доступна на `/api-docs` (Swagger UI).
 
 ---
 
-## 🚀 Быстрый старт
+## Тестирование
 
 ```bash
-# 1. Бэкенд
-cd backend
-npm install
-npm run dev        # запуск с --watch
-
-# 2. Фронтенд (в другом терминале)
-cd frontend
-npm install
-npm run dev        # Vite dev-сервер
+cd backend && npm test    # Vitest backend
+cd frontend && npm test   # Vitest frontend
 ```
-
-Откройте `http://localhost:5173` — приложение подключится к бэкенду на порту 3001 с MockSerial-симулятором.
 
 ---
 
-## 🧪 Тестирование
+## Deploy
+
+Docker + GitHub Actions CI/CD. Caddy как reverse proxy.
 
 ```bash
-# Бэкенд (104 теста)
-cd backend && npm test
-
-# Фронтенд (46 тестов)
-cd frontend && npm test
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-### Результаты тестов
+---
 
-| Категория              | Файл                       | Тесты | Статус |
-|------------------------|-----------------------------|------|--------|
-| **PID-контроллер**     | `pidController.test.js`     |  21  | ✅ PASS |
-| **MockSerial**         | `mockSerial.test.js`        |  22  | ✅ PASS |
-| **База данных**        | `database.test.js`          |  28  | ✅ PASS |
-| **REST API**           | `api.test.js`               |  33  | ✅ PASS |
-| **Компоненты React**   | `components.test.jsx`       |  30  | ✅ PASS |
-| **Утилиты времени**    | `formatTime.test.js`        |  12  | ✅ PASS |
-| **Константы**          | `constants.test.js`         |   4  | ✅ PASS |
-| **ИТОГО**              |                             | **150** | ✅ **ALL PASS** |
+## Схема БД
+
+| Таблица | Назначение |
+|---------|-----------|
+| `users` | Пользователи (username, email, role, subscription, ban) |
+| `devices` | ESP32 устройства (api_key, status, user_id) |
+| `device_pairings` | Временные коды паринга |
+| `recipes` | Рецепты (ингредиенты, шаги затирания, хмель, social) |
+| `recipes_fts` | FTS5 индекс для поиска рецептов |
+| `recipe_likes` | Лайки рецептов |
+| `recipe_comments` | Комментарии к рецептам |
+| `brew_sessions` | Сессии варки/дистилляции |
+| `temperature_log` | Лог температур |
+| `fermentation_entries` | Записи ферментации |
+| `distillation_sessions` | Параметры дистилляции |
+| `fraction_log` | Лог фракций |
+| `sensors` | Именованные конфигурации датчиков (per-user) |
+| `settings_v2` | Настройки (per-user, key-value) |
+| `audit_log` | Аудит-лог действий (30 дней retention) |
+| `payments` | Платежи (YooKassa, заготовка) |
+
+Подробная схема: `SCHEMA.md`
 
 ---
 
-## 📡 API
-
-Базовый URL: `http://localhost:3001/api`
-
-| Метод    | Эндпоинт                            | Описание                             |
-|----------|--------------------------------------|--------------------------------------|
-| `GET`    | `/recipes`                           | Список всех рецептов                 |
-| `POST`   | `/recipes`                           | Создать рецепт                       |
-| `GET`    | `/recipes/:id`                       | Получить рецепт по ID                |
-| `PUT`    | `/recipes/:id`                       | Обновить рецепт                      |
-| `DELETE` | `/recipes/:id`                       | Удалить рецепт                       |
-| `GET`    | `/sessions`                          | Список сессий (фильтр: `?type=`)     |
-| `POST`   | `/sessions`                          | Создать сессию                       |
-| `GET`    | `/sessions/:id`                      | Получить сессию по ID                |
-| `PUT`    | `/sessions/:id`                      | Обновить сессию                      |
-| `POST`   | `/sessions/:id/complete`             | Завершить сессию                     |
-| `DELETE` | `/sessions/:id`                      | Удалить сессию                       |
-| `POST`   | `/sessions/:id/temperatures`         | Записать температуру                 |
-| `GET`    | `/sessions/:id/temperatures`         | История температур сессии            |
-| `POST`   | `/sessions/:id/fractions`            | Добавить фракцию                     |
-| `GET`    | `/sessions/:id/fractions`            | Фракции сессии                       |
-| `POST`   | `/sessions/:id/fermentation`         | Добавить запись ферментации          |
-| `GET`    | `/sessions/:id/fermentation`         | Записи ферментации сессии            |
-| `GET`    | `/sensors`                           | Текущие показания датчиков           |
-| `GET`    | `/sensors/history`                   | История (параметр: `?minutes=`)      |
-| `GET`    | `/control`                           | Текущее состояние управления         |
-| `POST`   | `/control/heater`                    | Установить мощность нагрева (0-100)  |
-| `POST`   | `/control/cooler`                    | Установить мощность охлаждения       |
-| `POST`   | `/control/pump`                      | Включить/выключить насос             |
-| `POST`   | `/control/dephleg`                   | Установить дефлегматор + режим       |
-| `POST`   | `/control/emergency-stop`            | Аварийная остановка всего            |
-| `GET`    | `/settings`                          | Все настройки                        |
-| `PUT`    | `/settings`                          | Обновить настройки                   |
-| `POST`   | `/settings/test-connection`          | Проверка подключения                 |
-
----
-
-## 📜 Лицензия
+## Лицензия
 
 MIT
