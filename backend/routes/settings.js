@@ -80,6 +80,22 @@ export default function createSettingsRouter() {
      *                   kd:
      *                     type: number
      *                     example: 1.0
+     *                   rampDistance:
+     *                     type: number
+     *                     description: |
+     *                       Degrees below target to switch from 100% power to P-only ramp.
+     *                       Within this zone, output = Kp * error (uses tuned Kp).
+     *                       Smaller value = full power closer to target (less overshoot risk,
+     *                       but may cause thermal lag on slow systems).
+     *                       Default: 2.0
+     *                     example: 2.0
+     *                   minPower:
+     *                     type: number
+     *                     description: |
+     *                       Minimum heater power (%) in the ramp zone.
+     *                       Prevents heater from cutting off completely near target.
+     *                       Default: 5
+     *                     example: 5
      *               telegram:
      *                 type: object
      *                 description: Telegram settings (triggers config reload)
@@ -117,6 +133,9 @@ export default function createSettingsRouter() {
                 if (pid.kp !== undefined && pid.ki !== undefined && pid.kd !== undefined) {
                     pidManager.setTunings(pid.kp, pid.ki, pid.kd);
                     log.info({ kp: pid.kp, ki: pid.ki, kd: pid.kd }, 'Applied PID tunings');
+                }
+                if (pid.rampDistance !== undefined || pid.minPower !== undefined) {
+                    pidManager.updateRampSettings({ rampDistance: pid.rampDistance, minPower: pid.minPower });
                 }
             }
 
