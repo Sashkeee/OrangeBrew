@@ -91,16 +91,19 @@ class PIDController {
 
     /**
      * Compute output for HEATING mode (getting to target temperature).
-     * Uses a ramp-down approach near target to reduce overshoot:
      * - Far from target (>= rampDistance): 100% power
-     * - Near target (< rampDistance): proportional reduction
-     * - At or above target: 0% - handled by switching to holding mode
-     * 
+     * - Near target (< rampDistance): P-only using tuned Kp — no integral windup
+     * - At or above target: 0% — ProcessManager switches to HOLDING
+     *
+     * Using Kp in the ramp zone means autotune directly affects the heating approach.
+     * Higher Kp = steeper power curve near target (more aggressive approach).
+     *
      * @param {number} input - current temperature
-     * @param {number} rampDistance - degrees below target to start reducing power (default 5)
+     * @param {number} rampDistance - degrees below target to start P-only ramp (default 2)
+     * @param {number} minPower - minimum power floor in ramp zone, % (default 5)
      * @returns {number} output 0-100%
      */
-    computeHeating(input, rampDistance = 5) {
+    computeHeating(input, rampDistance = 2, minPower = 5) {
         if (!this.enabled) return 0;
 
         const error = this.target - input;
@@ -115,11 +118,12 @@ class PIDController {
             return 100;
         }
 
-        // Near target — ramp down linearly from 100% to a minimum holding power
-        // e.g., at 5°C below → 100%, at 0°C below → ~20%
-        const minPower = 20; // Minimum power as we approach target
-        const fraction = error / rampDistance; // 1.0 at rampDistance, 0.0 at target
-        return Math.round(minPower + (100 - minPower) * fraction);
+        // Near target — P-only: uses tuned Kp, no integral accumulation.
+        // Output = Kp * error, clamped to [minPower, 100].
+        // At error=rampDistance with typical Kp, output approaches 100% naturally.
+        // If Kp is very small (< 100/rampDistance), minPower ensures heater stays on.
+        const pOutput = this.kp * error;
+        return Math.round(Math.max(minPower, Math.min(100, pOutput)));
     }
 }
 

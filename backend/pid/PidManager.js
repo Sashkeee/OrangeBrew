@@ -30,7 +30,12 @@ export default class PidManager {
         const i = parseFloat(pidSettings?.ki) || parseFloat(settings.pid_i) || 0.1;
         const d = parseFloat(pidSettings?.kd) || parseFloat(settings.pid_d) || 1.0;
 
-        log.info({ kp: p, ki: i, kd: d }, 'Loaded tunings from DB');
+        // Heating ramp parameters: how many °C before target to switch from 100% to P-only
+        this.rampDistance = parseFloat(pidSettings?.rampDistance) || 2.0;
+        // Minimum power floor in ramp zone (prevents heater from fully cutting off near target)
+        this.minPower = parseFloat(pidSettings?.minPower) || 5;
+
+        log.info({ kp: p, ki: i, kd: d, rampDistance: this.rampDistance, minPower: this.minPower }, 'Loaded tunings from DB');
 
         this.pid = new PIDController(p, i, d, 1.0); // Kp, Ki, Kd, dt
         this.tuner = new PidTuner();
@@ -122,6 +127,16 @@ export default class PidManager {
     setTunings(kp, ki, kd) {
         this.pid.setTunings(parseFloat(kp), parseFloat(ki), parseFloat(kd));
         log.info({ kp, ki, kd }, 'Tunings updated');
+    }
+
+    /**
+     * Update heating ramp parameters on-the-fly.
+     * @param {{ rampDistance?: number, minPower?: number }} params
+     */
+    updateRampSettings({ rampDistance, minPower } = {}) {
+        if (rampDistance !== undefined) this.rampDistance = parseFloat(rampDistance);
+        if (minPower !== undefined) this.minPower = parseFloat(minPower);
+        log.info({ rampDistance: this.rampDistance, minPower: this.minPower }, 'Ramp settings updated');
     }
 
     // --- Tuning Methods ---
@@ -238,8 +253,8 @@ export default class PidManager {
 
         let heaterPower;
         if (this.mode === 'heating') {
-            // Heating mode: full power with ramp-down near target
-            heaterPower = this.pid.computeHeating(filteredInput, 5);
+            // Heating mode: full power until rampDistance, then P-only near target
+            heaterPower = this.pid.computeHeating(filteredInput, this.rampDistance, this.minPower);
         } else {
             // Holding mode: classic PID for temperature maintenance
             const output = this.pid.compute(filteredInput);
