@@ -245,6 +245,13 @@ class ProcessManager extends EventEmitter {
     }
 
     handleSensorData(deviceId, data) {
+        // Always forward to PID — it has its own sensor address logic and handles
+        // both normal PID control and autotune regardless of process status.
+        if (this.pidManager) {
+            this.pidManager.update(data);
+        }
+
+        // Process state machine only runs when actively heating/holding
         if (this.state.status !== PROCESS_STATUS.HEATING && this.state.status !== PROCESS_STATUS.HOLDING) return;
         if (this.state.status === PROCESS_STATUS.PAUSED) return;
 
@@ -326,12 +333,8 @@ class ProcessManager extends EventEmitter {
             }
         }
 
-        // Forward sensor data to PID controller.
-        // For WiFi devices data arrives here (not via serial 'data' event),
-        // so we must explicitly feed it to PidManager to compute heater output.
-        if (this.pidManager) {
-            this.pidManager.update(data);
-        }
+        // Note: pidManager.update(data) is called at the top of this method
+        // unconditionally so that PID/autotune runs even when no process is active.
     }
 
     // Called every second by loop
