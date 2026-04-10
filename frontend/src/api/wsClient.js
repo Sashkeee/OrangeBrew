@@ -86,6 +86,11 @@ class WsClient {
             this.reconnectTimer = null;
         }
         if (this.ws) {
+            // Null out handlers BEFORE close() so onclose doesn't schedule a reconnect
+            this.ws.onopen = null;
+            this.ws.onmessage = null;
+            this.ws.onerror = null;
+            this.ws.onclose = null;
             this.ws.close();
             this.ws = null;
         }
