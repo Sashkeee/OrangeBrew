@@ -77,8 +77,11 @@ class ProcessManager extends EventEmitter {
         } else if (mode === 'boil') {
             if (!recipe.boil_time) throw new Error('No boil time in recipe');
             // boiling_temp is configurable for test benches (default 100°C).
+            // Read per-user setting first, fall back to global, then to 100°C.
             // TODO #30: remove boiling_temp override — production should always use 100°C.
-            const boilingTemp = parseFloat(settingsQueries.get('boiling_temp')) || 100;
+            const boilingTemp = parseFloat(settingsQueries.get('boiling_temp', this.userId))
+                || parseFloat(settingsQueries.get('boiling_temp', null))
+                || 100;
             steps = [{
                 name: 'Boiling',
                 temp: boilingTemp,
