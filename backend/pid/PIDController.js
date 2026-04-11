@@ -91,37 +91,30 @@ class PIDController {
 
     /**
      * Compute output for HEATING mode (getting to target temperature).
-     * - Far from target (>= rampDistance): 100% power
-     * - Near target (< rampDistance): P-only using tuned Kp — no integral windup
-     * - At or above target: 0% — ProcessManager switches to HOLDING
      *
-     * Using Kp in the ramp zone means autotune directly affects the heating approach.
-     * Higher Kp = steeper power curve near target (more aggressive approach).
+     * Default (rampDistance = 0): 100% power until ProcessManager detects temp >= target
+     * and switches to HOLDING. This is the correct approach for brewing — let the PID
+     * (with tuned Kp/Ki/Kd) handle steady-state control in HOLDING mode.
+     *
+     * Optional ramp (rampDistance > 0): reduces power in the last N degrees to limit
+     * overshoot on fast-response setups (e.g. small vessels, light-bulb test bench).
+     * Within the ramp zone: output = Kp * error (P-only, no integral windup).
      *
      * @param {number} input - current temperature
-     * @param {number} rampDistance - degrees below target to start P-only ramp (default 2)
-     * @param {number} minPower - minimum power floor in ramp zone, % (default 5)
+     * @param {number} rampDistance - degrees below target to start ramp (0 = disabled)
+     * @param {number} minPower - minimum power floor in ramp zone, %
      * @returns {number} output 0-100%
      */
-    computeHeating(input, rampDistance = 2, minPower = 5) {
+    computeHeating(input, rampDistance = 0, minPower = 5) {
         if (!this.enabled) return 0;
 
         const error = this.target - input;
+        if (error <= 0) return 0;
 
-        if (error <= 0) {
-            // Already at or above target
-            return 0;
-        }
+        // No ramp configured — full power all the way to target
+        if (rampDistance <= 0 || error >= rampDistance) return 100;
 
-        if (error >= rampDistance) {
-            // Far from target — full power
-            return 100;
-        }
-
-        // Near target — P-only: uses tuned Kp, no integral accumulation.
-        // Output = Kp * error, clamped to [minPower, 100].
-        // At error=rampDistance with typical Kp, output approaches 100% naturally.
-        // If Kp is very small (< 100/rampDistance), minPower ensures heater stays on.
+        // Ramp zone: P-only (no integral windup), clamped to [minPower, 100]
         const pOutput = this.kp * error;
         return Math.round(Math.max(minPower, Math.min(100, pOutput)));
     }
