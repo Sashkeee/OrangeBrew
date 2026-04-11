@@ -83,18 +83,15 @@ export default function createSettingsRouter() {
      *                   rampDistance:
      *                     type: number
      *                     description: |
-     *                       Degrees below target to switch from 100% power to P-only ramp.
-     *                       Within this zone, output = Kp * error (uses tuned Kp).
-     *                       Smaller value = full power closer to target (less overshoot risk,
-     *                       but may cause thermal lag on slow systems).
-     *                       Default: 2.0
-     *                     example: 2.0
+     *                       Degrees below target to start ramp-down from 100% to P-only.
+     *                       0 (default) = disabled — full 100% power all the way to target.
+     *                       Set > 0 only if you observe overshoot on fast-response setups.
+     *                     example: 0
      *                   minPower:
      *                     type: number
      *                     description: |
-     *                       Minimum heater power (%) in the ramp zone.
-     *                       Prevents heater from cutting off completely near target.
-     *                       Default: 5
+     *                       Minimum heater power (%) at the bottom of the ramp zone.
+     *                       Only relevant when rampDistance > 0. Default: 5
      *                     example: 5
      *               telegram:
      *                 type: object

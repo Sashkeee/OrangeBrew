@@ -21,19 +21,22 @@ export default class PidManager {
         this.serial = serial;
         this.userId = userId;  // нужен для per-user маршрутизации команд нагревателю
 
-        // Load initial tunings from DB if available, else defaults
-        // Support both formats: nested pid object (from Settings page) and flat pid_p/pid_i/pid_d (legacy)
-        const settings = settingsQueries.getAll();
-        const pidSettings = settings.pid; // Nested object: { kp, ki, kd, ... }
+        // Load initial tunings from DB.
+        // Merge global defaults with per-user overrides (same logic as GET /api/settings).
+        const globalSettings = settingsQueries.getAll(null);
+        const userSettings = userId ? settingsQueries.getAll(userId) : {};
+        const settings = { ...globalSettings, ...userSettings };
+        const pidSettings = settings.pid; // Nested object: { kp, ki, kd, rampDistance, minPower, ... }
 
         const p = parseFloat(pidSettings?.kp) || parseFloat(settings.pid_p) || 5.0;
         const i = parseFloat(pidSettings?.ki) || parseFloat(settings.pid_i) || 0.1;
         const d = parseFloat(pidSettings?.kd) || parseFloat(settings.pid_d) || 1.0;
 
-        // Heating ramp parameters: how many °C before target to switch from 100% to P-only
-        this.rampDistance = parseFloat(pidSettings?.rampDistance) || 2.0;
-        // Minimum power floor in ramp zone (prevents heater from fully cutting off near target)
-        this.minPower = parseFloat(pidSettings?.minPower) || 5;
+        // Heating ramp: degrees before target to start ramping down from 100%.
+        // Default 0 = no ramp (100% power all the way to target).
+        // A small ramp (e.g. 0.5°C) can reduce overshoot on fast-heating setups.
+        this.rampDistance = parseFloat(pidSettings?.rampDistance ?? 0);
+        this.minPower = parseFloat(pidSettings?.minPower ?? 5);
 
         log.info({ kp: p, ki: i, kd: d, rampDistance: this.rampDistance, minPower: this.minPower }, 'Loaded tunings from DB');
 
@@ -221,15 +224,15 @@ export default class PidManager {
                     A: result.results.A
                 };
 
-                // Save to DB in the format expected by both frontend and PidManager
-                // Save as nested object under 'pid' key (for Settings page)
-                const currentPidSettings = settingsQueries.get('pid') || {};
+                // Save to DB under per-user settings so they appear in GET /api/settings
+                // and are not overridden by stale global defaults on next startup.
+                const currentPidSettings = settingsQueries.get('pid', this.userId) || settingsQueries.get('pid', null) || {};
                 settingsQueries.set('pid', {
                     ...currentPidSettings,
                     kp: parseFloat(result.results.Kp.toFixed(2)),
                     ki: parseFloat(result.results.Ki.toFixed(3)),
                     kd: parseFloat(result.results.Kd.toFixed(2))
-                });
+                }, this.userId);
 
                 // Apply to running PID
                 this.setTunings(result.results.Kp, result.results.Ki, result.results.Kd);
