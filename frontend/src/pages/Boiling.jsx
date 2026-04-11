@@ -85,6 +85,7 @@ const Boiling = () => {
             return [...h, {
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
                 temp: temperature,
+                heaterPower: heaterPower || 0,
                 unix: now
             }];
         });
@@ -205,6 +206,10 @@ const Boiling = () => {
                         data={history} lines={CHART_LINES}
                         defaultYMin={70} defaultYMax={105}
                         height="chart-panel--lg"
+                        sessionId={sessionId !== 'new' ? sessionId : null}
+                        recipeId={recipeData?.id ?? null}
+                        sessionType="boil"
+                        accentColor="var(--accent-red)"
                     />
                 </div>
 
