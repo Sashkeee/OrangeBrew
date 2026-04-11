@@ -93,6 +93,13 @@ export default function createSettingsRouter() {
      *                       Minimum heater power (%) at the bottom of the ramp zone.
      *                       Only relevant when rampDistance > 0. Default: 5
      *                     example: 5
+     *               boiling_temp:
+     *                 type: number
+     *                 description: |
+     *                   Target temperature for boiling phase (°C). Default: 100.
+     *                   Set lower (e.g. 70) for test benches that cannot reach 100°C.
+     *                   TODO #30: remove this override before production release.
+     *                 example: 70
      *               telegram:
      *                 type: object
      *                 description: Telegram settings (triggers config reload)
