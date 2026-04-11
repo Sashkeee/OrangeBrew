@@ -245,6 +245,13 @@ class ProcessManager extends EventEmitter {
     }
 
     handleSensorData(deviceId, data) {
+        // Always forward to PID — it has its own sensor address logic and handles
+        // both normal PID control and autotune regardless of process status.
+        if (this.pidManager) {
+            this.pidManager.update(data);
+        }
+
+        // Process state machine only runs when actively heating/holding
         if (this.state.status !== PROCESS_STATUS.HEATING && this.state.status !== PROCESS_STATUS.HOLDING) return;
         if (this.state.status === PROCESS_STATUS.PAUSED) return;
 
@@ -294,10 +301,11 @@ class ProcessManager extends EventEmitter {
         const targetTemp = parseFloat(this.state.mode === 'boil' ? 99 : currentStep.temp);
         const currentTempFloat = parseFloat(currentTemp);
 
-        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp);
+        // Hand off to PID 1°C before target to prevent overshoot
+        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp - 1);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
-            log.info({ target: currentStep.temp, current: currentTempFloat, holdMin: currentStep.duration }, 'Target reached → HOLDING');
+            log.info({ target: currentStep.temp, current: currentTempFloat, handoff: targetTemp - 1, holdMin: currentStep.duration }, 'Target -1°C reached → PID HOLDING');
             this.state.stepPhase = 'holding';
             this.state.status = PROCESS_STATUS.HOLDING;
             this.state.remainingTime = currentStep.duration * 60;
@@ -326,12 +334,8 @@ class ProcessManager extends EventEmitter {
             }
         }
 
-        // Forward sensor data to PID controller.
-        // For WiFi devices data arrives here (not via serial 'data' event),
-        // so we must explicitly feed it to PidManager to compute heater output.
-        if (this.pidManager) {
-            this.pidManager.update(data);
-        }
+        // Note: pidManager.update(data) is called at the top of this method
+        // unconditionally so that PID/autotune runs even when no process is active.
     }
 
     // Called every second by loop

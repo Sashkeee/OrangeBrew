@@ -2,9 +2,10 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { MashingIcon, FermentationIcon, DistillationIcon, RectificationIcon } from '../components/Icons';
-import { Settings, Shield, Database, LogOut, User } from 'lucide-react';
+import { Settings, Shield, Database, LogOut, User, BookOpen } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE } from '../utils/constants';
 
 const Home = () => {
   const { user, logout } = useAuth();
@@ -65,6 +66,17 @@ const Home = () => {
             >
               <Shield size={20} />
             </Link>
+            <a
+              href={API_BASE.replace(/\/api$/, '') + '/api-docs'}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Swagger API Docs"
+              style={{ color: '#85e89d', display: 'flex', opacity: 0.8, transition: 'opacity 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+            >
+              <BookOpen size={20} />
+            </a>
           </>
         )}
         <Link
