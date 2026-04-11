@@ -21,16 +21,24 @@ export default class PidManager {
         this.serial = serial;
         this.userId = userId;  // нужен для per-user маршрутизации команд нагревателю
 
-        // Load initial tunings from DB if available, else defaults
-        // Support both formats: nested pid object (from Settings page) and flat pid_p/pid_i/pid_d (legacy)
-        const settings = settingsQueries.getAll();
-        const pidSettings = settings.pid; // Nested object: { kp, ki, kd, ... }
+        // Load initial tunings from DB.
+        // Merge global defaults with per-user overrides (same logic as GET /api/settings).
+        const globalSettings = settingsQueries.getAll(null);
+        const userSettings = userId ? settingsQueries.getAll(userId) : {};
+        const settings = { ...globalSettings, ...userSettings };
+        const pidSettings = settings.pid; // Nested object: { kp, ki, kd, rampDistance, minPower, ... }
 
         const p = parseFloat(pidSettings?.kp) || parseFloat(settings.pid_p) || 5.0;
         const i = parseFloat(pidSettings?.ki) || parseFloat(settings.pid_i) || 0.1;
         const d = parseFloat(pidSettings?.kd) || parseFloat(settings.pid_d) || 1.0;
 
-        log.info({ kp: p, ki: i, kd: d }, 'Loaded tunings from DB');
+        // Heating ramp: degrees before target to start ramping down from 100%.
+        // Default 0 = no ramp (100% power all the way to target).
+        // A small ramp (e.g. 0.5°C) can reduce overshoot on fast-heating setups.
+        this.rampDistance = parseFloat(pidSettings?.rampDistance ?? 0);
+        this.minPower = parseFloat(pidSettings?.minPower ?? 5);
+
+        log.info({ kp: p, ki: i, kd: d, rampDistance: this.rampDistance, minPower: this.minPower }, 'Loaded tunings from DB');
 
         this.pid = new PIDController(p, i, d, 1.0); // Kp, Ki, Kd, dt
         this.tuner = new PidTuner();
@@ -124,6 +132,16 @@ export default class PidManager {
         log.info({ kp, ki, kd }, 'Tunings updated');
     }
 
+    /**
+     * Update heating ramp parameters on-the-fly.
+     * @param {{ rampDistance?: number, minPower?: number }} params
+     */
+    updateRampSettings({ rampDistance, minPower } = {}) {
+        if (rampDistance !== undefined) this.rampDistance = parseFloat(rampDistance);
+        if (minPower !== undefined) this.minPower = parseFloat(minPower);
+        log.info({ rampDistance: this.rampDistance, minPower: this.minPower }, 'Ramp settings updated');
+    }
+
     // --- Tuning Methods ---
     startTuning(target, sensorAddress = null) {
         this.setEnabled(false); // Disable normal PID
@@ -206,15 +224,15 @@ export default class PidManager {
                     A: result.results.A
                 };
 
-                // Save to DB in the format expected by both frontend and PidManager
-                // Save as nested object under 'pid' key (for Settings page)
-                const currentPidSettings = settingsQueries.get('pid') || {};
+                // Save to DB under per-user settings so they appear in GET /api/settings
+                // and are not overridden by stale global defaults on next startup.
+                const currentPidSettings = settingsQueries.get('pid', this.userId) || settingsQueries.get('pid', null) || {};
                 settingsQueries.set('pid', {
                     ...currentPidSettings,
                     kp: parseFloat(result.results.Kp.toFixed(2)),
                     ki: parseFloat(result.results.Ki.toFixed(3)),
                     kd: parseFloat(result.results.Kd.toFixed(2))
-                });
+                }, this.userId);
 
                 // Apply to running PID
                 this.setTunings(result.results.Kp, result.results.Ki, result.results.Kd);
@@ -238,8 +256,8 @@ export default class PidManager {
 
         let heaterPower;
         if (this.mode === 'heating') {
-            // Heating mode: full power with ramp-down near target
-            heaterPower = this.pid.computeHeating(filteredInput, 5);
+            // Heating mode: full power until rampDistance, then P-only near target
+            heaterPower = this.pid.computeHeating(filteredInput, this.rampDistance, this.minPower);
         } else {
             // Holding mode: classic PID for temperature maintenance
             const output = this.pid.compute(filteredInput);

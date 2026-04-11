@@ -746,6 +746,7 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 | 27 | Device-bound sensor binding: привязать адрес датчика к `deviceId` — игнорировать с чужих устройств | открыто | `backend/utils/sensorMapper.js` |
 | 28 | Sensor grace period: датчик пропадает из UI после 1 пропуска OneWire — нужен grace (3-5 циклов) | открыто | `frontend/src/hooks/useSensors.js` |
 | 29 | Временный диагностический лог cross-talk для `28ff36e07116047a` — удалить после расследования | открыто | `backend/server.js` |
+| 30 | `boiling_temp` настройка — тестовый хак для стендов без реального нагрева до 100°C. В продакшне удалить, кипячение всегда 100°C | открыто | `backend/services/ProcessManager.js`, `backend/routes/settings.js` |
 
 ---
 

@@ -91,35 +91,32 @@ class PIDController {
 
     /**
      * Compute output for HEATING mode (getting to target temperature).
-     * Uses a ramp-down approach near target to reduce overshoot:
-     * - Far from target (>= rampDistance): 100% power
-     * - Near target (< rampDistance): proportional reduction
-     * - At or above target: 0% - handled by switching to holding mode
-     * 
+     *
+     * Default (rampDistance = 0): 100% power until ProcessManager detects temp >= target
+     * and switches to HOLDING. This is the correct approach for brewing — let the PID
+     * (with tuned Kp/Ki/Kd) handle steady-state control in HOLDING mode.
+     *
+     * Optional ramp (rampDistance > 0): reduces power in the last N degrees to limit
+     * overshoot on fast-response setups (e.g. small vessels, light-bulb test bench).
+     * Within the ramp zone: output = Kp * error (P-only, no integral windup).
+     *
      * @param {number} input - current temperature
-     * @param {number} rampDistance - degrees below target to start reducing power (default 5)
+     * @param {number} rampDistance - degrees below target to start ramp (0 = disabled)
+     * @param {number} minPower - minimum power floor in ramp zone, %
      * @returns {number} output 0-100%
      */
-    computeHeating(input, rampDistance = 5) {
+    computeHeating(input, rampDistance = 0, minPower = 5) {
         if (!this.enabled) return 0;
 
         const error = this.target - input;
+        if (error <= 0) return 0;
 
-        if (error <= 0) {
-            // Already at or above target
-            return 0;
-        }
+        // No ramp configured — full power all the way to target
+        if (rampDistance <= 0 || error >= rampDistance) return 100;
 
-        if (error >= rampDistance) {
-            // Far from target — full power
-            return 100;
-        }
-
-        // Near target — ramp down linearly from 100% to a minimum holding power
-        // e.g., at 5°C below → 100%, at 0°C below → ~20%
-        const minPower = 20; // Minimum power as we approach target
-        const fraction = error / rampDistance; // 1.0 at rampDistance, 0.0 at target
-        return Math.round(minPower + (100 - minPower) * fraction);
+        // Ramp zone: P-only (no integral windup), clamped to [minPower, 100]
+        const pOutput = this.kp * error;
+        return Math.round(Math.max(minPower, Math.min(100, pOutput)));
     }
 }
 
