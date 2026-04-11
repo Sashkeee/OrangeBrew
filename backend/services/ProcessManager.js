@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import telegram from './telegram.js';
-import { temperatureQueries, sessionQueries } from '../db/database.js';
+import { temperatureQueries, sessionQueries, settingsQueries } from '../db/database.js';
 import { setPumpState } from '../routes/control.js';
 import logger from '../utils/logger.js';
 
@@ -76,10 +76,12 @@ class ProcessManager extends EventEmitter {
             if (steps.length === 0) throw new Error('No mash steps in recipe');
         } else if (mode === 'boil') {
             if (!recipe.boil_time) throw new Error('No boil time in recipe');
-            // Boiling is treated as a single step
+            // boiling_temp is configurable for test benches (default 100°C).
+            // TODO #30: remove boiling_temp override — production should always use 100°C.
+            const boilingTemp = parseFloat(settingsQueries.get('boiling_temp')) || 100;
             steps = [{
                 name: 'Boiling',
-                temp: 100, // Boiling point
+                temp: boilingTemp,
                 duration: parseInt(recipe.boil_time),
                 hop_additions: recipe.hop_additions || []
             }];
@@ -298,7 +300,8 @@ class ProcessManager extends EventEmitter {
         if (!currentStep) return;
 
         // Logic: if heating and temp reached -> switch to holding
-        const targetTemp = parseFloat(this.state.mode === 'boil' ? 99 : currentStep.temp);
+        // Use step's configured temp for both mash and boil (boilingTemp already set in state.steps on start)
+        const targetTemp = parseFloat(currentStep.temp);
         const currentTempFloat = parseFloat(currentTemp);
 
         const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp);
