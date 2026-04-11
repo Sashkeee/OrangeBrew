@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Play, Pause, Droplets, Zap, Thermometer, CheckCircle, ZoomIn, ZoomOut, SkipForward, AlertTriangle } from 'lucide-react';
-import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush } from 'recharts';
 import { useSensors } from '../hooks/useSensors';
 import { useControl } from '../hooks/useControl';
 import { useProcess } from '../hooks/useProcess';
@@ -478,7 +478,7 @@ const Mashing = () => {
                         </div>
 
                         {mounted && (
-                            <ResponsiveContainer width="100%" height={370} minWidth={0} minHeight={0}>
+                            <ResponsiveContainer width="100%" height={390} minWidth={0} minHeight={0}>
                                 <ComposedChart data={chartData}>
                                     <defs>
                                         <linearGradient id="color-temp" x1="0" y1="0" x2="0" y2="1">
@@ -540,6 +540,16 @@ const Mashing = () => {
                                             name="Нагрев %" isAnimationActive={false} connectNulls={false}
                                         />
                                     )}
+
+                                    {/* Brush — pan/zoom полоса */}
+                                    <Brush
+                                        dataKey="time"
+                                        height={24}
+                                        stroke="#444"
+                                        fill="rgba(255,255,255,0.03)"
+                                        travellerWidth={8}
+                                        tickFormatter={() => ''}
+                                    />
                                 </ComposedChart>
                             </ResponsiveContainer>
                         )}
