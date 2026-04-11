@@ -68,7 +68,7 @@ export function ActiveProcessIndicator() {
 
     const style = {
         position: 'fixed',
-        top: '1.5rem',
+        top: '5rem',
         right: '1.5rem',
         display: 'flex',
         alignItems: 'center',
