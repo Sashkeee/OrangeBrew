@@ -171,7 +171,7 @@ OrangeBrew/
 │   │   └── OrangeBrew_ESP32S3_Diag/
 │   │       └── OrangeBrew_ESP32S3_Diag.ino # Диагностика железа ESP32-S3
 │   ├── esp32s3/OrangeBrew_ESP32S3_FastPWM/
-│   │   └── OrangeBrew_ESP32S3_FastPWM.ino # Полная прошивка v1.3.0 с LEDC PWM 1кГц (требует MOSFET/SSR, не реле)
+│   │   └── OrangeBrew_ESP32S3_FastPWM.ino # Полная прошивка v1.3.1 с LEDC PWM 1кГц (без WiFiManager, требует MOSFET/SSR)
 │   ├── esp32s3/test_fast_PWM/
 │   │   └── test_fast_PWM.ino          # Минимальный тест LEDC PWM без WiFi/WS
 │   └── esp8266/OrangeBrew_ESP8266/

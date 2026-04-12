@@ -1,5 +1,5 @@
 /**
- * OrangeBrew_ESP32S3_FastPWM — v1.3.0
+ * OrangeBrew_ESP32S3_FastPWM — v1.3.1
  * ESP32-S3 Super Mini
  *
  * Полная прошивка OrangeBrew с LEDC PWM вместо burst firing.
@@ -13,6 +13,11 @@
  *   - Нет HEATER_WINDOW_MS / windowStart логики
  *   - setHeaterPower() напрямую вызывает ledcWrite()
  *
+ * Отличия v1.3.1 от v1.3.0:
+ *   - Убрана зависимость WiFiManager (tzapu) — используется WiFi.begin() напрямую
+ *   - WiFi credentials задаются через BENCH_WIFI_SSID / BENCH_WIFI_PASS
+ *   - Сброс сохранённых credentials: кнопка BOOT 3с (очищает Preferences)
+ *
  * Распиновка ESP32-S3 Super Mini:
  *   GPIO 4  — OneWire DS18B20 (4.7кОм между DATA и 3.3V)
  *   GPIO 5  — PWM нагреватель → MOSFET gate (или SSR input)
@@ -21,12 +26,11 @@
  *   GPIO 0  — Кнопка BOOT (удержание 3с = сброс NVS)
  *
  * Board: ESP32S3 Dev Module, USB CDC On Boot: Enabled
- * Libraries: WiFiManager (tzapu), WebSockets (Links2004/arduinoWebSockets),
- *             ArduinoJson, DallasTemperature, OneWire, ArduinoOTA, Preferences
+ * Libraries: WebSockets (Links2004/arduinoWebSockets), ArduinoJson,
+ *             DallasTemperature, OneWire  — всё остальное встроено в ESP32 core
  */
 
 #include <WiFi.h>
-#include <WiFiManager.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <OneWire.h>
@@ -36,9 +40,14 @@
 #include <esp_task_wdt.h>
 
 // ── Версия ──────────────────────────────────────────────────
-#define FW_VERSION "1.3.0"
+#define FW_VERSION "1.3.1"
 
-// ── OTA пароль (задать перед прошивкой) ─────────────────────
+// ── WiFi credentials ─────────────────────────────────────────
+// Задать перед прошивкой. Для смены сети — команда WIFI или кнопка BOOT 3с
+#define BENCH_WIFI_SSID "MTS_GPON_14FC"
+#define BENCH_WIFI_PASS "tXQ7QRXQ"
+
+// ── OTA пароль ───────────────────────────────────────────────
 #define OTA_PASSWORD "orangebrew_ota"
 
 // ── Пины ────────────────────────────────────────────────────
@@ -55,7 +64,8 @@
 #define PWM_MAX_DUTY   ((1 << PWM_RESOLUTION) - 1)   // 1023
 
 // ── WebSocket ────────────────────────────────────────────────
-// Задать адрес сервера. Для local dev: WS_HOST = IP, WS_PORT = 3001, WS_SECURE = false
+// Для стенда (local): WS_HOST = IP ПК, WS_PORT = 3001, WS_SECURE = false
+// Для test-сервера  : WS_HOST = "test.orangebrew.ru", WS_PORT = 443, WS_SECURE = true
 #define WS_HOST   "test.orangebrew.ru"
 #define WS_PORT   443
 #define WS_PATH   "/ws"
@@ -63,20 +73,20 @@
 
 // ── Таймауты ─────────────────────────────────────────────────
 #define WDT_TIMEOUT_S      30
+#define WIFI_CONNECT_MS    20000   // максимум ожидания подключения WiFi
 #define SENSOR_INTERVAL_MS 1500
 #define HEARTBEAT_MS       10000
 #define BOOT_HOLD_MS       3000
 
 // ── Состояния прошивки ───────────────────────────────────────
-enum FwState { S_PORTAL, S_PAIRING, S_NORMAL };
-FwState fwState = S_PORTAL;
+enum FwState { S_PAIRING, S_NORMAL };
+FwState fwState = S_PAIRING;
 
 // ── Объекты ──────────────────────────────────────────────────
 OneWire           oneWire(ONE_WIRE_PIN);
 DallasTemperature tempSensors(&oneWire);
 WebSocketsClient  wsClient;
 Preferences       prefs;
-WiFiManager       wifiManager;
 
 // ── Переменные состояния ─────────────────────────────────────
 String  deviceId;
@@ -95,6 +105,7 @@ int           ledPhase = 0;
 
 // ── Прототипы ────────────────────────────────────────────────
 String buildDeviceId();
+void   connectWiFi(const String& ssid, const String& pass);
 void   setupLedc();
 void   setHeaterPower(int pct);
 void   setPump(bool on);
@@ -136,6 +147,9 @@ void setup() {
     // Загрузить api_key из NVS
     prefs.begin("orangebrew", false);
     apiKey = prefs.getString("api_key", "");
+    // Загрузить сохранённые WiFi credentials (если были заданы через WIFI команду)
+    String savedSsid = prefs.getString("wifi_ssid", BENCH_WIFI_SSID);
+    String savedPass = prefs.getString("wifi_pass", BENCH_WIFI_PASS);
     prefs.end();
 
     deviceId = buildDeviceId();
@@ -148,18 +162,7 @@ void setup() {
 
     ledBlink(1);
 
-    // WiFiManager
-    wifiManager.setConfigPortalTimeout(180);
-    wifiManager.setConnectTimeout(20);
-
-    fwState = S_PORTAL;
-    if (!wifiManager.autoConnect(deviceId.c_str())) {
-        Serial.println("WiFi portal timeout — restarting");
-        ESP.restart();
-    }
-
-    Serial.printf("WiFi OK — SSID: %s, IP: %s\n",
-                  WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+    connectWiFi(savedSsid, savedPass);
 
     fwState = apiKey.isEmpty() ? S_PAIRING : S_NORMAL;
     if (fwState == S_PAIRING) ledBlink(3);
@@ -202,6 +205,28 @@ void loop() {
         wsClient.sendTXT(out);
         lastHeartbeat = now;
     }
+}
+
+// ════════════════════════════════════════════════════════════
+// WiFi — подключение без WiFiManager
+// ════════════════════════════════════════════════════════════
+void connectWiFi(const String& ssid, const String& pass) {
+    Serial.printf("WiFi: connecting to [%s]...\n", ssid.c_str());
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(), pass.c_str());
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+        esp_task_wdt_reset();
+        delay(500);
+        Serial.print('.');
+        if (millis() - start > WIFI_CONNECT_MS) {
+            Serial.println("\nWiFi: timeout — continuing without WiFi");
+            return;
+        }
+    }
+    Serial.printf("\nWiFi OK — SSID: %s, IP: %s\n",
+                  WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
 // ════════════════════════════════════════════════════════════
@@ -250,7 +275,7 @@ void updateLed() {
         }
         digitalWrite(LED_PIN, (ledPhase == 0 || ledPhase == 2) ? HIGH : LOW);
     } else {
-        // Нет WiFi / портал — 2 вспышки в секунду (500мс цикл)
+        // Нет WiFi — 2 вспышки в секунду (500мс цикл)
         if (now - ledTimer >= 250) {
             ledTimer = now;
             ledPhase ^= 1;
@@ -465,13 +490,12 @@ void checkBootButton() {
 }
 
 void resetNvs() {
-    Serial.println("NVS reset + WiFi erase — restarting...");
+    Serial.println("NVS reset — restarting...");
     setHeaterPower(0);
     setPump(false);
     prefs.begin("orangebrew", false);
     prefs.clear();
     prefs.end();
-    wifiManager.resetSettings();
     ledBlink(10, 50, 50);
     ESP.restart();
 }
@@ -494,9 +518,7 @@ void processSerial() {
         Serial.printf( "│ FW        : v%s (FastPWM)\n", FW_VERSION);
         Serial.printf( "│ DeviceID  : %s\n", deviceId.c_str());
         Serial.printf( "│ API key   : %s\n", apiKey.isEmpty() ? "(none)" : "set");
-        Serial.printf( "│ State     : %s\n",
-                        fwState == S_PORTAL  ? "PORTAL"  :
-                        fwState == S_PAIRING ? "PAIRING" : "NORMAL");
+        Serial.printf( "│ State     : %s\n", fwState == S_PAIRING ? "PAIRING" : "NORMAL");
         Serial.printf( "│ WiFi      : %s (%s)\n",
                         WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
         Serial.printf( "│ WS        : %s\n", wsConnected ? "connected" : "disconnected");
@@ -522,12 +544,16 @@ void processSerial() {
         }
     }
     else if (cmd.startsWith("WIFI ")) {
-        String rest = line.substring(5);  // оригинальный регистр
+        // WIFI <ssid> [pass] — подключиться и сохранить в NVS
+        String rest = line.substring(5);
         int sp = rest.indexOf(' ');
         String ssid = sp < 0 ? rest : rest.substring(0, sp);
         String pass = sp < 0 ? ""   : rest.substring(sp + 1);
-        Serial.printf("Connecting to [%s]...\n", ssid.c_str());
-        WiFi.begin(ssid.c_str(), pass.c_str());
+        prefs.begin("orangebrew", false);
+        prefs.putString("wifi_ssid", ssid);
+        prefs.putString("wifi_pass", pass);
+        prefs.end();
+        connectWiFi(ssid, pass);
     }
     else if (cmd.startsWith("PAIR ")) {
         startPairing(line.substring(5));
