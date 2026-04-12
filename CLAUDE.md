@@ -170,8 +170,10 @@ OrangeBrew/
 │   │   │   └── OrangeBrew_ESP32S3.ino # Основная прошивка ESP32-S3 Super Mini v1.2.0 (gitignored)
 │   │   └── OrangeBrew_ESP32S3_Diag/
 │   │       └── OrangeBrew_ESP32S3_Diag.ino # Диагностика железа ESP32-S3
+│   ├── esp32s3/OrangeBrew_ESP32S3_FastPWM/
+│   │   └── OrangeBrew_ESP32S3_FastPWM.ino # Полная прошивка v1.3.0 с LEDC PWM 1кГц (требует MOSFET/SSR, не реле)
 │   ├── esp32s3/test_fast_PWM/
-│   │   └── test_fast_PWM.ino          # Тест LEDC PWM без мерцания (требует MOSFET или SSR, не реле)
+│   │   └── test_fast_PWM.ino          # Минимальный тест LEDC PWM без WiFi/WS
 │   └── esp8266/OrangeBrew_ESP8266/
 │       └── OrangeBrew_ESP8266.ino     # Arduino скетч для ESP8266
 ├── docker-compose.prod.yml    # Production: backend-prod (3000) + frontend-prod (8080)
