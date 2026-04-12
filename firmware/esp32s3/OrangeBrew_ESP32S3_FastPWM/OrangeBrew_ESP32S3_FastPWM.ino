@@ -82,7 +82,8 @@ const char* WS_PATH = "/ws";
 // ─── LEDC PWM (замена burst firing) ──────────────────────
 // v1.2.0: burst firing 200мс = 20 полупериодов 50 Гц, шаг 5%
 // v1.3.1: LEDC 1кГц/10-bit — нет видимого мерцания лампочки
-#define PWM_CHANNEL    0
+// API ESP32 core 3.x: ledcAttach(pin, freq, res) + ledcWrite(pin, duty)
+//   (в core 2.x было ledcSetup(ch,f,r) + ledcAttachPin(pin,ch) — удалено в 3.x)
 #define PWM_FREQ       1000
 #define PWM_RESOLUTION 10                            // бит
 #define PWM_MAX_DUTY   ((1 << PWM_RESOLUTION) - 1)  // 1023
@@ -403,7 +404,7 @@ void wsHandleMessage(const char* payload) {
         heaterPct = constrain((int)(doc["value"] | 0), 0, 100);
         // LEDC PWM: применяем мощность немедленно
         uint32_t duty = map(heaterPct, 0, 100, 0, PWM_MAX_DUTY);
-        ledcWrite(PWM_CHANNEL, duty);
+        ledcWrite(HEATER_PIN, duty);
         logI("Нагрев → " + String(heaterPct) + "% (duty=" + String(duty) + "/" + String(PWM_MAX_DUTY) + ")");
     } else if (strcmp(cmd, "setPump") == 0) {
         pumpOn = (bool)(doc["value"] | false);
@@ -451,7 +452,7 @@ void startOTA() {
     ArduinoOTA.onStart([]() {
         // Безопасное отключение нагревателя через LEDC
         heaterPct = 0;
-        ledcWrite(PWM_CHANNEL, 0);
+        ledcWrite(HEATER_PIN, 0);
         digitalWrite(PUMP_PIN, LOW); pumpOn = false;
         logW("OTA: начало. Нагреватель и насос выключены.");
     });
@@ -576,12 +577,11 @@ void setup() {
     pinMode(LED_PIN,  OUTPUT);
     pinMode(PUMP_PIN, OUTPUT);
     pinMode(BOOT_PIN, INPUT_PULLUP);
-    // HEATER_PIN настраивается через ledcAttachPin, не через pinMode
+    // HEATER_PIN настраивается через ledcAttach, не через pinMode
 
-    // ── LEDC PWM для нагревателя ──
-    ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-    ledcAttachPin(HEATER_PIN, PWM_CHANNEL);
-    ledcWrite(PWM_CHANNEL, 0);  // нагреватель выключен
+    // ── LEDC PWM для нагревателя (ESP32 core 3.x API) ──
+    ledcAttach(HEATER_PIN, PWM_FREQ, PWM_RESOLUTION);
+    ledcWrite(HEATER_PIN, 0);  // нагреватель выключен
 
     digitalWrite(PUMP_PIN, LOW);
 

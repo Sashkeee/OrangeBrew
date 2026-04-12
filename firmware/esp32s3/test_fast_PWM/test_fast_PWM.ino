@@ -29,8 +29,7 @@
 #define LED_PIN      21   // Встроенный синий LED
 
 // ── LEDC параметры ──────────────────────────────────────────
-#define PWM_CHANNEL_HEATER  0
-#define PWM_CHANNEL_LED     1
+// ESP32 core 3.x: нет каналов — pin-based API (ledcAttach/ledcWrite(pin,...))
 #define PWM_RESOLUTION      10    // 10 бит = 0..1023 (плавнее чем 8-бит)
 
 uint32_t pwmFreq = 1000;          // Гц — хорошо выше порога заметного мерцания (~45 Гц)
@@ -96,8 +95,8 @@ void setPower(int percent) {
     currentPower = constrain(percent, 0, 100);
     uint32_t maxDuty = (1 << PWM_RESOLUTION) - 1;
     uint32_t duty = map(currentPower, 0, 100, 0, maxDuty);
-    ledcWrite(PWM_CHANNEL_HEATER, duty);
-    ledcWrite(PWM_CHANNEL_LED, duty);
+    ledcWrite(HEATER_PIN, duty);
+    ledcWrite(LED_PIN, duty);
 }
 
 // ── Плавный sweep 0→100→0% ──────────────────────────────────
@@ -122,12 +121,10 @@ void sweepTest() {
 
 // ── Переинициализировать LEDC с новой частотой ───────────────
 void reattachPWM(uint32_t freq) {
-    ledcDetachPin(HEATER_PIN);
-    ledcDetachPin(LED_PIN);
-    ledcSetup(PWM_CHANNEL_HEATER, freq, PWM_RESOLUTION);
-    ledcSetup(PWM_CHANNEL_LED,    freq, PWM_RESOLUTION);
-    ledcAttachPin(HEATER_PIN, PWM_CHANNEL_HEATER);
-    ledcAttachPin(LED_PIN,    PWM_CHANNEL_LED);
+    ledcDetach(HEATER_PIN);
+    ledcDetach(LED_PIN);
+    ledcAttach(HEATER_PIN, freq, PWM_RESOLUTION);
+    ledcAttach(LED_PIN,    freq, PWM_RESOLUTION);
     pwmFreq = freq;
 }
 

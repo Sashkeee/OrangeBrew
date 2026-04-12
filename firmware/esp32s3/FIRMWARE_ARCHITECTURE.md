@@ -199,24 +199,25 @@ void updateHeater() {
 ### v1.3.1 — LEDC PWM 1кГц (MOSFET / SSR random-firing)
 
 ```cpp
-#define PWM_CHANNEL    0
+// API ESP32 core 3.x (3.0+) — нет каналов, pin-based:
 #define PWM_FREQ       1000
 #define PWM_RESOLUTION 10        // 0..1023
 
 // В setup():
-ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-ledcAttachPin(HEATER_PIN, PWM_CHANNEL);
-ledcWrite(PWM_CHANNEL, 0);
+ledcAttach(HEATER_PIN, PWM_FREQ, PWM_RESOLUTION);
+ledcWrite(HEATER_PIN, 0);
 
 // В wsHandleMessage() при setHeater:
 uint32_t duty = map(heaterPct, 0, 100, 0, PWM_MAX_DUTY);
-ledcWrite(PWM_CHANNEL, duty);  // применяется немедленно, не в loop()
+ledcWrite(HEATER_PIN, duty);  // применяется немедленно, не в loop()
 
 // updateHeater() — УДАЛЕНА
 // Вызов в loop() — УДАЛЁН
 ```
 
-**⚠️ Важно:** `ledcWrite(PWM_CHANNEL, 0)` вместо `digitalWrite(HEATER_PIN, LOW)` везде где выключается нагреватель (OTA, аварийная остановка).
+**⚠️ Важно:** `ledcWrite(HEATER_PIN, 0)` вместо `digitalWrite(HEATER_PIN, LOW)` везде где выключается нагреватель (OTA, аварийная остановка).
+
+**⚠️ Совместимость:** `ledcSetup()` / `ledcAttachPin()` — это API core **2.x**, в core **3.x удалены**. Используй только `ledcAttach(pin, freq, res)` + `ledcWrite(pin, duty)`.
 
 ---
 
