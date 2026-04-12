@@ -12,6 +12,10 @@
 2. `SCHEMA.md` — структура SQLite таблиц и поля
 3. `~/.claude/projects/.../memory/MEMORY.md` — актуальное состояние, ключевые файлы, техдолги
 
+**Перед любыми изменениями прошивки ESP32-S3 — дополнительно прочитать:**
+
+4. `firmware/esp32s3/FIRMWARE_ARCHITECTURE.md` — машина состояний, NVS, WS-протокол, библиотеки, правила
+
 Только после этого приступать к задаче.
 
 ---
@@ -693,6 +697,7 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 
 ## Что НЕ делать
 
+### Backend / Frontend
 - **Не писать fetch() в хуках напрямую** — только через `client.js`
 - **Не хардкодить токен** — только из `localStorage.getItem('orangebrew_token')`
 - **Не использовать `global.*`** — антипаттерн (уже есть `global._latestProcessState` в telegram.js, не множить)
@@ -701,6 +706,16 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 - **Не использовать глобальный `HARDWARE_API_KEY`** — устройства аутентифицируются по per-device `api_key`
 - **Не определять React-компоненты внутри render-функций** — это вызывает пересоздание при каждом ре-рендере (выносить в module scope)
 - **Не использовать `console.*` в backend** — только Pino через `logger.child({ module })`. Все console.* уже мигрированы
+
+### Прошивка ESP32-S3 — критичные правила
+
+- **Не заменять кастомный портал на WiFiManager** (tzapu) или любую другую стороннюю библиотеку. Портал реализован самостоятельно: `WebServer + DNSServer + portal_html.h`. WiFiManager в проекте **не используется и не устанавливается**.
+- **Не делать минимальный diff** — при любом изменении прошивки менять только то что нужно, всё остальное оставлять как есть из оригинала.
+- **Не использовать `(uint32_t)ESP.getEfuseMac()`** — отсекает 2 байта MAC, гарантирует коллизии. Только `uint64_t` с побайтовой распаковкой (см. `buildDeviceId()`).
+- **Не управлять LED напрямую в WS-обработчиках** — только через `updateLed()` (неблокирующий) и `ledBlink()` (блокирующий, только разовые события).
+- **Не убирать `esp_task_wdt_reset()`** из начала `loop()` и из `connectWiFi()`.
+- **В v1.3.x не использовать `digitalWrite(HEATER_PIN, ...)`** — только `ledcWrite(PWM_CHANNEL, ...)`. LEDC управляет пином после `ledcAttachPin()`.
+- **`portal_html.h` gitignored** — файл есть локально, в репозитории не хранится. Не пытаться его создать или заменить без явного запроса.
 
 ---
 
