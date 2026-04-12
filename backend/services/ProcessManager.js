@@ -301,10 +301,11 @@ class ProcessManager extends EventEmitter {
         const targetTemp = parseFloat(this.state.mode === 'boil' ? 99 : currentStep.temp);
         const currentTempFloat = parseFloat(currentTemp);
 
-        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp);
+        // Hand off to PID 1°C before target to prevent overshoot
+        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp - 1);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
-            log.info({ target: currentStep.temp, current: currentTempFloat, holdMin: currentStep.duration }, 'Target reached → HOLDING');
+            log.info({ target: currentStep.temp, current: currentTempFloat, handoff: targetTemp - 1, holdMin: currentStep.duration }, 'Target -1°C reached → PID HOLDING');
             this.state.stepPhase = 'holding';
             this.state.status = PROCESS_STATUS.HOLDING;
             this.state.remainingTime = currentStep.duration * 60;
