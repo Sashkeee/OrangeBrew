@@ -439,7 +439,11 @@ JSON-спецификация доступна на `/api-docs.json`.
 
 ---
 
-### 16. ESP32-S3 Firmware v1.2.0
+### 16. ESP32-S3 Firmware v1.2.0 / v1.3.1
+
+> **Полная архитектура прошивки** → `firmware/esp32s3/FIRMWARE_ARCHITECTURE.md`
+> Машина состояний, NVS-ключи, WS-протокол, LED-паттерны, библиотеки, правила изменений.
+
 
 **Файл:** `firmware/esp32s3/OrangeBrew_ESP32S3/OrangeBrew_ESP32S3.ino` (gitignored)
 **Плата:** ESP32-S3 Super Mini, Arduino IDE (ESP32S3 Dev Module, USB CDC On Boot: Enabled)
