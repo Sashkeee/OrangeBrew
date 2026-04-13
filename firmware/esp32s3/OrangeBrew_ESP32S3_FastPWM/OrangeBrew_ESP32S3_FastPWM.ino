@@ -111,6 +111,7 @@ unsigned long formSubmitAt = 0;
 
 int  heaterPct = 0;
 bool pumpOn    = false;
+int  pwmFreq   = PWM_FREQ;
 unsigned long lastTempSend    = 0;
 unsigned long lastHeartbeat   = 0;
 unsigned long wsConnectedAt   = 0;
@@ -523,7 +524,7 @@ void printHeartbeat() {
     Serial.printf ("  IP       : %s\n", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "нет");
     Serial.printf ("  RSSI     : %d dBm\n", WiFi.RSSI());
     Serial.printf ("  WS       : %s\n", wsConnected ? "подключён" : "отключён");
-    Serial.printf ("  Нагрев   : %d%% (LEDC %dГц)\n", heaterPct, PWM_FREQ);
+    Serial.printf ("  Нагрев   : %d%% (LEDC %dГц)\n", heaterPct, pwmFreq);
     Serial.printf ("  Насос    : %s\n", pumpOn ? "ВКЛ" : "ВЫКЛ");
     int cnt = tempSensors.getDeviceCount();
     Serial.printf ("  Датчиков : %d\n", cnt);
@@ -580,7 +581,7 @@ void setup() {
     // HEATER_PIN настраивается через ledcAttach, не через pinMode
 
     // ── LEDC PWM для нагревателя (ESP32 core 3.x API) ──
-    ledcAttach(HEATER_PIN, PWM_FREQ, PWM_RESOLUTION);
+    ledcAttach(HEATER_PIN, pwmFreq, PWM_RESOLUTION);
     ledcWrite(HEATER_PIN, 0);  // нагреватель выключен
 
     digitalWrite(PUMP_PIN, LOW);
@@ -652,8 +653,19 @@ void loop() {
             if (code.length() != 6) { Serial.println("[CMD] Код должен быть 6 символов"); }
             else if (WiFi.status() != WL_CONNECTED) { Serial.println("[CMD] Сначала подключись к WiFi"); }
             else { pairingCode = code; state = S_PAIRING; wsClient.disconnect(); delay(300); startWebSocket(); }
+        } else if (cmd.startsWith("FREQ ")) {
+            int newFreq = cmd.substring(5).toInt();
+            if (newFreq < 1 || newFreq > 40000) {
+                Serial.println("[CMD] Частота должна быть от 1 до 40000 Гц");
+            } else {
+                pwmFreq = newFreq;
+                ledcAttach(HEATER_PIN, pwmFreq, PWM_RESOLUTION);
+                uint32_t duty = map(heaterPct, 0, 100, 0, PWM_MAX_DUTY);
+                ledcWrite(HEATER_PIN, duty);
+                Serial.printf("[CMD] PWM частота → %d Гц (мощность %d%%)\n", pwmFreq, heaterPct);
+            }
         } else if (cmd.equalsIgnoreCase("HELP")) {
-            Serial.println("Команды: WIFI <ssid> [pass] | PAIR <код> | STATUS | SCAN | RESET");
+            Serial.println("Команды: WIFI <ssid> [pass] | PAIR <код> | STATUS | SCAN | RESET | FREQ <гц>");
         }
     }
 
