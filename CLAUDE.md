@@ -12,6 +12,10 @@
 2. `SCHEMA.md` — структура SQLite таблиц и поля
 3. `~/.claude/projects/.../memory/MEMORY.md` — актуальное состояние, ключевые файлы, техдолги
 
+**Перед любыми изменениями прошивки ESP32-S3 — дополнительно прочитать:**
+
+4. `firmware/esp32s3/FIRMWARE_ARCHITECTURE.md` — машина состояний, NVS, WS-протокол, библиотеки, правила
+
 Только после этого приступать к задаче.
 
 ---
@@ -63,7 +67,7 @@ OrangeBrew/
 │   │   ├── database.js        # better-sqlite3, все SQL-запросы (queries objects)
 │   │   ├── schema.sql         # DDL базовая схема таблиц
 │   │   ├── migrate.js         # Миграции: применяет файлы из migrations/
-│   │   ├── migrations/        # SQL-миграции (001_multitenancy, 002_sensors_table, 002_recipe_social_v1, 003_recipe_search, 004_audit_log)
+│   │   ├── migrations/        # SQL-миграции (001_multitenancy, 002_sensors_table, 002_recipe_social_v1, 003_recipe_search, 004_audit_log, 005_sensor_roles)
 │   │   ├── seedAuth.js        # Создание дефолтного admin при первом запуске
 │   │   ├── migrateDevices.js  # Миграция устройств (legacy)
 │   │   ├── trainer-seed.sql   # DDL + тестовые данные для SQL Trainer (in-memory sandbox)
@@ -109,7 +113,7 @@ OrangeBrew/
 │   │   │   └── AuthContext.jsx    # React Context для аутентификации (useAuth hook)
 │   │   ├── api/
 │   │   │   ├── client.js      # HTTP-клиент (централизованный fetch + auth + все API-объекты)
-│   │   │   └── wsClient.js    # WebSocket клиент (singleton, JWT в query string)
+│   │   │   └── wsClient.js    # WebSocket клиент (singleton, JWT в query string, token change detection)
 │   │   ├── hooks/
 │   │   │   ├── useProcess.js  # Состояние процесса варки (WS primary + HTTP polling fallback)
 │   │   │   ├── useSensors.js  # Показания датчиков (rawSensors array + namedSensors + config)
@@ -165,6 +169,15 @@ OrangeBrew/
 │   │   ├── OrangeBrew_ESP32C3_Diag/
 │   │   │   └── OrangeBrew_ESP32C3_Diag.ino # Диагностика железа (AP, датчики, пины)
 │   │   └── AP_Test/                   # Минимальный тест точки доступа
+│   ├── esp32s3/
+│   │   ├── OrangeBrew_ESP32S3/
+│   │   │   └── OrangeBrew_ESP32S3.ino # Основная прошивка ESP32-S3 Super Mini v1.2.0 (gitignored)
+│   │   └── OrangeBrew_ESP32S3_Diag/
+│   │       └── OrangeBrew_ESP32S3_Diag.ino # Диагностика железа ESP32-S3
+│   ├── esp32s3/OrangeBrew_ESP32S3_FastPWM/
+│   │   └── OrangeBrew_ESP32S3_FastPWM.ino # Полная прошивка v1.3.1 с LEDC PWM 1кГц (без WiFiManager, требует MOSFET/SSR)
+│   ├── esp32s3/test_fast_PWM/
+│   │   └── test_fast_PWM.ino          # Минимальный тест LEDC PWM без WiFi/WS
 │   └── esp8266/OrangeBrew_ESP8266/
 │       └── OrangeBrew_ESP8266.ino     # Arduino скетч для ESP8266
 ├── docker-compose.prod.yml    # Production: backend-prod (3000) + frontend-prod (8080)
@@ -217,14 +230,18 @@ ProcessManager эмитит событие `update` при каждом изме
 - **UI-клиенты** (браузер): аутентификация по JWT-токену в query string; `uiClients: Map<ws, {userId}>`
 - **Hardware-клиенты** (ESP32/ESP8266): аутентификация по **per-device `api_key`** в первом сообщении `{type: 'auth', api_key}`; `hardwareClients: Map<deviceId, {ws, userId}>`
 
+**⚠️ Race condition fix (close/error handlers):** при закрытии WS-соединения обработчик проверяет `current?.ws === ws` перед удалением из `hardwareClients`. Без этой проверки устаревшее соединение (уже заменённое новым от того же устройства) удаляло актуальную запись из Map → устройство помечалось offline, хотя новое соединение было живым.
+
 **Ping/pong keepalive:** сервер пингует всех клиентов каждые 10 секунд (`INTERVALS.WS_PING_MS`). Если клиент не отвечает pong до следующего пинга — соединение терминируется, устройство помечается offline. Это предотвращает разрыв соединений через Caddy reverse proxy.
 
 **Паринг нового устройства:**
 1. Пользователь открывает `POST /api/devices/pair/init` → получает 6-символьный `pairing_code`
 2. ESP32 отправляет `{type: 'pair', pairing_code, deviceId}` по WebSocket
-3. Сервер валидирует код, сохраняет `api_key` в `devices`, отправляет устройству `{type: 'paired', api_key}`
+3. Сервер валидирует код. Если `deviceId` уже занят **другим пользователем** — генерирует новый UUID (`serverDeviceId`) чтобы не перезаписать чужое устройство. Сохраняет `api_key` в `devices`, отправляет устройству `{type: 'paired', api_key}`
 4. ESP32 переподключается с `{type: 'auth', api_key}`
 5. Frontend поллит `GET /api/devices/pair/status` до завершения
+
+**⚠️ Коллизия deviceId:** Все ESP32-S3 с одинаковой прошивкой могут слать одинаковый `deviceId` (например, при использовании усечённого MAC). В этом случае второй пользователь получит UUID вместо аппаратного ID. Решение в прошивке: использовать `esp_efuse_mac_get_default()` (все 6 байт) для гарантированно уникального ID.
 
 `sendToUserHardware(userId, cmd)` — отправить команду всем устройствам пользователя.
 
@@ -246,6 +263,8 @@ ProcessManager эмитит событие `update` при каждом изме
 - `heating`: полная мощность с торможением у цели (быстрый нагрев)
 - `holding`: классический PID для поддержания температуры
 
+**Переход heating → holding:** происходит когда температура достигает `target - 1°C` (за 1 градус до цели). `ProcessManager.handleSensorData()` переводит PID в режим `holding`, PID берёт управление финальным градусом и предотвращает перелёт.
+
 **Kalman-фильтр:** применяется к показаниям датчика перед подачей в PID для шумоподавления.
 Настраивается через `GET/POST /api/settings/kalman` (`enabled`, `q`, `r`).
 
@@ -256,7 +275,9 @@ ProcessManager эмитит событие `update` при каждом изме
 
 ---
 
-### 7. mapSensors — utils/sensorMapper.js
+### 7. Sensor data pipeline — per-user изоляция
+
+#### mapSensors — utils/sensorMapper.js
 Функция маппинга адресов датчиков к ролям и имена. Вынесена в `backend/utils/sensorMapper.js`.
 Принимает `(deviceId, rawData, userId, { sensorQueries, settingsQueries, logger })`.
 **Приоритет маппинга:**
@@ -267,6 +288,34 @@ ProcessManager эмитит событие `update` при каждом изме
 Результат преобразования:
 - Возвращает объект с `boiler`, `column` и другими ролевыми ключами
 - Применяет калибровочные смещения из конфига датчика
+
+#### In-memory хранилища (routes/sensors.js)
+
+```js
+// Последние показания ролей — для REST-поллинга и WS init
+const latestReadingsMap: Map<userId, Record<string, {value, timestamp}>>
+
+// Обнаруженные физические датчики — для UI настройки
+const discoveredSensors: Map<userId, Map<address, {temp, lastSeen}>>
+```
+
+**Важно:** оба хранилища полностью изолированы по `userId`.
+
+- `updateSensorReadings(readings, userId)` — принимает обязательный `userId`; при `null` — ранний `return` (данные игнорируются)
+- `getSensorReadings(userId)` — возвращает `{}` при `userId == null`
+- `updateDiscoveredSensors(userId, sensors)` — заполняется из `server.js` при каждом пакете от ESP32
+- `/api/sensors/discovered` — применяет TTL 60 секунд: датчики, от которых не было данных >60с, не возвращаются
+
+#### Защита от утечки данных (server.js)
+
+`onHardwareData` handler: **ранний `return`** если `userId == null` — данные от неаутентифицированных или не спаренных устройств полностью игнорируются, не попадают ни в `discoveredSensors`, ни в `latestReadingsMap`, ни в broadcast. Пишется `log.warn`.
+
+```js
+if (userId == null) {
+    logger.warn({ module: 'Server', deviceId }, 'Sensor data from unauthenticated device — ignored.');
+    return;
+}
+```
 
 ---
 
@@ -363,8 +412,14 @@ log.warn({ username, ip: req.ip }, 'Failed login attempt');
 
 ---
 
-### 13. Settings.jsx — module-scope компоненты
+### 13. Settings.jsx — module-scope компоненты + sensor TTL
 Sub-компоненты (`SelectField`, `SettingRow`, `Toggle`) и объекты стилей (`inputStyle`, `selectStyle`, `labelStyle`, `toggleStyle`, `toggleDotStyle`) вынесены из render-функции `SettingsPage` в module scope. Это предотвращает пересоздание компонентов при частых ре-рендерах от `useSensors()` WebSocket обновлений (каждые ~1.5с).
+
+**Логика отображения датчиков (секция Sensors):**
+- Список `discoveredSensors` в state формируется из `GET /api/sensors/discovered` (TTL 60s на бэке)
+- **Зомби-датчики не сохраняются:** при обновлении списка из API, датчики которых нет в свежем ответе — удаляются. Бэкенд с TTL 60s является источником правды.
+- WS stream (`rawSensors`) обновляет только `temp` и `lastSeen` для уже существующих в списке датчиков — не добавляет новые записи напрямую.
+- Новые датчики появляются в списке только через API-запрос (`/discovered`), который срабатывает при каждом монтировании секции Sensors и при изменении `rawSensors`.
 
 ---
 
@@ -388,7 +443,63 @@ JSON-спецификация доступна на `/api-docs.json`.
 
 ---
 
-### 16. SQL Trainer — интерактивный тренажёр
+### 16. ESP32-S3 Firmware v1.2.0 / v1.3.1
+
+> **Полная архитектура прошивки** → `firmware/esp32s3/FIRMWARE_ARCHITECTURE.md`
+> Машина состояний, NVS-ключи, WS-протокол, LED-паттерны, библиотеки, правила изменений.
+
+
+**Файл:** `firmware/esp32s3/OrangeBrew_ESP32S3/OrangeBrew_ESP32S3.ino` (gitignored)
+**Плата:** ESP32-S3 Super Mini, Arduino IDE (ESP32S3 Dev Module, USB CDC On Boot: Enabled)
+
+**Распиновка:**
+| GPIO | Функция |
+|------|---------|
+| 4 | OneWire шина DS18B20 (подтяжка 4.7 кОм на 3.3V) |
+| 5 | Реле нагревателя (HIGH = включён) |
+| 6 | Реле насоса (HIGH = включён) |
+| 21 | Встроенный LED (синий) |
+| 0 | Кнопка BOOT (удержание 3 сек = сброс NVS) |
+
+**Индикация LED (неблокирующая — `updateLed()` в каждой итерации `loop()`):**
+| Состояние | Поведение LED |
+|-----------|---------------|
+| WebSocket подключён | Горит постоянно |
+| WiFi есть, WS не подключён | Двойная вспышка: вкл100мс–выкл100мс–вкл100мс–**выкл1000мс** (цикл 1300мс) |
+| Нет WiFi / портал | 2 вспышки в секунду: вкл250мс–выкл250мс (цикл 500мс) |
+
+`ledBlink()` (блокирующий) — только для разовых событий: 3 вспышки при старте портала, 5 при успешном pairing, 1 при boot.
+
+**Device ID:** `buildDeviceId()` распаковывает все 6 байт из `ESP.getEfuseMac()` (`uint64_t`) побайтово → формат `ESP32S3_AABBCCDDEEFF`. **Не использовать** `(uint32_t)ESP.getEfuseMac()` — отсекает 2 старших байта, гарантирует коллизии на нескольких устройствах.
+
+**Управление нагревателем (burst firing):**
+- `HEATER_WINDOW_MS = 200` мс = 20 полупериодов при 50 Гц (полупериод = 10 мс)
+- Шаг мощности: 5% (1 из 20 полупериодов)
+- Совместимо с SSR zero-crossing и random-firing
+
+**WDT:** 30 сек. `esp_task_wdt_reset()` вызывается в начале `loop()` и внутри `connectWiFi()`.
+
+**Состояния прошивки:** `S_PORTAL` (AP + DNS + HTTP портал для первичной настройки) → `S_PAIRING` (подключён к WiFi, ждёт pairing) → `S_NORMAL` (работа: датчики, нагреватель, heartbeat).
+
+**Serial команды:** `RESET`, `STATUS`, `SCAN`, `WIFI <ssid> [pass]`, `PAIR <6-знак код>`, `HELP`.
+
+**OTA:** ArduinoOTA, пароль `OTA_PASSWORD`, хост = deviceId. При OTA: нагреватель и насос выключаются.
+
+---
+
+### 17. WebSocket client — token change detection (cross-user isolation)
+
+**Проблема:** `wsClient` — singleton. Если в одном браузере несколько вкладок для разных пользователей (через `localStorage`), WS-соединение первого пользователя продолжало получать данные, даже когда другой пользователь залогинился — потому что JWT-токен в URL уже не совпадал с текущим в `localStorage`.
+
+**Решение (frontend):**
+- `wsClient.connect()` сохраняет текущий токен в `this._token`. При вызове `connect()` проверяет: если токен изменился — делает `disconnect()` + reconnect с новым токеном.
+- `AuthContext.jsx`: `login()` и `logout()` вызывают `wsClient.disconnect()` **перед** записью/удалением токена — форсируют reconnect с новыми credentials.
+
+Это гарантирует, что WS-соединение всегда принадлежит текущему пользователю и данные чужих датчиков не просачиваются через UI.
+
+---
+
+### 18. SQL Trainer — интерактивный тренажёр
 **Backend:** `routes/trainer.js` — три эндпоинта (`/tasks`, `/schema`, `/execute`). Каждый запрос создаёт свежую **in-memory SQLite** БД из `db/trainer-seed.sql` — полная изоляция, нет доступа к production данным.
 
 **Данные тренажёра** (хранятся в `backend/db/`, **не в `data/`** — иначе Docker volume затирает):
@@ -586,6 +697,7 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 
 ## Что НЕ делать
 
+### Backend / Frontend
 - **Не писать fetch() в хуках напрямую** — только через `client.js`
 - **Не хардкодить токен** — только из `localStorage.getItem('orangebrew_token')`
 - **Не использовать `global.*`** — антипаттерн (уже есть `global._latestProcessState` в telegram.js, не множить)
@@ -594,6 +706,16 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 - **Не использовать глобальный `HARDWARE_API_KEY`** — устройства аутентифицируются по per-device `api_key`
 - **Не определять React-компоненты внутри render-функций** — это вызывает пересоздание при каждом ре-рендере (выносить в module scope)
 - **Не использовать `console.*` в backend** — только Pino через `logger.child({ module })`. Все console.* уже мигрированы
+
+### Прошивка ESP32-S3 — критичные правила
+
+- **Не заменять кастомный портал на WiFiManager** (tzapu) или любую другую стороннюю библиотеку. Портал реализован самостоятельно: `WebServer + DNSServer + portal_html.h`. WiFiManager в проекте **не используется и не устанавливается**.
+- **Не делать минимальный diff** — при любом изменении прошивки менять только то что нужно, всё остальное оставлять как есть из оригинала.
+- **Не использовать `(uint32_t)ESP.getEfuseMac()`** — отсекает 2 байта MAC, гарантирует коллизии. Только `uint64_t` с побайтовой распаковкой (см. `buildDeviceId()`).
+- **Не управлять LED напрямую в WS-обработчиках** — только через `updateLed()` (неблокирующий) и `ledBlink()` (блокирующий, только разовые события).
+- **Не убирать `esp_task_wdt_reset()`** из начала `loop()` и из `connectWiFi()`.
+- **В v1.3.x не использовать `digitalWrite(HEATER_PIN, ...)`** — только `ledcWrite(PWM_CHANNEL, ...)`. LEDC управляет пином после `ledcAttachPin()`.
+- **`portal_html.h` gitignored** — файл есть локально, в репозитории не хранится. Не пытаться его создать или заменить без явного запроса.
 
 ---
 
@@ -625,14 +747,31 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 | 3 | Graceful shutdown race: closeDatabase() до closeWebSocket() | ✅ исправлено | `backend/server.js` |
 | 12 | Все `console.*` мигрированы на Pino structured logging (~85 вызовов в 18 файлах) | ✅ исправлено | весь backend |
 | 13 | `postcss.config.js` и `tailwind.config.js` — мёртвый код, блокировал Docker build | ✅ удалено | frontend/ |
+| 14 | `latestReadings` был глобальным — датчики одного пользователя видели другие | ✅ исправлено | `backend/routes/sensors.js` |
+| 15 | Данные от неаутентифицированных устройств (`userId=null`) утекали ко всем через `broadcastAll` | ✅ исправлено | `backend/server.js` |
+| 16 | `discoveredSensors` не имел TTL — офлайн-датчики висели вечно | ✅ исправлено | `backend/routes/sensors.js` |
+| 17 | `handlePairingMessage`: несколько ESP32 с одинаковым `deviceId` перезаписывали api_key друг друга | ✅ исправлено | `backend/ws/liveServer.js` |
+| 18 | Settings.jsx сохранял зомби-датчики из предыдущего состояния (офлайн датчики не исчезали) | ✅ исправлено | `frontend/src/pages/Settings.jsx` |
+| 19 | ESP32-S3: `buildDeviceId()` использовал только 32 бита MAC → коллизии | ✅ исправлено | `firmware/esp32s3/OrangeBrew_ESP32S3.ino` |
+| 20 | ESP32-S3: LED управлялся напрямую в `wsEvent` — без паттернов для "WiFi без WS" и "нет WiFi" | ✅ исправлено | `firmware/esp32s3/OrangeBrew_ESP32S3.ino` |
+| 21 | ESP32-S3: `connectWiFi()` не сбрасывал WDT — риск перезагрузки при 20с ожидании подключения | ✅ исправлено | `firmware/esp32s3/OrangeBrew_ESP32S3.ino` |
 | 4 | `RecipeConstructor` и `RecipeConstructor_V2` — дублирование логики | открыто | `frontend/src/pages/` |
 | 5 | `global._latestProcessState` — антипаттерн глобального состояния | открыто | `backend/services/telegram.js` |
 | 6 | Валидация паузы в рецепте требует возрастания температур — неверно для реального пивоварения | открыто | `RecipeConstructor.jsx` |
 | 7 | `backend/routes/users.js` использует `getDb()` напрямую вместо query-объектов | открыто | `backend/routes/users.js` |
 | 8 | `sql.js` в backend/package.json — не используется | открыто | `backend/package.json` |
-| 9 | `realSerial.js` deprecated — файл сохранён, но не используется | открыто | `backend/serial/realSerial.js` |
-| 10 | ESP32 прошивка: `Serial.println()` не заменены на `log()` — device_log не работает для большинства строк | открыто | `firmware/esp32c3/` |
+| 9 | `realSerial.js` deprecated — файл сохранён, но не используется | ✅ удалено | `backend/serial/realSerial.js` |
+| 10 | ESP32-C3 прошивка: `Serial.println()` не заменены на `log()` — device_log не работает | открыто | `firmware/esp32c3/` |
 | 11 | `firmware/esp32c3/OrangeBrew_ESP32C3/` gitignored — прошивка не версионируется в git | открыто | `.gitignore` |
+| 22 | `firmware/esp32s3/OrangeBrew_ESP32S3/` gitignored — прошивка не версионируется в git | открыто | `.gitignore` |
+| 23 | ESP32-S3: `wsClient.beginSSL()` без CA-сертификата — сервер не верифицируется (production risk) | открыто | `firmware/esp32s3/OrangeBrew_ESP32S3.ino` |
+| 24 | WS race condition: stale close/error handler удалял актуальное соединение из `hardwareClients` | ✅ исправлено (PR #6) | `backend/ws/liveServer.js` |
+| 25 | Settings.jsx: `loadDiscovered()` merge предпочитал auto-created пустые записи серверным конфигам | ✅ исправлено (PR #7) | `frontend/src/pages/Settings.jsx` |
+| 26 | WS cross-user data leak: `wsClient` singleton не переподключался при смене JWT-токена | ✅ исправлено (PR #8) | `frontend/src/api/wsClient.js`, `frontend/src/contexts/AuthContext.jsx` |
+| 27 | Device-bound sensor binding: привязать адрес датчика к `deviceId` — игнорировать с чужих устройств | открыто | `backend/utils/sensorMapper.js` |
+| 28 | Sensor grace period: датчик пропадает из UI после 1 пропуска OneWire — нужен grace (3-5 циклов) | открыто | `frontend/src/hooks/useSensors.js` |
+| 29 | Временный диагностический лог cross-talk для `28ff36e07116047a` — удалить после расследования | открыто | `backend/server.js` |
+| 30 | `boiling_temp` настройка — тестовый хак для стендов без реального нагрева до 100°C. В продакшне удалить, кипячение всегда 100°C | открыто | `backend/services/ProcessManager.js`, `backend/routes/settings.js` |
 
 ---
 

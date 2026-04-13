@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import telegram from './telegram.js';
-import { temperatureQueries, sessionQueries } from '../db/database.js';
+import { temperatureQueries, sessionQueries, settingsQueries } from '../db/database.js';
 import { setPumpState } from '../routes/control.js';
 import logger from '../utils/logger.js';
 
@@ -76,10 +76,15 @@ class ProcessManager extends EventEmitter {
             if (steps.length === 0) throw new Error('No mash steps in recipe');
         } else if (mode === 'boil') {
             if (!recipe.boil_time) throw new Error('No boil time in recipe');
-            // Boiling is treated as a single step
+            // boiling_temp is configurable for test benches (default 100°C).
+            // Read per-user setting first, fall back to global, then to 100°C.
+            // TODO #30: remove boiling_temp override — production should always use 100°C.
+            const boilingTemp = parseFloat(settingsQueries.get('boiling_temp', this.userId))
+                || parseFloat(settingsQueries.get('boiling_temp', null))
+                || 100;
             steps = [{
                 name: 'Boiling',
-                temp: 100, // Boiling point
+                temp: boilingTemp,
                 duration: parseInt(recipe.boil_time),
                 hop_additions: recipe.hop_additions || []
             }];
@@ -245,6 +250,13 @@ class ProcessManager extends EventEmitter {
     }
 
     handleSensorData(deviceId, data) {
+        // Always forward to PID — it has its own sensor address logic and handles
+        // both normal PID control and autotune regardless of process status.
+        if (this.pidManager) {
+            this.pidManager.update(data);
+        }
+
+        // Process state machine only runs when actively heating/holding
         if (this.state.status !== PROCESS_STATUS.HEATING && this.state.status !== PROCESS_STATUS.HOLDING) return;
         if (this.state.status === PROCESS_STATUS.PAUSED) return;
 
@@ -291,13 +303,15 @@ class ProcessManager extends EventEmitter {
         if (!currentStep) return;
 
         // Logic: if heating and temp reached -> switch to holding
-        const targetTemp = parseFloat(this.state.mode === 'boil' ? 99 : currentStep.temp);
+        // Use step's configured temp for both mash and boil (boilingTemp already set in state.steps on start)
+        const targetTemp = parseFloat(currentStep.temp);
         const currentTempFloat = parseFloat(currentTemp);
 
-        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp);
+        // Hand off to PID 1°C before target to prevent overshoot
+        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp - 1);
 
         if (this.state.stepPhase === 'heating' && targetReached) {
-            log.info({ target: currentStep.temp, current: currentTempFloat, holdMin: currentStep.duration }, 'Target reached → HOLDING');
+            log.info({ target: currentStep.temp, current: currentTempFloat, handoff: targetTemp - 1, holdMin: currentStep.duration }, 'Target -1°C reached → PID HOLDING');
             this.state.stepPhase = 'holding';
             this.state.status = PROCESS_STATUS.HOLDING;
             this.state.remainingTime = currentStep.duration * 60;
@@ -326,12 +340,8 @@ class ProcessManager extends EventEmitter {
             }
         }
 
-        // Forward sensor data to PID controller.
-        // For WiFi devices data arrives here (not via serial 'data' event),
-        // so we must explicitly feed it to PidManager to compute heater output.
-        if (this.pidManager) {
-            this.pidManager.update(data);
-        }
+        // Note: pidManager.update(data) is called at the top of this method
+        // unconditionally so that PID/autotune runs even when no process is active.
     }
 
     // Called every second by loop

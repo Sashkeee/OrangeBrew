@@ -7,13 +7,12 @@ const router = Router();
 // ─── In-memory stores ──────────────────────────────────────
 
 /**
- * Latest role-mapped sensor readings for REST polling.
- * @type {Record<string, {value: number, timestamp: number}>}
+ * Latest role-mapped sensor readings per user: Map<userId, Record<string, {value, timestamp}>>
  */
-let latestReadings = {};
+const latestReadingsMap = new Map();
 
 /**
- * Discovered sensors per user: Map<userId, Map<address, {temp, lastSeen}>>
+ * Discovered sensors per user: Map<userId, Map<address, {temp, lastSeen, deviceId}>>
  * Populated whenever WiFi hardware sends sensor data.
  */
 const discoveredSensors = new Map();
@@ -21,19 +20,27 @@ const discoveredSensors = new Map();
 // ─── Exported update functions (called from server.js) ────
 
 /**
- * Update the latest role-mapped readings.
+ * Update the latest role-mapped readings for a specific user.
  * Filters out metadata keys — only stores actual sensor values.
+ * @param {object} readings
+ * @param {number} userId
  */
-export function updateSensorReadings(readings) {
+export function updateSensorReadings(readings, userId) {
+    if (userId == null) return;
     const now = Date.now();
     const skipKeys = ['type', 'timestamp', 'deviceId', 'sensors'];
+
+    if (!latestReadingsMap.has(userId)) {
+        latestReadingsMap.set(userId, {});
+    }
+    const userReadings = latestReadingsMap.get(userId);
 
     for (const [sensor, value] of Object.entries(readings)) {
         if (skipKeys.includes(sensor)) continue;
         if (typeof value === 'number') {
-            latestReadings[sensor] = { value, timestamp: now };
+            userReadings[sensor] = { value, timestamp: now };
         } else if (typeof value === 'object' && value !== null && 'value' in value) {
-            latestReadings[sensor] = { value: value.value, timestamp: now };
+            userReadings[sensor] = { value: value.value, timestamp: now };
         }
     }
 }
@@ -41,10 +48,13 @@ export function updateSensorReadings(readings) {
 /**
  * Update the in-memory discovered sensors store.
  * Called from server.js whenever hardware sensor data arrives.
+ * Stores deviceId alongside each sensor entry so the frontend
+ * can show which device reported each sensor.
  * @param {number} userId
  * @param {Array<{address: string, temp: number}>} sensors
+ * @param {string} [deviceId]
  */
-export function updateDiscoveredSensors(userId, sensors) {
+export function updateDiscoveredSensors(userId, sensors, deviceId = null) {
     if (!Array.isArray(sensors) || sensors.length === 0) return;
     if (!discoveredSensors.has(userId)) {
         discoveredSensors.set(userId, new Map());
@@ -56,16 +66,20 @@ export function updateDiscoveredSensors(userId, sensors) {
             userMap.set(s.address, {
                 temp: parseFloat(s.temp ?? s.value ?? 0),
                 lastSeen: now,
+                deviceId,
             });
         }
     }
 }
 
 /**
- * Get current role-mapped readings.
+ * Get current role-mapped readings for a specific user.
+ * @param {number} [userId]
+ * @returns {Record<string, {value: number, timestamp: number}>}
  */
-export function getSensorReadings() {
-    return latestReadings;
+export function getSensorReadings(userId = null) {
+    if (userId == null) return {};
+    return latestReadingsMap.get(userId) || {};
 }
 
 // ─── Routes ────────────────────────────────────────────────
@@ -102,7 +116,7 @@ export function getSensorReadings() {
  *                 column: { value: 42.1, timestamp: 1711360000000 }
  */
 router.get('/', (req, res) => {
-    res.json(latestReadings);
+    res.json(getSensorReadings(req.user.id));
 });
 
 /**
@@ -174,7 +188,7 @@ router.get('/history', (req, res) => {
  *     summary: Discovered sensors with saved config
  *     description: >
  *       Returns sensors currently visible on the OneWire bus, merged with
- *       the user's saved configuration (name, color, offset, enabled).
+ *       the user's saved configuration (name, color, offset, enabled, role).
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -196,6 +210,10 @@ router.get('/history', (req, res) => {
  *                   lastSeen:
  *                     type: number
  *                     description: Unix timestamp (ms) of last reading
+ *                   deviceId:
+ *                     type: string
+ *                     nullable: true
+ *                     description: ID of the device that reported this sensor
  *                   name:
  *                     type: string
  *                     description: User-assigned sensor name
@@ -209,6 +227,10 @@ router.get('/history', (req, res) => {
  *                   enabled:
  *                     type: boolean
  *                     description: Whether the sensor is enabled
+ *                   role:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Sensor role (boiler, column, dephleg, output, ambient)
  *                   configured:
  *                     type: boolean
  *                     description: Whether a saved config exists for this sensor
@@ -222,17 +244,22 @@ router.get('/discovered', authenticate, (req, res) => {
         configs = sensorQueries.getAll(userId);
     } catch { /* sensors table may not exist yet */ }
 
+    const TTL_MS = 60_000; // sensors not heard from in 60s are considered stale
+    const now = Date.now();
     const result = [];
     for (const [address, data] of userMap) {
+        if (now - data.lastSeen > TTL_MS) continue; // skip stale entries
         const cfg = configs.find(c => c.address === address);
         result.push({
             address,
             temp: data.temp,
             lastSeen: data.lastSeen,
+            deviceId: data.deviceId ?? null,
             name: cfg?.name ?? '',
             color: cfg?.color ?? null,
             offset: cfg?.offset ?? 0,
             enabled: cfg ? (cfg.enabled !== 0) : true,
+            role: cfg?.role ?? null,
             configured: !!cfg,
         });
     }
@@ -274,6 +301,8 @@ router.get('/config', authenticate, (req, res) => {
     }
 });
 
+const VALID_ROLES = ['boiler', 'column', 'dephleg', 'output', 'ambient'];
+
 /**
  * @openapi
  * /api/sensors/config:
@@ -283,7 +312,8 @@ router.get('/config', authenticate, (req, res) => {
  *     description: >
  *       Upserts sensor configurations for the current user. Each sensor is
  *       identified by its OneWire address. Existing configs are updated,
- *       new ones are created.
+ *       new ones are created. The `role` field assigns a dashboard role
+ *       (boiler, column, dephleg, output, ambient) or null for display-only.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -336,11 +366,13 @@ router.put('/config', authenticate, (req, res) => {
         const saved = [];
         for (const s of sensors) {
             if (!s.address) continue;
+            const role = VALID_ROLES.includes(s.role) ? s.role : null;
             const row = sensorQueries.upsert(userId, s.address, {
                 name: s.name ?? '',
                 color: s.color ?? null,
                 offset: parseFloat(s.offset) || 0,
                 enabled: s.enabled !== false ? 1 : 0,
+                role,
             });
             saved.push(row);
         }

@@ -80,6 +80,26 @@ export default function createSettingsRouter() {
      *                   kd:
      *                     type: number
      *                     example: 1.0
+     *                   rampDistance:
+     *                     type: number
+     *                     description: |
+     *                       Degrees below target to start ramp-down from 100% to P-only.
+     *                       0 (default) = disabled — full 100% power all the way to target.
+     *                       Set > 0 only if you observe overshoot on fast-response setups.
+     *                     example: 0
+     *                   minPower:
+     *                     type: number
+     *                     description: |
+     *                       Minimum heater power (%) at the bottom of the ramp zone.
+     *                       Only relevant when rampDistance > 0. Default: 5
+     *                     example: 5
+     *               boiling_temp:
+     *                 type: number
+     *                 description: |
+     *                   Target temperature for boiling phase (°C). Default: 100.
+     *                   Set lower (e.g. 70) for test benches that cannot reach 100°C.
+     *                   TODO #30: remove this override before production release.
+     *                 example: 70
      *               telegram:
      *                 type: object
      *                 description: Telegram settings (triggers config reload)
@@ -117,6 +137,9 @@ export default function createSettingsRouter() {
                 if (pid.kp !== undefined && pid.ki !== undefined && pid.kd !== undefined) {
                     pidManager.setTunings(pid.kp, pid.ki, pid.kd);
                     log.info({ kp: pid.kp, ki: pid.ki, kd: pid.kd }, 'Applied PID tunings');
+                }
+                if (pid.rampDistance !== undefined || pid.minPower !== undefined) {
+                    pidManager.updateRampSettings({ rampDistance: pid.rampDistance, minPower: pid.minPower });
                 }
             }
 

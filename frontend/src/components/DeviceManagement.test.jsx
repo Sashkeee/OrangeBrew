@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import DeviceManagement from './DeviceManagement';
 
 // Mock deviceApi
@@ -42,7 +43,7 @@ describe('DeviceManagement', () => {
 
     it('shows empty state when no devices found', async () => {
         deviceApi.getAll.mockResolvedValue([]);
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('Нет зарегистрированных устройств')).toBeInTheDocument();
@@ -52,7 +53,7 @@ describe('DeviceManagement', () => {
 
     it('displays devices with correct online/offline status', async () => {
         deviceApi.getAll.mockResolvedValue([sampleDevice, offlineDevice]);
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('My ESP')).toBeInTheDocument();
@@ -64,7 +65,7 @@ describe('DeviceManagement', () => {
 
     it('shows online count in header', async () => {
         deviceApi.getAll.mockResolvedValue([sampleDevice, offlineDevice]);
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('1 из 2 в сети')).toBeInTheDocument();
@@ -76,7 +77,7 @@ describe('DeviceManagement', () => {
         deviceApi.delete.mockResolvedValue({ success: true });
         window.confirm = vi.fn(() => true);
 
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('My ESP')).toBeInTheDocument();
@@ -95,7 +96,7 @@ describe('DeviceManagement', () => {
         deviceApi.getAll.mockResolvedValue([sampleDevice]);
         window.confirm = vi.fn(() => false);
 
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('My ESP')).toBeInTheDocument();
@@ -111,7 +112,7 @@ describe('DeviceManagement', () => {
     it('shows error message when API fails', async () => {
         deviceApi.getAll.mockRejectedValue(new Error('Network error'));
 
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('Не удалось загрузить список устройств')).toBeInTheDocument();
@@ -120,7 +121,7 @@ describe('DeviceManagement', () => {
 
     it('has a refresh button', async () => {
         deviceApi.getAll.mockResolvedValue([sampleDevice]);
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('My ESP')).toBeInTheDocument();
@@ -141,7 +142,7 @@ describe('DeviceManagement', () => {
         deviceApi.getAll.mockResolvedValue([sampleDevice]);
         deviceApi.update.mockResolvedValue({ success: true });
 
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText('My ESP')).toBeInTheDocument();
@@ -167,7 +168,7 @@ describe('DeviceManagement', () => {
 
     it('shows device ID and role info', async () => {
         deviceApi.getAll.mockResolvedValue([sampleDevice]);
-        render(<DeviceManagement />);
+        render(<MemoryRouter><DeviceManagement /></MemoryRouter>);
 
         await waitFor(() => {
             expect(screen.getByText(/ID: esp32_abc/)).toBeInTheDocument();

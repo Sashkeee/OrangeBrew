@@ -1,16 +1,21 @@
 /**
- * Maps raw sensor addresses to named roles (boiler, column, etc.).
- * Uses new `sensors` table (per-user, address-based) first.
- * Falls back to old settings_v2 'sensors' config for backward compat.
- * Also applies calibration offset.
+ * Maps raw sensor addresses to role keys (boiler, column, etc.) using
+ * the user's sensor configuration from the `sensors` table.
+ *
+ * Only explicitly configured and enabled sensors are mapped.
+ * Sensors with a `role` produce role-keyed values (e.g. mapped.boiler).
+ * All enabled sensors also produce address-keyed values (mapped["28-abc..."]).
+ *
+ * NO automatic fallback — if no sensor has role='boiler', mapped.boiler
+ * stays undefined. Dashboard pages show default/empty state.
  *
  * @param {string} deviceId
  * @param {object} rawData  — must have rawData.sensors = [{address, temp}]
  * @param {number|null} userId
- * @param {{ sensorQueries: object, settingsQueries: object, logger: object }} deps
- * @returns {object} mapped data with role keys (boiler, column, ...) and sensors array
+ * @param {{ sensorQueries: object, logger: object }} deps
+ * @returns {object} mapped data with role keys and sensors array
  */
-export function mapSensors(deviceId, rawData, userId = null, { sensorQueries, settingsQueries, logger }) {
+export function mapSensors(deviceId, rawData, userId = null, { sensorQueries, logger }) {
     if (!rawData || !rawData.sensors || !Array.isArray(rawData.sensors)) return rawData;
 
     const mapped = {
@@ -19,51 +24,28 @@ export function mapSensors(deviceId, rawData, userId = null, { sensorQueries, se
         sensors: rawData.sensors,
     };
 
-    // ── 1. New address-based config (sensors table) ─────────────────
-    if (userId !== null) {
-        try {
-            const configs = sensorQueries.getAll(userId);
-            for (const cfg of configs) {
-                if (!cfg.enabled) continue;
-                const found = rawData.sensors.find(s => s.address === cfg.address);
-                if (found) {
-                    const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
-                    mapped[cfg.address] = rawTemp + parseFloat(cfg.offset || 0);
-                }
-            }
-        } catch (e) {
-            logger.warn({ module: 'mapSensors', err: e.message }, 'Failed to load sensor configs');
-        }
-    }
+    if (userId === null) return mapped;
 
-    // ── 2. Legacy role-based config (settings_v2 'sensors') ─────────
-    // Keep for backward compat — maps boiler/column/dephleg/output/ambient
-    let legacySettings = null;
     try {
-        legacySettings = (userId !== null ? settingsQueries.get('sensors', userId) : null)
-            ?? settingsQueries.get('sensors', null);
-        if (typeof legacySettings === 'string') legacySettings = JSON.parse(legacySettings);
-    } catch { /* ignore */ }
+        const configs = sensorQueries.getAll(userId);
+        for (const cfg of configs) {
+            if (!cfg.enabled) continue;
+            const found = rawData.sensors.find(s => s.address === cfg.address);
+            if (!found) continue;
 
-    if (legacySettings && typeof legacySettings === 'object') {
-        for (const [role, config] of Object.entries(legacySettings)) {
-            if (mapped[role] !== undefined) continue; // already set
-            if (config && config.enabled && config.address) {
-                const found = rawData.sensors.find(s => s.address === config.address);
-                if (found) {
-                    const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
-                    mapped[role] = rawTemp + parseFloat(config.offset || 0);
-                }
+            const rawTemp = parseFloat(found.temp ?? found.value ?? 0);
+            const temp = rawTemp + parseFloat(cfg.offset || 0);
+
+            // Address-keyed value (for named sensor display)
+            mapped[cfg.address] = temp;
+
+            // Role-keyed value (for dashboard pages and PID)
+            if (cfg.role) {
+                mapped[cfg.role] = temp;
             }
         }
-    }
-
-    // ── 3. Fallback: boiler = first sensor, column = second ──────────
-    if (mapped.boiler === undefined && rawData.sensors.length > 0) {
-        mapped.boiler = parseFloat(rawData.sensors[0].temp ?? rawData.sensors[0].value ?? 0);
-    }
-    if (mapped.column === undefined && rawData.sensors.length > 1) {
-        mapped.column = parseFloat(rawData.sensors[1].temp ?? rawData.sensors[1].value ?? 0);
+    } catch (e) {
+        logger.warn({ module: 'mapSensors', err: e.message }, 'Failed to load sensor configs');
     }
 
     return mapped;
