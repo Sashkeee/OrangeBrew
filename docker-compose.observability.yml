@@ -165,7 +165,7 @@ services:
       elastic-bootstrap: {condition: service_completed_successfully}
       kafka-bootstrap: {condition: service_completed_successfully}
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9600/_node/pipelines >/dev/null"]
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9600/_node/pipelines | grep -q orangebrew-logs"]
       interval: 15s
       timeout: 5s
       retries: 40

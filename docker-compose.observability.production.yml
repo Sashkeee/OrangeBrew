@@ -45,7 +45,7 @@ services:
       - ./infra/logstash/normalize.rb:/usr/share/logstash/config/normalize.rb:ro
     mem_limit: 3g
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9600/_node/pipelines >/dev/null"]
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9600/_node/pipelines | grep -q orangebrew-logs"]
       interval: 15s
       timeout: 5s
       retries: 40
