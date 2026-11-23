@@ -35,7 +35,7 @@ const router = Router();
  */
 router.post('/set-process-type', (req, res) => {
     const { type } = req.body;
-    telegram.setCurrentProcessType(type);
+    telegram.setCurrentProcessType(type, req.user.id);
     res.json({ ok: true });
 });
 
@@ -71,7 +71,7 @@ router.post('/set-process-type', (req, res) => {
  */
 router.post('/notify-pump', (req, res) => {
     const { value } = req.body;
-    telegram.notifyPumpChange(value);
+    void telegram.notifyPumpChange(value, req.user.id);
     res.json({ ok: true });
 });
 
@@ -110,7 +110,7 @@ router.post('/notify-pump', (req, res) => {
  */
 router.post('/notify-mash-step', (req, res) => {
     const { type, step } = req.body;
-    telegram.notifyMashStep(type, step);
+    void telegram.notifyMashStep(type, step, req.user.id);
     res.json({ ok: true });
 });
 
@@ -149,7 +149,7 @@ router.post('/notify-mash-step', (req, res) => {
  */
 router.post('/notify-boil', (req, res) => {
     const { type, details } = req.body;
-    telegram.notifyBoilMilestone(type, details);
+    void telegram.notifyBoilMilestone(type, details, req.user.id);
     res.json({ ok: true });
 });
 

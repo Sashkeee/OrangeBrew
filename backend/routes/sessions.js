@@ -150,11 +150,12 @@ router.post('/', async (req, res) => {
 
         writeAudit({ userId: req.user.id, action: 'session.create', detail: `Started ${req.body.type || 'brew'} session, recipe: ${recipeName}` });
         log.info({ type: req.body.type, recipeName }, 'Notifying Telegram');
-        telegram.setCurrentProcessType(req.body.type || 'brew');
-        await telegram.notifyPhaseChange(
+        telegram.setCurrentProcessType(req.body.type || 'brew', req.user.id);
+        void telegram.notifyPhaseChange(
             req.body.type || 'brew',
             'Начало процесса',
-            `Рецепт: *${recipeName}*`
+            `Рецепт: *${recipeName}*`,
+            req.user.id
         );
 
         res.status(201).json(session);
@@ -263,7 +264,7 @@ router.post('/:id/complete', (req, res) => {
         const session = sessionQueries.complete(req.params.id, req.user.id);
         if (!session) return res.status(404).json({ error: 'Session not found' });
         writeAudit({ userId: req.user.id, action: 'session.complete', detail: `Completed ${session.type || 'brew'} session #${req.params.id}` });
-        telegram.notifyComplete(session.type || 'brew', { notes: session.notes });
+        void telegram.notifyComplete(session.type || 'brew', { notes: session.notes }, req.user.id);
         res.json(session);
     } catch (err) {
         res.status(500).json({ error: err.message });

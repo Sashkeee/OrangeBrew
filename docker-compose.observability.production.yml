@@ -1,0 +1,63 @@
+# Collector/indexer only, for previously provisioned TLS Kafka and Elasticsearch.
+# Uses separate runtime principals and externally supplied CA/truststore files.
+name: orangebrew-observability-prod
+services:
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.5.7
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    environment:
+      APP_ENV: prod
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Set production brokers}
+      KAFKA_FILEBEAT_USERNAME: ${KAFKA_FILEBEAT_USERNAME:?Set collector principal}
+      KAFKA_FILEBEAT_PASSWORD: ${KAFKA_FILEBEAT_PASSWORD:?Set collector password}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-SCRAM-SHA-512}
+    volumes:
+      - filebeat-data:/usr/share/filebeat/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ${OBSERVABILITY_CERTS_DIR:?Provide production CA directory}:/usr/share/filebeat/certs:ro
+      - ./infra/filebeat/filebeat.production.yml:/usr/share/filebeat/filebeat.yml:ro
+    mem_limit: 512m
+    restart: unless-stopped
+    networks: [observability]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+  logstash:
+    image: docker.elastic.co/logstash/logstash:9.5.7
+    environment:
+      APP_ENV: prod
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Set production brokers}
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-SCRAM-SHA-512}
+      KAFKA_JAAS_CONFIG: ${KAFKA_LOGSTASH_JAAS_CONFIG:?Set indexer JAAS credentials}
+      KAFKA_TRUSTSTORE_PASSWORD: ${KAFKA_TRUSTSTORE_PASSWORD:?Set truststore password}
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:?Set HTTPS Elasticsearch endpoint}
+      LOGSTASH_USERNAME: ${LOGSTASH_USERNAME:-orangebrew_ingest}
+      LOGSTASH_PASSWORD: ${LOGSTASH_PASSWORD:?Set ingest principal password}
+      LS_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - logstash-data:/usr/share/logstash/data
+      - ${OBSERVABILITY_CERTS_DIR:?Provide production CA directory}:/usr/share/logstash/config/certs:ro
+      - ./infra/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./infra/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ./infra/logstash/pipeline/logs.production.conf:/usr/share/logstash/pipeline/logs.conf:ro
+      - ./infra/logstash/normalize.rb:/usr/share/logstash/config/normalize.rb:ro
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9600/_node/pipelines >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+    stop_grace_period: 60s
+    restart: unless-stopped
+    networks: [observability]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+volumes:
+  filebeat-data:
+  logstash-data:
+networks:
+  observability:
+    name: orangebrew-observability-prod

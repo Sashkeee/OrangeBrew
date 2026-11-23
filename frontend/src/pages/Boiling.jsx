@@ -11,6 +11,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ProcessChart } from '../components/ProcessChart';
 import { StartButton } from '../components/StartButton';
 import DeviceSelector from '../components/DeviceSelector';
+import ProcessRecoveryNotice, { requiresProcessAcknowledgement } from '../components/ProcessRecoveryNotice';
 import { formatTime } from '../utils/formatTime';
 
 import './pages.css';
@@ -107,6 +108,7 @@ const Boiling = () => {
     }, [remainingTime, recipeData, isBoiling, alertedHops]);
 
     const handleStartStop = async () => {
+        if (requiresProcessAcknowledgement(processState)) return;
         if (isStarted) {
             if (isPaused) {
                 try { await resume(); } catch (e) { alert(`Ошибка: ${e.message}`); }
@@ -145,6 +147,7 @@ const Boiling = () => {
 
     return (
         <div className="page-container" style={{ maxWidth: '1200px' }}>
+            <ProcessRecoveryNotice processState={processState} onAcknowledge={stop} isLoading={isLoading} />
             <PageHeader title="Кипячение" color="var(--accent-red)" backTo="/brewing" elapsed={elapsedTime}>
                 <div className="industrial-panel" style={{ padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem', borderColor: 'var(--accent-red)' }}>
                     <Timer size={20} color="var(--accent-red)" />
@@ -270,7 +273,7 @@ const Boiling = () => {
                     <div className="industrial-panel" style={{ padding: '1.5rem' }}>
                         {!isStarted && <DeviceSelector value={selectedDeviceId} onChange={setSelectedDeviceId} />}
                         <StartButton
-
+                            disabled={requiresProcessAcknowledgement(processState) || isLoading}
                             isStarted={isStarted && !isPaused}
                             onClick={handleStartStop}
                             startLabel={isPaused ? "ПРОДОЛЖИТЬ" : "СТАРТ КИПЯЧЕНИЯ"}

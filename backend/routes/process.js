@@ -1,5 +1,6 @@
 import express from 'express';
 import { writeAudit } from '../utils/audit.js';
+import { isDiscoveredSensorForDevice } from './sensors.js';
 
 /**
  * Process router — читает req.processManager, который инжектируется middleware в server.js.
@@ -106,7 +107,10 @@ router.post('/start', (req, res) => {
         if (!recipe) {
             return res.status(400).json({ error: 'Recipe is required' });
         }
-        req.processManager.start(recipe, sessionId, mode, deviceId || 'local_serial', sensorAddress);
+        const selectedDevice = deviceId || 'local_serial';
+        req.processManager.start(recipe, sessionId, mode, selectedDevice, sensorAddress,
+            { correlationId: req.requestId || req.id,
+                sensorVerified: isDiscoveredSensorForDevice(req.user.id, selectedDevice, sensorAddress) });
         writeAudit({ userId: req.user.id, action: 'process.start', detail: `Started ${mode || 'brew'} process` });
         res.json({ ok: true, state: req.processManager.getState() });
     } catch (err) {

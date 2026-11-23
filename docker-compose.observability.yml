@@ -1,0 +1,222 @@
+name: orangebrew-observability-${APP_ENV:-test}
+
+# Single-node development/test topology. Never expose the Kafka plaintext listener.
+# Generate .env.observability first; see docs/OBSERVABILITY_RUNBOOK.md.
+x-logging: &local-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  certificates:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7
+    user: "0"
+    entrypoint: ["bash", "/bootstrap/certificates.sh"]
+    volumes:
+      - elastic-certs:/certs
+      - ./infra/elastic:/bootstrap:ro
+    networks: [observability]
+    logging: *local-logging
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?Generate .env.observability first}
+      ES_JAVA_OPTS: -Xms2g -Xmx2g
+    volumes:
+      - elastic-data:/usr/share/elasticsearch/data
+      - elastic-certs:/usr/share/elasticsearch/config/certs:ro
+      - ./infra/elastic/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ./infra/observability:/smoke:ro
+    ports:
+      - "127.0.0.1:${ELASTIC_PORT:-9200}:9200"
+    mem_limit: 4g
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail --cacert config/certs/ca/ca.crt -u elastic:$$ELASTIC_PASSWORD https://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      certificates: {condition: service_completed_successfully}
+    restart: unless-stopped
+    networks: [observability]
+    logging: *local-logging
+
+  elastic-bootstrap:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7
+    entrypoint: ["bash", "/bootstrap/bootstrap.sh"]
+    environment:
+      APP_ENV: ${APP_ENV:-test}
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?Generate .env.observability first}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:?Generate .env.observability first}
+      LOGSTASH_PASSWORD: ${LOGSTASH_PASSWORD:?Generate .env.observability first}
+      OPERATOR_PASSWORD: ${OPERATOR_PASSWORD:?Generate .env.observability first}
+    volumes:
+      - elastic-certs:/certs:ro
+      - ./infra/elastic:/bootstrap:ro
+    depends_on:
+      elasticsearch: {condition: service_healthy}
+    networks: [observability]
+    logging: *local-logging
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.7
+    environment:
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:?Generate .env.observability first}
+      KIBANA_ENCRYPTION_KEY: ${KIBANA_ENCRYPTION_KEY:?Generate .env.observability first}
+    volumes:
+      - elastic-certs:/usr/share/kibana/config/certs:ro
+      - ./infra/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - "127.0.0.1:${KIBANA_PORT:-5601}:5601"
+    mem_limit: 2g
+    depends_on:
+      elastic-bootstrap: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail --cacert config/certs/ca/ca.crt https://localhost:5601/login >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+    restart: unless-stopped
+    networks: [observability]
+    logging: *local-logging
+
+  kibana-bootstrap:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.7
+    entrypoint: ["bash", "/bootstrap/bootstrap.sh"]
+    environment:
+      APP_ENV: ${APP_ENV:-test}
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?Generate .env.observability first}
+    volumes:
+      - elastic-certs:/certs:ro
+      - ./infra/kibana:/bootstrap:ro
+    depends_on:
+      kibana: {condition: service_healthy}
+    networks: [observability]
+    logging: *local-logging
+
+  kafka:
+    image: apache/kafka:4.4.0
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?Generate .env.observability first}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_LOG_RETENTION_BYTES: 5368709120
+      KAFKA_MESSAGE_MAX_BYTES: 1048576
+      KAFKA_HEAP_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    restart: unless-stopped
+    networks: [observability]
+    logging: *local-logging
+
+  kafka-bootstrap:
+    image: apache/kafka:4.4.0
+    entrypoint: ["bash", "/bootstrap/topics.sh"]
+    environment:
+      APP_ENV: ${APP_ENV:-test}
+      KAFKA_BROKERS: kafka:9092
+    volumes:
+      - ./infra/kafka:/bootstrap:ro
+    depends_on:
+      kafka: {condition: service_healthy}
+    networks: [observability]
+    logging: *local-logging
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:9.5.7
+    environment:
+      APP_ENV: ${APP_ENV:-test}
+      KAFKA_BROKERS: kafka:9092
+      LOGSTASH_PASSWORD: ${LOGSTASH_PASSWORD:?Generate .env.observability first}
+      LS_JAVA_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - logstash-data:/usr/share/logstash/data
+      - elastic-certs:/usr/share/logstash/config/certs:ro
+      - ./infra/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./infra/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ./infra/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./infra/logstash/normalize.rb:/usr/share/logstash/config/normalize.rb:ro
+    mem_limit: 3g
+    depends_on:
+      elastic-bootstrap: {condition: service_completed_successfully}
+      kafka-bootstrap: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:9600/_node/pipelines >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+    stop_grace_period: 60s
+    restart: unless-stopped
+    networks: [observability]
+    logging: *local-logging
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.5.7
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    environment:
+      APP_ENV: ${APP_ENV:-test}
+      KAFKA_BROKERS: kafka:9092
+      FILEBEAT_SMOKE_ENABLED: ${FILEBEAT_SMOKE_ENABLED:-false}
+    volumes:
+      - filebeat-data:/usr/share/filebeat/data
+      - smoke-logs:/fixtures:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./infra/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+    mem_limit: 256m
+    depends_on:
+      kafka-bootstrap: {condition: service_completed_successfully}
+    stop_grace_period: 30s
+    restart: unless-stopped
+    networks: [observability]
+    logging: *local-logging
+
+  canary:
+    image: busybox:1.37.0
+    profiles: [smoke]
+    entrypoint: ["sh", "/smoke/canary.sh"]
+    environment:
+      CANARY_ID: ${CANARY_ID:-orangebrew-smoke}
+    volumes:
+      - smoke-logs:/fixtures
+      - ./infra/observability:/smoke:ro
+    networks: [observability]
+    logging: *local-logging
+
+volumes:
+  elastic-certs:
+  elastic-data:
+  kafka-data:
+  logstash-data:
+  filebeat-data:
+  smoke-logs:
+
+networks:
+  observability:
+    name: orangebrew-observability-${APP_ENV:-test}
+    internal: true

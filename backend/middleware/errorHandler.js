@@ -11,28 +11,32 @@
  *   app.use(errorHandler);
  */
 import logger from '../utils/logger.js';
+import { safeUrlPath } from '../utils/redact.js';
 
 const log = logger.child({ module: 'ErrorHandler' });
 
 export function errorHandler(err, req, res, _next) {
-    const status = err.status || err.statusCode || 500;
+    const proposedStatus = Number(err.status || err.statusCode || 500);
+    const status = Number.isInteger(proposedStatus) && proposedStatus >= 400 && proposedStatus <= 599 ? proposedStatus : 500;
     const isServer = status >= 500;
 
+    const requestLog = req.log || log;
     if (isServer) {
-        log.error({
+        requestLog.error({
             err,
-            method: req.method,
-            url: req.url,
+            'http.request.method': req.method,
+            'url.path': safeUrlPath(req.url),
             userId: req.user?.id,
         }, 'Unhandled route error');
     } else {
-        log.warn({
+        requestLog.warn({
             status,
-            message: err.message,
-            url: req.url,
+            err,
+            'url.path': safeUrlPath(req.url),
         }, 'Client error');
     }
 
+    if (res.headersSent) return _next(err);
     res.status(status).json({
         error: isServer ? 'Internal server error' : err.message,
     });

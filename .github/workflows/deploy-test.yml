@@ -44,7 +44,7 @@ jobs:
           host: ${{ secrets.VPS_IP }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.test.yml,Caddyfile,vector.test.toml"
+          source: "docker-compose.test.yml,docker-compose.kafka.yml,docker-compose.observability.yml,infra,Caddyfile"
           target: "~/OrangeBrew"
 
       - name: Deploy to VPS
@@ -56,7 +56,15 @@ jobs:
           script: |
             cd ~/OrangeBrew
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose -f docker-compose.test.yml pull
-            # Force-recreate ALL containers: backend/frontend use new images, vector picks up config changes
-            docker compose -f docker-compose.test.yml up -d --force-recreate
+            set -- -f docker-compose.test.yml
+            if [ -f .kafka-enabled-test ]; then
+              set -- "$@" -f docker-compose.kafka.yml
+            fi
+            docker compose "$@" pull backend-test frontend-test
+            # Application deploys never restart stateful Kafka/Elastic services.
+            docker compose "$@" up -d backend-test frontend-test
+            # Remove only the retired logging container; preserve application volumes.
+            if docker container inspect orangebrew-vector-test >/dev/null 2>&1; then
+              docker container rm -f orangebrew-vector-test
+            fi
             caddy reload --config ~/OrangeBrew/Caddyfile

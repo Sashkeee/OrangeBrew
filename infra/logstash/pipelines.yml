@@ -1,0 +1,4 @@
+- pipeline.id: orangebrew-logs
+  path.config: /usr/share/logstash/pipeline/logs.conf
+  pipeline.workers: 1
+  pipeline.batch.size: 125

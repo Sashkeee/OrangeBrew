@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import { mkdirSync, existsSync } from 'fs';
 import { runMigrations } from './migrate.js';
 import logger from '../utils/logger.js';
+import { readEventConfig } from '../events/config.js';
+import { createProcessEvent, validateProcessEvent } from '../events/processEvent.js';
 
 const log = logger.child({ module: 'DB' });
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +61,9 @@ export async function initDatabase(path) {
         // Performance settings
         db.pragma('journal_mode = WAL');
         db.pragma('foreign_keys = ON');
-        db.pragma('synchronous = NORMAL');
+        const synchronous = process.env.SQLITE_SYNCHRONOUS || 'FULL';
+        if (!['FULL', 'NORMAL'].includes(synchronous)) throw new Error('SQLITE_SYNCHRONOUS must be FULL or NORMAL');
+        db.pragma(`synchronous = ${synchronous}`);
 
         // Run base schema (CREATE TABLE IF NOT EXISTS — idempotent)
         const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf-8');
@@ -106,6 +110,126 @@ export function closeDatabase() {
         log.info('Database connection closed');
     }
 }
+
+// Process persistence is local and synchronous. Never perform network work in these transactions.
+function requireOwner(userId) {
+    if (!Number.isSafeInteger(userId) || userId < 1) throw new Error('Authenticated process owner is required');
+}
+
+function outboxCapacity(config, bytes, starting = false) {
+    if (!config.captureEnabled) return;
+    const stats = eventOutboxQueries.stats();
+    // Reserve 20% for transitions and stops of sessions already running.
+    const fraction = starting ? 0.8 : 1;
+    if (stats.pendingEvents + 1 > Math.max(1, Math.floor(config.maxPendingEvents * fraction))
+        || stats.pendingBytes + bytes > config.maxPendingBytes * fraction) {
+        const error = new Error('Process event storage is full; restore publishing before starting or resuming');
+        error.code = 'OUTBOX_CAPACITY';
+        throw error;
+    }
+}
+
+function persistProcessTransition({ userId, sessionId, eventType, snapshot, payload = {}, sessionStatus, context = {}, starting = false, config = readEventConfig() }) {
+    requireOwner(userId);
+    if (!sessionQueries.getById(sessionId, userId)) throw new Error('Session does not belong to this user');
+    const previous = queryOne('SELECT sequence FROM process_runtime_state WHERE session_id = ? AND user_id = ?', [sessionId, userId]);
+    const sequence = (previous?.sequence || 0) + 1;
+    const now = new Date().toISOString();
+    const selectedStep = snapshot.steps?.[snapshot.currentStepIndex];
+    const event = createProcessEvent({ userId, sessionId, deviceId: snapshot.deviceId ?? null, sequence, eventType,
+        payload: { ...payload, state: snapshot.status, mode: snapshot.mode, currentStep: snapshot.currentStepIndex,
+            snapshot: { status: snapshot.status, mode: snapshot.mode, recipeName: snapshot.recipeName || '',
+                currentStepIndex: snapshot.currentStepIndex, currentStep: selectedStep ? {
+                    name: selectedStep.name || '', temp: selectedStep.temp, duration: selectedStep.duration } : null } }, context, now });
+    const encoded = JSON.stringify(event);
+    const bytes = Buffer.byteLength(encoded);
+    if (bytes > config.maxEventBytes || Buffer.byteLength(JSON.stringify(snapshot)) > config.maxEventBytes) throw new Error('Process event or snapshot exceeds size limit');
+    outboxCapacity(config, bytes, starting);
+    if (sessionStatus) {
+        const finished = ['completed', 'cancelled'].includes(sessionStatus) ? now : null;
+        runSql('UPDATE brew_sessions SET status = ?, finished_at = ? WHERE id = ? AND user_id = ?', [sessionStatus, finished, sessionId, userId]);
+    }
+    runSql(`INSERT INTO process_runtime_state(session_id,user_id,snapshot,sequence,recovery_required,updated_at)
+        VALUES(?,?,?,?,0,?) ON CONFLICT(session_id) DO UPDATE SET snapshot=excluded.snapshot,
+        sequence=excluded.sequence,recovery_required=0,updated_at=excluded.updated_at`,
+    [sessionId, userId, JSON.stringify(snapshot), sequence, now]);
+    if (config.captureEnabled) {
+        runSql(`INSERT INTO event_outbox(event_id,user_id,aggregate_id,aggregate_sequence,topic,message_key,payload,payload_bytes,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)`, [event.eventId, userId, event.aggregateId, sequence, config.topic,
+            `${userId}:${sessionId}`, encoded, bytes, now]);
+    }
+    return { event, captured: config.captureEnabled, sequence };
+}
+
+export const eventOutboxQueries = {
+    // A failed head blocks only its aggregate, never a later event in the same aggregate.
+    nextBatch: (limit = 50, now = Date.now()) => queryAll(`SELECT e.* FROM event_outbox e
+        WHERE e.published_at IS NULL AND e.next_attempt_at <= ? AND NOT EXISTS (
+          SELECT 1 FROM event_outbox older WHERE older.aggregate_id=e.aggregate_id
+          AND older.aggregate_sequence < e.aggregate_sequence AND older.published_at IS NULL)
+        ORDER BY e.id LIMIT ?`, [now, limit]),
+    markPublished: (eventId, at = new Date().toISOString()) => runSql(
+        'UPDATE event_outbox SET published_at=?, last_error=NULL WHERE event_id=? AND published_at IS NULL', [at, eventId]),
+    markFailed: (eventId, error, nextAttemptAt) => runSql(`UPDATE event_outbox SET attempts=attempts+1,
+        last_error=?,next_attempt_at=? WHERE event_id=? AND published_at IS NULL`, [String(error).slice(0, 200), nextAttemptAt, eventId]),
+    stats: () => {
+        const row = queryOne(`SELECT COUNT(*) pendingEvents,COALESCE(SUM(payload_bytes),0) pendingBytes,
+            MIN(created_at) oldestCreatedAt,MAX(attempts) maxAttempts FROM event_outbox WHERE published_at IS NULL`);
+        return { ...row, oldestAgeMs: row.oldestCreatedAt ? Math.max(0, Date.now() - Date.parse(row.oldestCreatedAt)) : 0 };
+    },
+    cleanupPublished: (before) => runSql('DELETE FROM event_outbox WHERE published_at IS NOT NULL AND published_at < ?', [before]),
+};
+
+export const processEventQueries = {
+    prepareStart: ({ userId, recipe, sessionId, mode, snapshot, context = {} }) => getDb().transaction(() => {
+        requireOwner(userId);
+        const config = readEventConfig();
+        if (recipe.id && !recipeQueries.getById(recipe.id, userId)) throw new Error('Recipe does not belong to this user');
+        if (snapshot.deviceId !== 'local_serial') {
+            const device = deviceQueries.getById(snapshot.deviceId);
+            if (!device || device.user_id !== userId) throw new Error('Device does not belong to this user');
+        } else if ((process.env.CONNECTION_TYPE || 'mock') !== 'mock') throw new Error('Select a paired device in WiFi mode');
+        if (snapshot.sensorAddress && !sensorQueries.getByAddress(userId, snapshot.sensorAddress) && context.sensorVerified !== true) {
+            throw new Error('Sensor does not belong to this user or has not been observed on the selected device recently');
+        }
+        let session;
+        if (sessionId && sessionId !== 'new') {
+            session = sessionQueries.getById(sessionId, userId);
+            if (!session) throw new Error('Session does not belong to this user');
+            if (session.status === 'cancelled') throw new Error('Cancelled session cannot be restarted');
+            if (session.device_id && session.device_id !== snapshot.deviceId) throw new Error('Session is bound to a different device');
+        } else {
+            session = sessionQueries.create({ recipe_id: recipe.id || null, type: mode, status: 'active', notes: 'Created by ProcessManager' }, userId);
+        }
+        if (snapshot.deviceId !== 'local_serial') runSql('UPDATE brew_sessions SET device_id=? WHERE id=? AND user_id=?', [snapshot.deviceId, session.id, userId]);
+        const prepared = { ...snapshot, sessionId: session.id, status: 'START_REQUESTED' };
+        const result = persistProcessTransition({ userId, sessionId: session.id, eventType: 'process.start_requested',
+            snapshot: prepared, context, starting: true, sessionStatus: 'active', config });
+        return { session: sessionQueries.getById(session.id, userId), snapshot: prepared, ...result };
+    })(),
+    transition: (options) => getDb().transaction(() => persistProcessTransition(options))(),
+    markInterrupted: () => runSql(`UPDATE process_runtime_state SET recovery_required=1
+        WHERE json_extract(snapshot,'$.status') NOT IN ('IDLE','COMPLETED','STOPPED','START_FAILED')`),
+    getRecoverable: (userId) => {
+        requireOwner(userId);
+        return queryAll(`SELECT session_id sessionId,user_id userId,snapshot,sequence,updated_at updatedAt
+            FROM process_runtime_state WHERE user_id=? AND recovery_required=1 ORDER BY updated_at DESC`, [userId])
+            .map(row => ({ ...row, snapshot: JSON.parse(row.snapshot) }));
+    },
+    applyProjection: (event, consumerName = 'process-projection-v1') => getDb().transaction(() => {
+        validateProcessEvent(event);
+        if (!sessionQueries.getById(event.sessionId, event.userId)) throw new Error('Event session owner mismatch');
+        if (queryOne('SELECT 1 FROM processed_events WHERE consumer_name=? AND event_id=?', [consumerName, event.eventId])) return { duplicate: true };
+        const previous = queryOne('SELECT sequence FROM process_event_projection WHERE consumer_name=? AND aggregate_id=?', [consumerName, event.aggregateId]);
+        if (previous && event.aggregateSequence !== previous.sequence + 1) throw new Error('Process projection sequence gap or regression');
+        runSql(`INSERT INTO process_event_projection(consumer_name,aggregate_id,user_id,sequence,event_type,event_id,payload,updated_at)
+            VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(consumer_name,aggregate_id) DO UPDATE SET sequence=excluded.sequence,
+            event_type=excluded.event_type,event_id=excluded.event_id,payload=excluded.payload,updated_at=excluded.updated_at`,
+        [consumerName, event.aggregateId, event.userId, event.aggregateSequence, event.eventType, event.eventId, JSON.stringify(event.payload), event.recordedAt]);
+        runSql('INSERT INTO processed_events(consumer_name,event_id,processed_at) VALUES(?,?,?)', [consumerName, event.eventId, new Date().toISOString()]);
+        return { duplicate: false };
+    })(),
+};
 
 // ─── Helpers ──────────────────────────────────────────────
 

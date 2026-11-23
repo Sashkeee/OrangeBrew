@@ -13,6 +13,7 @@ import { SafetyCheck } from '../components/SafetyCheck';
 import { StartButton } from '../components/StartButton';
 import DeviceSelector from '../components/DeviceSelector';
 import SensorSelector from '../components/SensorSelector';
+import ProcessRecoveryNotice, { requiresProcessAcknowledgement } from '../components/ProcessRecoveryNotice';
 import { formatTime } from '../utils/formatTime';
 
 import './pages.css';
@@ -166,6 +167,7 @@ const Mashing = () => {
 
     // Handle Start / Stop / Pause
     const handleStartStop = async () => {
+        if (requiresProcessAcknowledgement(processState)) return;
         setUiError(null);
         if (isStarted) {
             if (isPaused) {
@@ -307,6 +309,7 @@ const Mashing = () => {
 
     return (
         <div className="page-container" style={{ maxWidth: '1200px' }}>
+            <ProcessRecoveryNotice processState={processState} onAcknowledge={stop} isLoading={isLoading} />
             {/* Error Notification */}
             <AnimatePresence>
                 {uiError && (
@@ -623,7 +626,7 @@ const Mashing = () => {
                             <button
                                 className={`btn-start ${isStarted && !isPaused ? 'btn-start--active' : ''}`}
                                 onClick={handleStartStop}
-                                disabled={(!isStarted && !isHeaterCovered) || isLoading}
+                                disabled={requiresProcessAcknowledgement(processState) || (!isStarted && !isHeaterCovered) || isLoading}
                                 style={{
                                     width: '100%',
                                     padding: '1.2rem',

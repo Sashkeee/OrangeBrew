@@ -1,0 +1,19 @@
+{
+  "$id": "orangebrew.process-event.v1", "type": "object", "additionalProperties": false,
+  "required": ["eventId", "eventType", "schemaVersion", "occurredAt", "recordedAt", "userId", "deviceId", "sessionId", "aggregateId", "aggregateSequence", "correlationId", "payload"],
+  "properties": {
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "eventType": { "enum": ["process.start_requested", "process.started", "process.start_failed", "process.paused", "process.resume_requested", "process.resumed", "process.step_changed", "process.step_reached", "process.completed", "process.stopped", "process.safety_stop"] },
+    "schemaVersion": { "const": 1 },
+    "occurredAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "recordedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "userId": { "type": "integer", "minimum": 1 },
+    "deviceId": { "type": ["string", "null"], "maxLength": 128 },
+    "sessionId": { "type": "integer", "minimum": 1 },
+    "aggregateId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "aggregateSequence": { "type": "integer", "minimum": 1 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "causationId": { "type": ["string", "null"], "maxLength": 128 },
+    "payload": { "type": "object" }
+  }
+}

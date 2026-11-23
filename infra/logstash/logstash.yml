@@ -1,0 +1,11 @@
+node.name: orangebrew-logstash
+api.http.host: 0.0.0.0
+pipeline.ecs_compatibility: v8
+queue.type: persisted
+queue.max_bytes: 1gb
+queue.checkpoint.writes: 1
+dead_letter_queue.enable: true
+dead_letter_queue.max_bytes: 256mb
+dead_letter_queue.retain.age: 7d
+log.level: warn
+xpack.monitoring.enabled: false

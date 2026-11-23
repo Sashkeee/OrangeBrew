@@ -127,7 +127,7 @@ export default function createSettingsRouter() {
 
             // If telegram settings were updated, reload the service
             if (req.body.telegram) {
-                reloadTelegramConfig();
+                reloadTelegramConfig(req.user.id);
             }
 
             // If PID settings were updated, apply to the running PidManager (injected by server.js)
@@ -328,7 +328,7 @@ export default function createSettingsRouter() {
      */
     router.post('/test-telegram', async (req, res) => {
         try {
-            const result = await sendMessage('🧪 *Тестовое уведомление*\n\nOrangeBrew — Telegram интеграция работает!');
+            const result = await sendMessage('🧪 *Тестовое уведомление*\n\nOrangeBrew — Telegram интеграция работает!', { userId: req.user.id });
             if (result?.ok) {
                 res.json({ ok: true, message: 'Сообщение отправлено' });
             } else {
@@ -368,7 +368,7 @@ export default function createSettingsRouter() {
      */
     router.post('/reload-telegram', (req, res) => {
         try {
-            reloadTelegramConfig();
+            reloadTelegramConfig(req.user.id);
             res.json({ ok: true });
         } catch (err) {
             res.status(500).json({ error: err.message });

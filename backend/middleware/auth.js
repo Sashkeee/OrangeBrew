@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import config from '../config/env.js';
 import logger from '../utils/logger.js';
 import { userQueries } from '../db/database.js';
+import { setLogContext } from '../utils/logContext.js';
 
 const { JWT_SECRET } = config;
 const log = logger.child({ module: 'Auth' });
@@ -32,6 +33,7 @@ export function authenticate(req, res, next) {
         }
 
         req.user = decoded; // Attach user payload to request
+        setLogContext({ userId: decoded.id });
         next();
     } catch (error) {
         if (error.name === 'TokenExpiredError') {

@@ -2,17 +2,27 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import pinoHttp from 'pino-http';
-import logger from './utils/logger.js';
+import logger, { flushLogs } from './utils/logger.js';
+import requestLogger from './middleware/requestLogger.js';
+import { readObservabilityConfig } from './config/observability.js';
+import { readKafkaConfig } from './infrastructure/kafka/client.js';
+import { createOutboxRelay } from './workers/outboxRelay.js';
+import { createProcessConsumer } from './consumers/processConsumer.js';
+import { notificationDelivery } from './services/notificationDelivery.js';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 // ─── Global error handlers (must be registered early) ─────
+let fatalShutdown;
+let handlingFatal = false;
 process.on('uncaughtException', (err) => {
+    if (handlingFatal) return;
+    handlingFatal = true;
     logger.fatal({ err }, 'Uncaught exception — exiting');
-    process.exit(1);
+    if (fatalShutdown) void fatalShutdown('uncaughtException', 1);
+    else void flushLogs({ timeoutMs: 500 }).finally(() => process.exit(1));
 });
 process.on('unhandledRejection', (reason) => {
     logger.error({ err: reason }, 'Unhandled promise rejection');
@@ -32,7 +42,7 @@ import {
     getClientCount,
     getHardwareCount
 } from './ws/liveServer.js';
-import { settingsQueries, sensorQueries, deviceQueries, auditQueries } from './db/database.js';
+import { settingsQueries, sensorQueries, deviceQueries, auditQueries, eventOutboxQueries, processEventQueries } from './db/database.js';
 import { updateSensorReadings, updateDiscoveredSensors } from './routes/sensors.js';
 import { setCommandSender, getControlState } from './routes/control.js';
 import { MockSerial } from './serial/mockSerial.js';
@@ -57,7 +67,7 @@ import beerxmlRouter from './routes/beerxml.js';
 import recipeSocialRouter from './routes/recipe-social.js';
 import adminRouter from './routes/admin.js';
 import trainerRouter from './routes/trainer.js';
-import { authenticate } from './middleware/auth.js';
+import { authenticate, requireAdmin } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { INTERVALS } from './config/constants.js';
 import { swaggerUi, swaggerSpec } from './swagger.js';
@@ -66,6 +76,11 @@ import { addDefaultAdminIfNoneExists } from './db/seedAuth.js';
 const PORT = parseInt(process.env.PORT) || 3001;
 const DB_PATH = process.env.DB_PATH || './data/orangebrew.db';
 const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'mock';
+const observabilityConfig = readObservabilityConfig();
+const kafkaConfig = readKafkaConfig();
+let outboxRelay;
+let projectionConsumer;
+let notificationConsumer;
 
 // ─── Express ──────────────────────────────────────────────
 
@@ -80,6 +95,7 @@ app.use(cors({
     origin: FRONTEND_URL,
     credentials: true,
 }));
+app.use(requestLogger);
 app.use(express.json());
 
 // Rate limiting
@@ -97,22 +113,6 @@ const apiLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
-
-// Structured HTTP request logging (pino-http → stdout → Vector → Betterstack)
-app.use(pinoHttp({
-    logger,
-    // Skip health checks to reduce noise
-    autoLogging: {
-        ignore: (req) => req.url === '/health' || req.url === '/api/health',
-    },
-    customLogLevel: (req, res, err) => {
-        if (err || res.statusCode >= 500) return 'error';
-        if (res.statusCode >= 400) return 'warn';
-        return 'info';
-    },
-    customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
-    customErrorMessage: (req, res, err) => `${req.method} ${req.url} ${res.statusCode} — ${err?.message}`,
-}));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -169,6 +169,13 @@ app.use('/api/trainer', authenticate, trainerRouter);
 
 // Admin panel (requireAdmin is inside the router)
 app.use('/api/admin', authenticate, adminRouter);
+
+// Operator-only diagnostics. Dependency failures do not make control liveness fail.
+app.get('/api/admin/observability', authenticate, requireAdmin, (_req, res) => {
+    res.json({ outbox: eventOutboxQueries.stats(), relay: outboxRelay?.status(),
+        projection: projectionConsumer?.status(), notifications: notificationConsumer?.status(),
+        logger: logger.getStats(), timestamp: new Date().toISOString() });
+});
 
 // Per-user ProcessManagers — Map<userId, ProcessManager>
 // Создаются лениво при первом обращении к /api/process
@@ -260,7 +267,8 @@ function getOrCreateProcessManager(userId) {
 
     // Транслируем обновления только этому пользователю
     pm.on('update', (state) => {
-        broadcastProcessState(state, userId);
+        broadcastProcessState(pm.getState(), userId);
+        telegram.updateProcessState(state, userId);
     });
 
     processManagers.set(userId, pm);
@@ -270,9 +278,10 @@ function getOrCreateProcessManager(userId) {
 
 
 async function main() {
-    // Database (async — sql.js loads WASM)
+    // SQLite migrations and recovery markers run before accepting hardware input.
     await initDatabase(DB_PATH);
     await addDefaultAdminIfNoneExists();
+    processEventQueries.markInterrupted();
 
     // Reset stale "online" statuses — devices will be marked online when they reconnect via WS
     deviceQueries.resetAllOnline();
@@ -375,7 +384,7 @@ async function main() {
 
         updateSensorReadings(data, ownerUserId);
         broadcastSensors({ deviceId, sensors: data.sensors, ...data }, ownerUserId);
-        telegram.updateSensorData(data);
+        telegram.updateSensorData(data, ownerUserId);
     });
 
     // Pass WebSocket sensor data (WiFi ESP32 devices)
@@ -417,6 +426,8 @@ async function main() {
 
         updateSensorReadings(mappedData, userId);
         broadcastSensors({ deviceId, sensors, ...mappedData }, userId);
+        telegram.updateSensorData(mappedData, userId);
+        telegram.updateControlState(getControlState(userId), userId);
 
         // Route to ProcessManager of the device owner
         const pm = processManagers.get(userId);
@@ -431,6 +442,20 @@ async function main() {
 
     // ─── Start ────────────────────────────────────────────────
 
+    outboxRelay = createOutboxRelay({ config: kafkaConfig });
+    const prefix = `orangebrew.${observabilityConfig.events.environment}`;
+    const topic = `${prefix}.process.events.v1`;
+    const dlqTopic = `${prefix}.process.events.dlq.v1`;
+    projectionConsumer = createProcessConsumer({ name: `${prefix}.process-projection-v1`, topic, dlqTopic,
+        config: kafkaConfig, enabled: observabilityConfig.publishEnabled && observabilityConfig.projectionEnabled,
+        handler: event => processEventQueries.applyProjection(event, 'process-projection-v1') });
+    notificationConsumer = createProcessConsumer({ name: `${prefix}.notifications-v1`, topic, dlqTopic,
+        config: kafkaConfig, enabled: observabilityConfig.publishEnabled && observabilityConfig.transport === 'kafka',
+        handler: event => telegram.notifyProcessEvent(event, { source: 'kafka' }) });
+    outboxRelay.start();
+    projectionConsumer.start();
+    notificationConsumer.start();
+
     server.listen(PORT, () => {
         logger.info({ module: 'Server', port: PORT, mode: CONNECTION_TYPE }, 'OrangeBrew Backend started');
         logger.info({
@@ -444,7 +469,7 @@ async function main() {
     });
 
     // ─── Periodic Heartbeat (every 5 min) ────────────────────
-    setInterval(() => {
+    const heartbeatTimer = setInterval(() => {
         logger.info({
             module: 'Health',
             rssMemMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
@@ -452,6 +477,11 @@ async function main() {
             uiClients: getClientCount(),
             hwClients: getHardwareCount(),
             uptime: Math.round(process.uptime()),
+            outbox: eventOutboxQueries.stats(),
+            relay: outboxRelay.status(),
+            projection: projectionConsumer.status(),
+            notifications: notificationConsumer.status(),
+            logger: logger.getStats(),
         }, 'Heartbeat');
     }, 5 * 60 * 1000);
 
@@ -459,6 +489,8 @@ async function main() {
     const runAuditCleanup = () => {
         try {
             const { changes } = auditQueries.cleanup(30);
+            notificationDelivery.cleanup();
+            eventOutboxQueries.cleanupPublished(new Date(Date.now() - observabilityConfig.events.publishedRetentionMs).toISOString());
             if (changes > 0) {
                 logger.info({ module: 'Audit', deleted: changes }, 'Audit log cleanup');
             }
@@ -467,45 +499,63 @@ async function main() {
         }
     };
     runAuditCleanup(); // run once at startup
-    setInterval(runAuditCleanup, 24 * 60 * 60 * 1000);
+    const cleanupTimer = setInterval(runAuditCleanup, 24 * 60 * 60 * 1000);
 
     // ─── Graceful Shutdown ────────────────────────────────────
 
-    const shutdown = (signal) => {
+    let shuttingDown = false;
+    const shutdown = async (signal, exitCode = 0) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
         logger.info({ module: 'Server', signal }, 'Shutting down gracefully...');
+        const networkDrainMs = Math.max(3500, kafkaConfig.deliveryTimeoutMs + 3500);
+        const forceExit = setTimeout(() => process.exit(1), Math.max(INTERVALS.SHUTDOWN_TIMEOUT_MS, networkDrainMs + 1000));
+        forceExit.unref();
+        clearInterval(heartbeatTimer);
+        clearInterval(cleanupTimer);
+        const httpClosed = new Promise(resolve => server.close(resolve));
+        server.closeIdleConnections?.();
 
         if (serial) {
-            // serial.handleCommand({ cmd: 'emergencyStop' }); // Old mock method
-            serial.write(JSON.stringify({ cmd: 'emergencyStop' }));
-            if (serial.stop) serial.stop();
+            try {
+                serial.write(JSON.stringify({ cmd: 'emergencyStop' }));
+                if (serial.stop) serial.stop();
+            } catch (err) { logger.error({ module: 'Server', err }, 'Serial shutdown failed'); }
         }
 
-        for (const pm of processManagers.values()) {
-            pm.pidManager.setEnabled(false);
-            pm.stop();
+        for (const [userId, pm] of processManagers) {
+            try { sendToUserHardware(userId, { cmd: 'emergencyStop' }); }
+            catch (err) { logger.error({ module: 'Server', userId, err }, 'Hardware shutdown command failed'); }
+            try { pm.pidManager.setEnabled(false); pm.stop(); }
+            catch (err) { logger.error({ module: 'Server', userId, err }, 'Process shutdown failed'); }
         }
 
-        telegram.shutdownTelegram();
+        // Hardware is stopped before bounded network draining. WS closes before SQLite.
+        closeWebSocket();
+        await Promise.allSettled([
+            outboxRelay.stop({ timeoutMs: networkDrainMs }),
+            projectionConsumer.stop({ timeoutMs: networkDrainMs }),
+            notificationConsumer.stop({ timeoutMs: networkDrainMs }),
+            telegram.shutdownTelegram({ timeoutMs: 1500 }),
+        ]);
 
         // Правильный порядок: сначала WS (ESP32 отключится),
         // потом DB — иначе последние пакеты датчиков крашат db.prepare(null)
-        closeWebSocket();
+        await httpClosed;
         closeDatabase();
-
-        server.close(() => {
-            logger.info({ module: 'Server' }, 'Goodbye!');
-            process.exit(0);
-        });
-
-        // Force exit after 5 seconds
-        setTimeout(() => process.exit(1), INTERVALS.SHUTDOWN_TIMEOUT_MS);
+        logger.info({ module: 'Server' }, 'Goodbye!');
+        await flushLogs({ timeoutMs: 500 });
+        clearTimeout(forceExit);
+        process.exit(exitCode);
     };
+    fatalShutdown = shutdown;
 
     process.on('SIGINT', () => shutdown('SIGINT'));
     process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
     logger.error({ module: 'Server', err }, 'Fatal startup error');
+    await flushLogs({ timeoutMs: 500 });
     process.exit(1);
 });

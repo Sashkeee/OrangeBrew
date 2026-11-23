@@ -1,0 +1,87 @@
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      host: unix:///var/run/docker.sock
+      hints.enabled: false
+      templates:
+        - condition:
+            and:
+              - equals: {docker.container.labels.orangebrew_collect: "true"}
+              - equals: {docker.container.labels.orangebrew_env: "${APP_ENV}"}
+          config:
+            - type: filestream
+              id: orangebrew-${data.docker.container.id}
+              paths: [/var/lib/docker/containers/${data.docker.container.id}/*-json.log]
+              parsers:
+                - container: {stream: all, format: docker}
+                - ndjson:
+                    target: orangebrew_raw
+                    expand_keys: true
+                    add_error_key: true
+              message_max_bytes: 131072
+              prospector.scanner.fingerprint.length: 64
+              processors:
+                - add_fields:
+                    target: orangebrew_source
+                    fields:
+                      environment: "${APP_ENV}"
+                      service: "${data.docker.container.labels.orangebrew_service}"
+                      container_id: "${data.docker.container.id}"
+
+# A controlled fixture source makes the whole ingest chain testable without
+# Docker Desktop exposing the Linux daemon's container-log directory.
+filebeat.inputs:
+  - type: filestream
+    id: orangebrew-smoke-v1
+    enabled: ${FILEBEAT_SMOKE_ENABLED:false}
+    paths: [/fixtures/canary.ndjson]
+    prospector.scanner.fingerprint.length: 64
+    parsers:
+      - ndjson: {target: orangebrew_raw, expand_keys: true, add_error_key: true}
+    processors:
+      - add_fields:
+          target: orangebrew_source
+          fields: {environment: "${APP_ENV}", service: backend, container_id: smoke-fixture}
+
+queue.disk:
+  max_size: 1GB
+  segment_size: 100MB
+  read_ahead: 128
+  write_ahead: 128
+
+processors:
+  # nginx stderr may include an unsanitized request URI in native error text.
+  # It remains available locally under Docker rotation, outside Kafka ingestion.
+  - drop_event:
+      when:
+        and:
+          - equals: {orangebrew_source.service: proxy}
+          - equals: {stream: stderr}
+
+output.kafka:
+  hosts: ["${KAFKA_BROKERS:kafka:9092}"]
+  version: "2.1.0"
+  client_id: orangebrew-${APP_ENV}-filebeat
+  topic: orangebrew.${APP_ENV}.logs.backend.v1
+  topics:
+    - topic: orangebrew.${APP_ENV}.logs.proxy.v1
+      when.equals: {orangebrew_source.service: proxy}
+    - topic: orangebrew.${APP_ENV}.logs.device.v1
+      when.equals: {orangebrew_raw.event.dataset: orangebrew.device}
+  key: '%{[orangebrew_source.container_id]}'
+  partition.hash:
+    reachable_only: false
+  required_acks: -1
+  compression: gzip
+  max_message_bytes: 262144
+  bulk_max_size: 256
+  codec.json:
+    pretty: false
+
+logging.level: warning
+logging.to_files: false
+http.enabled: true
+http.host: 0.0.0.0
+http.port: 5066
+setup.template.enabled: false
+setup.ilm.enabled: false

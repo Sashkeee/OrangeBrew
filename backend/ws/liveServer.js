@@ -6,11 +6,15 @@ import { getSensorReadings } from '../routes/sensors.js';
 import { getControlState } from '../routes/control.js';
 import { deviceQueries, pairingQueries } from '../db/database.js';
 import logger from '../utils/logger.js';
+import { runWithLogContext } from '../utils/logContext.js';
+import { createDeviceLogHandler } from '../utils/deviceLog.js';
 import config from '../config/env.js';
 import { INTERVALS } from '../config/constants.js';
 
 const hwLog = logger.child({ module: 'ESP32' });
 const wsLog = logger.child({ module: 'WS' });
+const deviceLogs = createDeviceLogHandler({ logger: hwLog });
+export const getDeviceLogStats = () => deviceLogs.getStats();
 
 const { JWT_SECRET } = config;
 
@@ -36,7 +40,7 @@ let pingInterval = null;
  * @param {import('http').Server} server
  */
 export function initWebSocket(server) {
-    wss = new WebSocketServer({ server, path: '/ws' });
+    wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 
     wss.on('connection', (ws, req) => {
         const query = url.parse(req.url, true).query;
@@ -74,7 +78,7 @@ export function initWebSocket(server) {
                 if (msg.type === 'auth') {
                     const device = deviceQueries.getByApiKey(msg.api_key);
                     if (!device) {
-                        wsLog.warn({ apiKey: msg.api_key, deviceId: msg.deviceId || 'unknown' }, 'Unknown api_key');
+                        wsLog.warn({ deviceId: msg.deviceId || 'unknown' }, 'Unknown device API key');
                         ws.close(4001, 'Unknown api_key');
                         return;
                     }
@@ -90,7 +94,7 @@ export function initWebSocket(server) {
                 wsLog.warn({ type: msg.type, deviceId: msg.deviceId || 'N/A' }, 'Unexpected first message type — expected auth or pair');
                 ws.close(4000, 'Expected type:auth or type:pair');
             } catch (err) {
-                wsLog.warn({ err: err.message, raw: raw.toString().substring(0, 200) }, 'HW first message parse error');
+                wsLog.warn({ errorType: err.name }, 'HW first message rejected');
                 ws.close(4000, 'Invalid JSON');
             }
         });
@@ -182,6 +186,7 @@ async function handlePairingMessage(ws, msg) {
 // ─── Client setup ──────────────────────────────────────────
 
 function setupUiClient(ws, userId) {
+    ws.logContext = { userId, correlationId: randomUUID() };
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     uiClients.set(ws, { userId });
@@ -196,7 +201,7 @@ function setupUiClient(ws, userId) {
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw.toString());
-            handleUiMessage(ws, userId, msg);
+            runWithLogContext(ws.logContext, () => handleUiMessage(ws, userId, msg));
         } catch {
             ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
         }
@@ -213,6 +218,7 @@ function setupUiClient(ws, userId) {
 }
 
 function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', role = 'unassigned') {
+    ws.logContext = { userId, deviceId, correlationId: randomUUID() };
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     hardwareClients.set(deviceId, { ws, userId });
@@ -225,10 +231,11 @@ function setupHardwareClient(ws, deviceId, userId, name = 'OrangeBrew ESP32', ro
     }
 
     ws.on('message', (raw) => {
+        if (hardwareClients.get(deviceId)?.ws !== ws) return;
         ws.isAlive = true;
         try {
             const msg = JSON.parse(raw.toString());
-            handleHardwareMessage(deviceId, msg);
+            runWithLogContext(ws.logContext, () => handleHardwareMessage(deviceId, msg));
         } catch {
             wsLog.error({ deviceId }, 'Invalid JSON from hardware');
         }
@@ -272,16 +279,10 @@ function handleUiMessage(ws, userId, msg) {
 }
 
 function handleHardwareMessage(deviceId, msg) {
-    // Логи с устройства → Pino → Betterstack (читаемы через /логи)
+    // Device logs use the authenticated identity, never fields supplied in the payload.
     if (msg.type === 'device_log') {
-        const meta  = hardwareClients.get(deviceId);
-        const level = ['info', 'warn', 'error', 'debug'].includes(msg.level) ? msg.level : 'info';
-        hwLog[level]({
-            deviceId,
-            userId:  meta?.userId ?? null,
-            uptime:  msg.uptime ?? null,
-            source:  'device',
-        }, msg.msg ?? '');
+        const meta = hardwareClients.get(deviceId);
+        deviceLogs.handle(msg, { deviceId, userId: meta?.userId });
         return; // не передавать дальше в onHardwareDataHandler
     }
 
@@ -425,4 +426,5 @@ export function closeWebSocket() {
     wss.close();
     uiClients.clear();
     hardwareClients.clear();
+    deviceLogs.clear();
 }

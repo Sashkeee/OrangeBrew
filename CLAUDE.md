@@ -54,7 +54,7 @@ OrangeBrew/
 │   │   ├── env.js             # Централизованная валидация env vars (JWT_SECRET — обязателен)
 │   │   └── constants.js       # Именованные константы (SAFETY, SIGNAL, INTERVALS, PID_TUNING)
 │   ├── utils/
-│   │   ├── logger.js          # Pino structured logger (JSON prod / pretty dev, child loggers per module)
+│   │   ├── logger.js          # Winston ECS logger, bounded stdout, child loggers and redaction
 │   │   ├── audit.js           # writeAudit() — fire-and-forget обёртка над auditQueries.insert
 │   │   ├── sensorMapper.js    # mapSensors() — маппинг адресов датчиков к ролям
 │   │   └── scaleRecipe.js     # Масштабирование рецепта
@@ -182,7 +182,7 @@ OrangeBrew/
 │       └── OrangeBrew_ESP8266.ino     # Arduino скетч для ESP8266
 ├── docker-compose.prod.yml    # Production: backend-prod (3000) + frontend-prod (8080)
 ├── docker-compose.test.yml    # Test: backend-test (3001) + frontend-test (8081) + vector
-├── vector.test.toml           # Vector config: Docker logs → parse pino JSON → Betterstack
+├── docker-compose.observability.yml # Отдельный Kafka/Elastic test stack; configs in infra/
 ├── CLAUDE.md                  # Этот файл
 ├── SCHEMA.md                  # Схема SQLite таблиц
 └── .antigravityrules
@@ -332,7 +332,7 @@ Caddy как reverse proxy (conf: `Caddyfile`).
 Если `/auth/*` не прописан отдельно, все auth запросы уходят на React → 404.
 
 Secrets: `VPS_IP`, `VPS_USERNAME`, `VPS_SSH_KEY`.
-Structured logging: pino-http → stdout → Vector → Betterstack ClickHouse.
+Structured logging: Winston ECS → Filebeat → Kafka → Logstash → Elasticsearch → Kibana.
 
 ---
 
@@ -342,73 +342,33 @@ Structured logging: pino-http → stdout → Vector → Betterstack ClickHouse.
 
 ---
 
-### 10. Graceful Shutdown — правильный порядок
-При получении SIGTERM/SIGINT важен порядок завершения:
-```js
-closeWebSocket();  // сначала — ESP32 отключается, новых данных не будет
-closeDatabase();   // потом — БД закрывается чисто
-server.close();    // последним — HTTP
-```
-**Нарушение порядка:** если `closeDatabase()` вызвать до `closeWebSocket()`, ESP32 успевает прислать последний пакет датчиков → `mapSensors()` → `db.prepare(null)` → краш.
+### 10. Graceful Shutdown
 
-`closeWebSocket()` экспортирована из `ws/liveServer.js`.
+При SIGTERM/SIGINT backend прекращает приём HTTP запросов, останавливает оборудование и timers, закрывает WebSocket, отменяет Kafka подключения и Telegram fetch. После bounded drain consumers/relay и принятых HTTP запросов закрывает SQLite и выполняет flush logger. Нельзя закрывать SQLite до WS, активных HTTP обработчиков и DB-эффектов потребителей.
+
+Native Kafka connect отменяется через disconnect до ожидания connect promise. Metadata setup attempts ограничены 1–2 секундами; общий shutdown budget зависит от KAFKA_DELIVERY_TIMEOUT_MS. Hardware stop не ждёт сеть.
 
 ---
 
-### 11. device_log — ESP32 логи в Betterstack
-ESP32 может отправлять `{type: 'device_log', level, msg, uptime}` по WebSocket.
-`liveServer.js` пишет их через `hwLog` (child logger с `module: 'ESP32'`) с полями `deviceId`, `userId`, `source: 'device'`.
-Логи появляются в Betterstack и читаемы через `/логи`.
+### 11. device_log
 
-**Ограничение:** большинство `Serial.println()` в прошивке ещё не заменены на `log()` — device_log работает только там где явно используется `log()`/`logW()`/`logE()`.
+ESP32 отправляет device_log по аутентифицированному WebSocket. Сервер назначает user/device identity, очищает текст, ограничивает запись 8 KiB и частоту 20 сообщений за 10 секунд на устройство. Логи имеют event.dataset=orangebrew.device и доступны в Kibana после подключения ingest. Прошивка должна явно вызывать log/logW/logE; Serial.println сам по себе не отправляется серверу.
 
 ---
 
-### 12. Structured Logging — Pino → Vector → Betterstack
+### 12. Winston ECS и Kafka events
 
-Все `console.*` вызовы в backend заменены на **Pino structured logging** (JSON).
+Конвейер: Winston JSON stdout → Docker json-file → Filebeat → Kafka → Logstash → Elasticsearch → Kibana. Pino, pino-http, pino-pretty, Vector и прежняя интеграция удалены из runtime конфигурации.
 
-**Pipeline:**
-```
-Pino (JSON на stdout) → Docker → Vector (парсинг + обогащение) → Betterstack (ClickHouse)
-```
+Общий utils/logger.js сохраняет контракт приложения: child({module}), info(metadata,message), error({err},message), fatal и trace. LOG_FORMAT=json включает ECS JSON; APP_ENV задаёт development/test/prod; SERVICE_VERSION — версию сборки. Error сохраняет stack; секреты очищаются до stdout. Длительность HTTP — event.duration в наносекундах, URL query не логируется. Контекст request/correlation/user передаётся через AsyncLocalStorage. flushLogs выполняет ограниченное ожидание stdout; getStats возвращает pending/dropped/failed.
 
-**logger.js** — базовый логгер с `base` полями `{app, env, service}`:
-- `LOG_FORMAT=json` — принудительный JSON (для Docker); иначе `pino-pretty` в dev
-- `LOG_LEVEL` — уровень логирования, default: `debug` (dev) / `info` (prod)
+Контроль нагревателя/PID и live WS не ждут Kafka. Сессия, snapshot и outbox события процесса записываются атомарно. EVENTS_CAPTURE_ENABLED=true по умолчанию, KAFKA_PUBLISH_ENABLED=false; включение publisher требует KAFKA_BROKERS. Projection consumer использует event ID и processed_events, внешний Telegram API сохраняет окно повтора при сбое после отправки. Обычные UI timer updates не создают доменные события.
 
-**Child loggers** — каждый модуль создаёт свой:
-```js
-import logger from '../utils/logger.js';
-const log = logger.child({ module: 'Auth' });
-log.warn({ username, ip: req.ip }, 'Failed login attempt');
-```
+После перезапуска process_runtime_state помечается recovery_required. Команды железу не воспроизводятся; оператор подтверждает остановку через UI или POST /api/process/stop. Новый старт требует принадлежащих пользователю session/recipe/device/sensor и свободного места outbox. Pending outbox не очищается по TTL; 20% ёмкости резервируется для активных переходов.
 
-**Модули:** `Auth`, `WS`, `DB`, `Server`, `Health`, `Telegram`, `PidTuner`, `MockSerial`, `RealSerial`, `Migration`, `Sessions`, `Social`, `Settings`, `Devices`, `Recipes`, `Users`, `ESP32`, `Admin`, `Trainer`
+Telegram config и runtime context изолированы по userId. Environment token/chat назначаются только TELEGRAM_OWNER_USER_ID. NOTIFICATIONS_TRANSPORT=direct|kafka переключает владельца отправки; общий notification_delivery ledger исключает повтор уже доставленного direct backlog. Kafka режим требует capture/publish. /api/admin/observability защищён authenticate+requireAdmin и показывает outbox/relay/consumers/logger.
 
-**Уровни логирования:**
-- `error` — критические ошибки (краш, safety stop PID)
-- `warn` — проблемы (неудачный логин с IP, ping timeout ESP32, удаления, slow SQL >100ms)
-- `info` — бизнес-события (логин, создание рецепта, паринг, автотюнинг complete)
-- `debug` — техническая телеметрия (HTTP запросы, данные датчиков, relay ON/OFF)
-
-**Специальные логи:**
-- **Slow query detection:** `database.js` замеряет `performance.now()` для `queryAll`/`queryOne`/`runSql`; SQL >100ms → `log.warn`
-- **Failed login tracking:** `auth.js` логирует `ip` и `username` при неудачных попытках входа
-- **Heartbeat:** `server.js` каждые 5 минут пишет `{ module: 'Health', rssMemMb, heapUsedMb, uiClients, hwClients, uptime }`
-- **Startup diagnostics:** при старте `{ module: 'Server', nodeVersion, env, dbPath, connectionType, memoryMb }`
-
-**Vector** (`vector.test.toml`): парсит pino JSON, извлекает `http_method`, `http_url`, `http_status`, `response_time_ms`, `module`, `userId` на верхний уровень.
-
-**Betterstack Dashboard** (8 графиков):
-1. Warn rate over time
-2. Log volume by level (stacked bar)
-3. HTTP requests by status code (pie)
-4. Top 10 slowest endpoints
-5. Average HTTP response time (avg + max)
-6. Unauthorized requests over time
-7. Memory usage + Active WebSocket clients
-8. ESP32 device activity
+Запуск test стека, production TLS overlay, bootstrap/roles/templates, DLQ/replay и удаление внешних credentials: docs/OBSERVABILITY_RUNBOOK.md. Infrastructure Compose отдельный; application deploy не пересоздаёт stateful сервисы. .env.observability содержит secrets и исключён из Git.
 
 ---
 
@@ -705,7 +665,7 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 - **Не дублировать логику** между `RecipeConstructor` и `RecipeConstructor_V2` — они уже расходятся
 - **Не использовать глобальный `HARDWARE_API_KEY`** — устройства аутентифицируются по per-device `api_key`
 - **Не определять React-компоненты внутри render-функций** — это вызывает пересоздание при каждом ре-рендере (выносить в module scope)
-- **Не использовать `console.*` в backend** — только Pino через `logger.child({ module })`. Все console.* уже мигрированы
+- **Не использовать `console.*` в backend** — только общий Winston facade через `logger.child({ module })`. Все console.* уже мигрированы
 
 ### Прошивка ESP32-S3 — критичные правила
 
@@ -727,8 +687,8 @@ req.processManager = getOrCreateProcessManager(req.user.id);
 | `DB_PATH` | `backend/.env` | Путь к SQLite файлу. По умолчанию: `./data/orangebrew.db` |
 | `CONNECTION_TYPE` | `backend/.env` | `mock` или `wifi`. По умолчанию: `mock`. Также читается из `settings_v2` |
 | `JWT_SECRET` | `backend/.env` | Секрет для подписи JWT токенов |
-| `LOG_FORMAT` | `backend/.env` / `docker-compose` | `json` — принудительный JSON даже в dev (для Vector в Docker) |
-| `LOG_LEVEL` | `backend/.env` | Уровень логирования Pino. Default: `debug` (dev) / `info` (prod) |
+| `LOG_FORMAT` | `backend/.env` / `docker-compose` | `json` — принудительный JSON даже в dev (для Filebeat в Docker) |
+| `LOG_LEVEL` | `backend/.env` | Уровень логирования Winston. Default: `debug` (dev) / `info` (prod) |
 | `NODE_ENV` | `backend/.env` / `docker-compose` | `development` или `production`. Влияет на формат логов и CORS |
 | `FRONTEND_URL` | `backend/.env` | URL фронтенда для CORS. Dev: `http://localhost:5173` |
 | `SWAGGER_ENABLED` | `backend/.env` / `docker-compose` | `true`/`false`. Default: `true` (dev), `false` (prod). Включает Swagger UI на `/api-docs` |

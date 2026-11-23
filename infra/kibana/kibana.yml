@@ -1,0 +1,14 @@
+server.name: orangebrew-kibana
+server.host: 0.0.0.0
+server.ssl:
+  enabled: true
+  certificate: /usr/share/kibana/config/certs/kibana/kibana.crt
+  key: /usr/share/kibana/config/certs/kibana/kibana.key
+elasticsearch.hosts: [https://elasticsearch:9200]
+elasticsearch.username: kibana_system
+elasticsearch.password: ${KIBANA_SYSTEM_PASSWORD}
+elasticsearch.ssl.certificateAuthorities: [/usr/share/kibana/config/certs/ca/ca.crt]
+xpack.security.encryptionKey: ${KIBANA_ENCRYPTION_KEY}
+xpack.encryptedSavedObjects.encryptionKey: ${KIBANA_ENCRYPTION_KEY}
+xpack.reporting.encryptionKey: ${KIBANA_ENCRYPTION_KEY}
+telemetry.enabled: false

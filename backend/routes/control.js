@@ -209,7 +209,7 @@ router.post('/pump', (req, res) => {
         state.pump = value;
         commandSenders.get(userId)?.({ cmd: 'setPump', value });
         broadcastControl(state, userId);
-        telegram.notifyPumpChange(value);
+        void telegram.notifyPumpChange(value, userId);
         writeAudit({ userId, action: 'control.pump', detail: `Pump → ${value ? 'ON' : 'OFF'}`, ip: req.ip });
         res.json({ ok: true, pump: value });
     } catch (err) {

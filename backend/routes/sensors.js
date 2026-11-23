@@ -16,6 +16,15 @@ const latestReadingsMap = new Map();
  * Populated whenever WiFi hardware sends sensor data.
  */
 const discoveredSensors = new Map();
+const DISCOVERED_SENSOR_TTL_MS = 60_000;
+
+/** Trust only recent observations attached to the authenticated device's server-side owner. */
+export function isDiscoveredSensorForDevice(userId, deviceId, address, now = Date.now()) {
+    if (userId == null || !deviceId || !address) return false;
+    const observed = discoveredSensors.get(userId)?.get(address);
+    return !!observed && observed.deviceId === deviceId && now >= observed.lastSeen
+        && now - observed.lastSeen <= DISCOVERED_SENSOR_TTL_MS;
+}
 
 // ─── Exported update functions (called from server.js) ────
 
@@ -244,11 +253,10 @@ router.get('/discovered', authenticate, (req, res) => {
         configs = sensorQueries.getAll(userId);
     } catch { /* sensors table may not exist yet */ }
 
-    const TTL_MS = 60_000; // sensors not heard from in 60s are considered stale
     const now = Date.now();
     const result = [];
     for (const [address, data] of userMap) {
-        if (now - data.lastSeen > TTL_MS) continue; // skip stale entries
+        if (now - data.lastSeen > DISCOVERED_SENSOR_TTL_MS) continue; // skip stale entries
         const cfg = configs.find(c => c.address === address);
         result.push({
             address,

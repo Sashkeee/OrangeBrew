@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import ProcessManager, { PROCESS_STATUS } from '../services/ProcessManager.js';
 import telegram from '../services/telegram.js';
+import { initDatabase, closeDatabase, userQueries, recipeQueries } from '../db/database.js';
 
 /**
  * Тесты для ProcessManager.
@@ -18,7 +19,8 @@ vi.mock('../services/telegram.js', () => ({
         notifyComplete: vi.fn(),
         setCurrentProcessType: vi.fn(),
         updateSensorData: vi.fn(),
-        updateControlState: vi.fn()
+        updateControlState: vi.fn(),
+        notifyProcessEvent: vi.fn()
     }
 }));
 
@@ -26,7 +28,10 @@ describe('ProcessManager', () => {
     let processManager;
     let mockPidManager;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await initDatabase(':memory:');
+        const user = userQueries.create({ username: 'process-owner', password_hash: 'test-only' });
+        recipeQueries.create({ name: 'Test Recipe' }, user.id);
         // Используем виртуальное время Vitest, чтобы не ждать реальные минуты
         vi.useFakeTimers();
 
@@ -42,12 +47,14 @@ describe('ProcessManager', () => {
             enabled: false
         };
 
-        processManager = new ProcessManager(mockPidManager);
+        processManager = new ProcessManager(mockPidManager, user.id);
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
         processManager.stop();
+        closeDatabase();
+        vi.useRealTimers();
     });
 
     it('should start in IDLE state', () => {
@@ -100,7 +107,7 @@ describe('ProcessManager', () => {
         expect(state.stepPhase).toBe('holding');
 
         // Должно отправиться уведомление в Telegram о достижении температуры
-        expect(telegram.notifyMashStep).toHaveBeenCalledWith('reached', expect.anything());
+        expect(telegram.notifyProcessEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'process.step_reached' }));
     });
 
     it('should countdown timer in HOLDING state', () => {
@@ -123,7 +130,7 @@ describe('ProcessManager', () => {
 
         // Так как шаг был один, весь процесс должен завершиться (COMPLETED)
         expect(processManager.getState().status).toBe(PROCESS_STATUS.COMPLETED);
-        expect(telegram.notifyComplete).toHaveBeenCalled();
+        expect(telegram.notifyProcessEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'process.completed' }));
     });
 
     it('should advance to next step automatically', () => {

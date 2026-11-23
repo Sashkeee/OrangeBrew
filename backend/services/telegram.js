@@ -1,344 +1,193 @@
-/**
- * Telegram Notification Module
- *
- * Sends notifications to a Telegram chat via the Bot API.
- * Supports: phase changes, temperature alerts, process completion,
- * and periodic status reports.
- */
-
-import { settingsQueries } from '../db/database.js';
+/** Per-user Telegram settings and context. No global recipient or process data. */
+import { getDb, userQueries, sessionQueries } from '../db/database.js';
 import logger from '../utils/logger.js';
+import { notificationDelivery } from './notificationDelivery.js';
 
 const log = logger.child({ module: 'Telegram' });
+const contexts = new Map();
+const intervals = new Map();
+const inFlight = new Set();
+const requests = new Set();
+let shuttingDown = false;
+const validUser = userId => Number.isSafeInteger(userId) && userId > 0;
 
-// ─── State ───────────────────────────────────────────────
+function context(userId) {
+    if (!validUser(userId)) return null;
+    if (!contexts.has(userId)) contexts.set(userId, {});
+    return contexts.get(userId);
+}
 
-let botToken = process.env.TELEGRAM_BOT_TOKEN || '';
-let chatId = process.env.TELEGRAM_CHAT_ID || '';
-let enabled = false;
-let periodicInterval = null;
-let lastSensorData = null;
-let lastControlState = null;
-let currentProcessType = null; // 'mash', 'boil', 'fermentation', etc.
+export function getTelegramConfig(userId) {
+    const defaults = { enabled: false, notifyPhaseChange: true, notifyTempAlert: true, notifyComplete: true, notifyInterval: 5 };
+    if (!validUser(userId)) return defaults;
+    // Read the user's row, without inheriting global credentials via settingsQueries.
+    const row = getDb().prepare("SELECT value FROM settings_v2 WHERE key='telegram' AND user_id=?").get(userId);
+    let stored = {};
+    try { stored = row ? JSON.parse(row.value) : {}; } catch { /* invalid config stays disabled */ }
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) stored = {};
+    const result = { ...defaults, ...stored };
+    if (Number(process.env.TELEGRAM_OWNER_USER_ID) === userId) {
+        result.botToken = process.env.TELEGRAM_BOT_TOKEN || result.botToken;
+        result.chatId = process.env.TELEGRAM_CHAT_ID || result.chatId;
+    }
+    return result;
+}
 
-// ─── Core Send ───────────────────────────────────────────
-
-/**
- * Send a text message via the Telegram Bot API.
- * @param {string} text  — message text (supports Markdown)
- * @param {object} [opts] — optional overrides for parse_mode, disable_notification
- * @returns {Promise<object|null>}
- */
 export async function sendMessage(text, opts = {}) {
-    if (!botToken || !chatId) {
-        log.warn('Skip send: botToken or chatId missing');
-        return { ok: false, description: 'Telegram не настроен (отсутствует токен или Chat ID)' };
+    const { userId } = opts;
+    if (shuttingDown || !validUser(userId) || !userQueries.getById(userId)) {
+        return { ok: false, skipped: true, description: 'Получатель уведомления не задан' };
     }
-    if (!enabled) {
-        log.warn('Skip send: service disabled');
-        return { ok: false, description: 'Telegram уведомления отключены в настройках' };
+    const config = getTelegramConfig(userId);
+    if (!config.enabled || !config.botToken || !config.chatId) {
+        return { ok: false, skipped: true, description: 'Telegram не настроен или отключён' };
     }
-
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    try {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text,
-                parse_mode: opts.parse_mode || 'Markdown',
-                disable_notification: opts.silent || false,
-            }),
-        });
-        const data = await res.json();
-        if (!data.ok) {
-            log.error({ apiError: data.description }, 'API error');
-        } else {
-            log.debug('Message sent');
-        }
-        return data;
-    } catch (err) {
-        log.error({ err }, 'Send failed');
-        return { ok: false, description: `Ошибка сети: ${err.message}` };
-    }
-}
-
-// ─── High-Level Notification Helpers ─────────────────────
-
-/**
- * Notify on phase/step change.
- * e.g. "Mash step 2: Осахаривание 67°C"
- */
-export function notifyPhaseChange(processType, phaseName, details = '') {
-    const config = getConfig();
-    if (!config.notifyPhaseChange) {
-        log.debug('Phase change notify disabled');
-        return;
-    }
-
-    const emoji = {
-        mash: '🌡', boil: '🔥', fermentation: '🫧',
-        distillation: '💧', rectification: '⚗️'
-    }[processType] || '📋';
-
-    const msg = `${emoji} *Смена фазы*\n\nПроцесс: *${processType}*\nФаза: *${phaseName}*${details ? `\n${details}` : ''}`;
-    log.info({ phase: phaseName }, 'notifyPhaseChange');
-    return sendMessage(msg);
-}
-
-/**
- * Notify on critical temperature alert.
- * @param {string} sensor — sensor name
- * @param {number} temp — current value
- * @param {number} threshold — limit exceeded
- */
-export function notifyTempAlert(sensor, temp, threshold) {
-    const config = getConfig();
-    if (!config.notifyTempAlert) return;
-
-    const msg = `🚨 *Температурный алерт!*\n\nДатчик: *${sensor}*\nТемпература: *${temp.toFixed(1)}°C*\nПорог: *${threshold}°C*\n\n⚠️ Требуется внимание!`;
-    return sendMessage(msg);
-}
-
-/**
- * Notify when a process completes.
- * @param {string} processType — mash | boil | fermentation | ...
- * @param {object} [summary] — optional stats
- */
-export function notifyComplete(processType, summary = {}) {
-    const config = getConfig();
-    if (!config.notifyComplete) return;
-
-    let details = '';
-    if (summary.duration) details += `\nДлительность: *${summary.duration}*`;
-    if (summary.volume) details += `\nОбъём: *${summary.volume}л*`;
-    if (summary.notes) details += `\n📝 ${summary.notes}`;
-
-    const msg = `✅ *Процесс завершён*\n\nТип: *${processType}*${details}`;
-    currentProcessType = null; // Reset context
-    return sendMessage(msg);
-}
-
-/**
- * Send a periodic status report with current sensor data.
- */
-export function sendStatusReport() {
-    const s = lastSensorData || {};
-    const c = lastControlState || {};
-
-    // If it's mash or boil, we don't show all distillation sensors
-    const isBrewing = ['mash', 'boil', 'brew'].includes(currentProcessType);
-
-    log.debug({ processType: currentProcessType, isBrewing }, 'Generating report');
-
-    // Safety: ensure we have numbers (handle both layouts: { boiler: 20 } and { boiler: { value: 20 } })
-    const getVal = (val) => {
-        if (typeof val === 'number') return val;
-        if (val && typeof val.value === 'number') return val.value;
-        return null;
-    };
-
-    const boilerTemp = getVal(s.boiler);
-
-    const msg = [
-        '📊 *Периодический отчёт*',
-        '',
-        `🌡 Куб: *${boilerTemp?.toFixed(1) ?? '—'}°C*`,
-    ];
-
-    if (!isBrewing) {
-        msg.push(`🌡 Колонна: *${getVal(s.column)?.toFixed(1) ?? '—'}°C*`);
-        msg.push(`🌡 Дефлегматор: *${getVal(s.dephleg)?.toFixed(1) ?? '—'}°C*`);
-        msg.push(`🌡 Выход: *${getVal(s.output)?.toFixed(1) ?? '—'}°C*`);
-    }
-
-    msg.push('');
-    msg.push(`🔥 ТЭН: *${c.heater ?? 0}%*`);
-
-    if (!isBrewing) {
-        msg.push(`❄️ Охлаждение: *${c.cooler ?? 0}%*`);
-    } else if (global._latestProcessState) {
-        // Brew process active info
-        const ps = global._latestProcessState;
-        if (ps.status === 'HOLDING' || ps.status === 'HEATING') {
-            const phaseStr = ps.stepPhase === 'holding' ? 'Удержание' : 'Нагрев';
-            const stepName = ps.currentStep?.name || '—';
-            const timeStr = ps.remainingTime ? `${Math.floor(ps.remainingTime / 60)}:${String(ps.remainingTime % 60).padStart(2, '0')}` : '—';
-
-            msg.push(`⏳ Этап: *${stepName}* (${phaseStr})`);
-            if (ps.stepPhase === 'holding') {
-                msg.push(`Осталось: *${timeStr}*`);
+    const controller = new AbortController();
+    requests.add(controller);
+    const task = (async () => {
+        try {
+            const response = await fetch(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+                body: JSON.stringify({ chat_id: config.chatId, text: String(text).slice(0, 4000),
+                    ...(opts.parse_mode ? { parse_mode: opts.parse_mode } : {}), disable_notification: !!opts.silent }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) {
+                log.warn({ userId, statusCode: response.status }, 'Telegram delivery rejected');
+                return { ok: false, retryable: response.status === 429 || response.status >= 500,
+                    retryAfter: Math.min(Number(data.parameters?.retry_after) || 0, 300), description: 'Telegram отклонил сообщение' };
             }
-        } else if (ps.status !== 'IDLE' && ps.status !== 'COMPLETED') {
-            msg.push(`ℹ️ Статус: *${ps.status}*`);
+            log.debug({ userId }, 'Telegram message delivered');
+            return { ok: true };
+        } catch {
+            // Never log a fetch error that may contain the credential-bearing URL.
+            log.warn({ userId }, 'Telegram delivery failed or timed out');
+            return { ok: false, retryable: true, description: 'Не удалось связаться с Telegram' };
         }
-    }
-
-    msg.push(`💧 Насос: *${c.pump ? 'ВКЛ' : 'ВЫКЛ'}*`);
-
-    return sendMessage(msg.join('\n'), { silent: true });
+    })();
+    inFlight.add(task);
+    try { return await task; } finally { inFlight.delete(task); requests.delete(controller); }
 }
 
-/**
- * Notify on pump state change.
- */
-export function notifyPumpChange(isOn) {
-    const msg = isOn ? '💧 *Насос включен*' : '🛑 *Насос выключен*';
-    return sendMessage(msg);
+export function setCurrentProcessType(type, userId) {
+    const state = context(userId);
+    if (state) state.processType = type;
+}
+export function updateSensorData(data, userId) {
+    const state = context(userId);
+    if (state && data) state.sensors = data;
+}
+export function updateControlState(data, userId) {
+    const state = context(userId);
+    if (state && data) state.control = data;
+}
+export function updateProcessState(data, userId) {
+    const state = context(userId);
+    if (state) { state.process = data; state.processType = data?.mode; }
 }
 
-/**
- * Notify on mash step events.
- * @param {string} type — 'reached' | 'completed'
- * @param {object} step — { name, temp, duration }
- */
-export function notifyMashStep(type, step) {
-    let msg = '';
-    if (type === 'reached') {
-        msg = `🌡 *Температура паузы достигнута*\n\nПауза: *${step.name}*\nЦель: *${step.temp}°C*\nНачинаем отсчёт *${step.duration} мин*`;
-    } else if (type === 'completed') {
-        msg = `✅ *Температурная пауза завершена*\n\nПауза: *${step.name}* завершена.`;
-    }
-    return sendMessage(msg);
+export function notifyPhaseChange(type, name, details = '', userId) {
+    if (!getTelegramConfig(userId).notifyPhaseChange) return Promise.resolve({ ok: false, skipped: true });
+    return sendMessage(`Смена фазы\nПроцесс: ${type}\nФаза: ${name}\n${details}`, { userId });
+}
+export function notifyTempAlert(sensor, temp, threshold, userId) {
+    if (!getTelegramConfig(userId).notifyTempAlert) return Promise.resolve({ ok: false, skipped: true });
+    return sendMessage(`Температурный алерт\nДатчик: ${sensor}\nТемпература: ${temp}°C\nПорог: ${threshold}°C`, { userId });
+}
+export function notifyComplete(type, summary = {}, userId) {
+    if (!getTelegramConfig(userId).notifyComplete) return Promise.resolve({ ok: false, skipped: true });
+    setCurrentProcessType(null, userId);
+    return sendMessage(`Процесс завершён\nТип: ${type}\n${summary.notes || ''}`, { userId });
+}
+export function notifyPumpChange(isOn, userId) {
+    return sendMessage(isOn ? 'Насос включён' : 'Насос выключен', { userId });
+}
+export function notifyMashStep(type, step = {}, userId) {
+    return sendMessage(`${type === 'reached' ? 'Температура паузы достигнута' : 'Пауза завершена'}\n${step.name || ''}\n${step.temp ?? ''}°C`, { userId });
+}
+export function notifyBoilMilestone(type, details = '', userId) {
+    return sendMessage(`Уведомление варки: ${type}\n${typeof details === 'string' ? details : JSON.stringify(details)}`, { userId });
 }
 
-/**
- * Notify on boiling milestones and reminders.
- */
-export function notifyBoilMilestone(type, details = '') {
-    const icons = {
-        start: '🔥',
-        hop: '🌿',
-        reminder: '⏳',
-        complete: '✅'
-    };
-    const emoji = icons[type] || '🔔';
-    const msg = `${emoji} *Уведомление варки*\n\n${details}`;
-    log.info({ type }, 'notifyBoilMilestone');
-    return sendMessage(msg);
+export function sendStatusReport(userId) {
+    const state = context(userId);
+    if (!state) return Promise.resolve({ ok: false, skipped: true });
+    const temperature = typeof state.sensors?.boiler === 'number' ? state.sensors.boiler : state.sensors?.boiler?.value;
+    return sendMessage(`Периодический отчёт\nТемпература: ${temperature ?? '—'}°C\nПроцесс: ${state.processType || '—'}\nЭтап: ${state.process?.currentStep?.name || '—'}\nНасос: ${state.control?.pump ? 'ВКЛ' : 'ВЫКЛ'}`, { userId, silent: true });
 }
 
-export function updateSensorData(sensors) {
-    if (!sensors) return;
-    // Only update if it contains sensor data (type 'sensors' or has 'boiler' field)
-    if (sensors.type === 'sensors' || sensors.boiler !== undefined) {
-        const { type, timestamp, ...rest } = sensors;
-        lastSensorData = rest;
-    }
-}
-
-export function updateControlState(control) {
-    if (!control) return;
-    // Only update if it contains control data (type 'control' or has 'heater' field)
-    if (control.type === 'control' || control.heater !== undefined) {
-        const { type, timestamp, ...rest } = control;
-        lastControlState = rest;
-    }
-}
-
-export function setCurrentProcessType(type) {
-    log.info({ type }, 'Process type set');
-    currentProcessType = type;
-}
-
-// ─── Config ──────────────────────────────────────────────
-
-function getConfig() {
-    try {
-        const stored = settingsQueries.get('telegram');
-        return {
-            enabled: false,
-            notifyPhaseChange: true,
-            notifyTempAlert: true,
-            notifyComplete: true,
-            notifyInterval: 5,
-            ...stored,
-        };
-    } catch {
-        return {
-            enabled: false,
-            notifyPhaseChange: true,
-            notifyTempAlert: true,
-            notifyComplete: true,
-            notifyInterval: 5,
-        };
-    }
-}
-
-// ─── Init / Shutdown ─────────────────────────────────────
-
-/**
- * Initialize the Telegram module. Reads config from DB and env vars.
- */
-export function initTelegram() {
-    try {
-        const config = getConfig();
-
-        // Env vars take precedence, then DB config
-        botToken = process.env.TELEGRAM_BOT_TOKEN || config.botToken || '';
-        chatId = process.env.TELEGRAM_CHAT_ID || config.chatId || '';
-        enabled = config.enabled && !!botToken && !!chatId;
-
-        log.info({ enabled, hasToken: !!botToken, chatId: chatId || 'none' }, 'Init');
-
-        if (!enabled) {
-            log.info('Service disabled or missing credentials');
-            return;
-        }
-
-        log.info('Initialized OK');
-
-        // Start periodic reports
-        const intervalMin = config.notifyInterval || 5;
-        if (intervalMin > 0) {
-            if (periodicInterval) clearInterval(periodicInterval);
-            periodicInterval = setInterval(sendStatusReport, intervalMin * 60 * 1000);
-            log.info({ intervalMin }, 'Periodic reports started');
-        }
-
-        // Send startup message
-        sendMessage('🟢 *OrangeBrew запущен*\n\nСистема готова к работе.');
-    } catch (err) {
-        log.error({ err }, 'Initialization failed');
-    }
-}
-
-/**
- * Shut down the Telegram module.
- */
-export function shutdownTelegram() {
-    if (periodicInterval) {
-        clearInterval(periodicInterval);
-        periodicInterval = null;
-    }
-    if (enabled) {
-        sendMessage('🔴 *OrangeBrew остановлен*');
-    }
-    enabled = false;
-}
-
-/**
- * Reload credentials from the DB (call after settings change).
- */
-export function reloadTelegramConfig() {
-    shutdownTelegram();
-    initTelegram();
-}
-
-export default {
-    sendMessage,
-    notifyPhaseChange,
-    notifyTempAlert,
-    notifyComplete,
-    notifyPumpChange,
-    notifyMashStep,
-    notifyBoilMilestone,
-    sendStatusReport,
-    updateSensorData,
-    updateControlState,
-    setCurrentProcessType,
-    initTelegram,
-    shutdownTelegram,
-    reloadTelegramConfig,
+const eventLabels = {
+    'process.started': 'Процесс запущен', 'process.start_failed': 'Не удалось запустить процесс',
+    'process.paused': 'Процесс на паузе', 'process.resumed': 'Процесс возобновлён',
+    'process.step_reached': 'Целевая температура достигнута', 'process.step_changed': 'Следующий этап процесса',
+    'process.completed': 'Процесс завершён', 'process.stopped': 'Процесс остановлен',
+    'process.safety_stop': 'Аварийная остановка',
 };
+
+async function deliverProcessEvent(event, { source = 'direct', now = Date.now() } = {}) {
+    if (shuttingDown) return { ok: false, retryable: true, description: 'Notification service stopping' };
+    if (!event || !eventLabels[event.eventType]) return { ok: true, skipped: true };
+    if (source !== (process.env.NOTIFICATIONS_TRANSPORT || 'direct')) return { ok: true, deferred: true };
+    const { eventId, userId } = event;
+    if (!validUser(userId) || !userQueries.getById(userId)) return { ok: true, skipped: true };
+    if (!sessionQueries.getById(event.sessionId, userId)) {
+        return { ok: false, retryable: false, description: 'Notification session owner mismatch' };
+    }
+    const claim = notificationDelivery.claim(eventId, userId, now);
+    if (claim === 'done') return { ok: true, duplicate: true };
+    if (claim === 'busy') return { ok: false, retryable: true, description: 'Notification already in flight' };
+    const age = now - Date.parse(event.occurredAt);
+    const ttl = Number(process.env.NOTIFICATION_TTL_MS || 900000);
+    const config = getTelegramConfig(userId);
+    const enabledType = event.eventType === 'process.completed' ? config.notifyComplete : config.notifyPhaseChange;
+    if (!Number.isFinite(age) || age > ttl || age < -60000 || !enabledType) {
+        notificationDelivery.finish(eventId, 'skipped', now);
+        return { ok: true, skipped: true };
+    }
+    const state = event.payload?.snapshot || event.payload?.state || event.payload || {};
+    const step = state.currentStep || state.steps?.[state.currentStepIndex];
+    const result = await sendMessage(`${eventLabels[event.eventType]}\nСессия: ${event.sessionId}\n${step?.name || ''}`, { userId });
+    notificationDelivery.finish(eventId, result.ok ? 'sent' : result.skipped ? 'skipped' : 'failed');
+    if (result.skipped) return { ok: true, skipped: true };
+    return result;
+}
+
+export function notifyProcessEvent(event, options) {
+    const task = deliverProcessEvent(event, options);
+    inFlight.add(task);
+    void task.finally(() => inFlight.delete(task)).catch(() => {});
+    return task;
+}
+
+export function initTelegram(userId) {
+    shuttingDown = false;
+    const users = validUser(userId) ? [{ id: userId }] : userQueries.getAll();
+    for (const user of users) {
+        const old = intervals.get(user.id);
+        if (old) clearInterval(old);
+        intervals.delete(user.id);
+        const config = getTelegramConfig(user.id);
+        const minutes = Number(config.notifyInterval);
+        if (!config.enabled || !config.botToken || !config.chatId || !Number.isFinite(minutes) || minutes <= 0) continue;
+        const timer = setInterval(() => { void sendStatusReport(user.id).catch(() => {}); }, Math.min(1440, Math.max(1, minutes)) * 60000);
+        timer.unref?.();
+        intervals.set(user.id, timer);
+    }
+    log.info({ configuredUsers: intervals.size }, 'Per-user Telegram notifications initialized');
+}
+export function reloadTelegramConfig(userId) { initTelegram(userId); }
+export async function shutdownTelegram({ timeoutMs = 1000 } = {}) {
+    shuttingDown = true;
+    for (const request of requests) request.abort();
+    for (const timer of intervals.values()) clearInterval(timer);
+    intervals.clear();
+    contexts.clear();
+    let timeout;
+    try { await Promise.race([Promise.allSettled([...inFlight]), new Promise(resolve => { timeout = setTimeout(resolve, timeoutMs); })]); }
+    finally { clearTimeout(timeout); }
+}
+
+export default { sendMessage, notifyPhaseChange, notifyTempAlert, notifyComplete, notifyPumpChange,
+    notifyMashStep, notifyBoilMilestone, notifyProcessEvent, sendStatusReport, updateSensorData,
+    updateControlState, updateProcessState, setCurrentProcessType, initTelegram, shutdownTelegram, reloadTelegramConfig };

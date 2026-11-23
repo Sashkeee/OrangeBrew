@@ -1,230 +1,155 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import telegram from './telegram.js';
-import { temperatureQueries, sessionQueries, settingsQueries } from '../db/database.js';
+import { temperatureQueries, processEventQueries, settingsQueries } from '../db/database.js';
 import { setPumpState } from '../routes/control.js';
 import logger from '../utils/logger.js';
 
 const log = logger.child({ module: 'ProcessManager' });
-
-// Status constants
-export const PROCESS_STATUS = {
-    IDLE: 'IDLE',
-    HEATING: 'HEATING',
-    HOLDING: 'HOLDING',
-    PAUSED: 'PAUSED',
-    COMPLETED: 'COMPLETED'
-};
+export const PROCESS_STATUS = { IDLE: 'IDLE', HEATING: 'HEATING', HOLDING: 'HOLDING', PAUSED: 'PAUSED', COMPLETED: 'COMPLETED' };
+const idleState = () => ({ status: 'IDLE', mode: null, recipeName: '', steps: [], currentStepIndex: -1,
+    stepPhase: 'heating', remainingTime: 0, startTime: null, elapsedTime: 0, recipeId: null,
+    sessionId: null, deviceId: 'local_serial', sensorAddress: null, notifiedEvents: [] });
 
 class ProcessManager extends EventEmitter {
-    constructor(pidManager, userId) {
+    constructor(pidManager, userId, { store = processEventQueries } = {}) {
         super();
         this.pidManager = pidManager;
-        this.userId = userId;  // owner — используется в server.js для per-user broadcast
-        this.reset();
-
-        // Bind methods
+        this.userId = userId;
+        this.store = store;
+        this.context = {};
         this.updateLoop = this.updateLoop.bind(this);
+        this.reset();
+        this.recovery = Number.isSafeInteger(userId) ? store.getRecoverable(userId) : [];
     }
 
     reset() {
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.timerInterval = null;
-
-        this.state = {
-            status: PROCESS_STATUS.IDLE,
-            mode: null, // null when idle, 'mash' or 'boil' when running
-            recipeName: '',
-            steps: [],
-            currentStepIndex: -1,
-            stepPhase: 'heating', // 'heating' or 'holding'
-            remainingTime: 0,
-            startTime: null,
-            elapsedTime: 0,
-            recipeId: null,
-            sessionId: null,
-            deviceId: 'local_serial', // Default to serial for backward compatibility
-            notifiedEvents: []
-        };
-
-        // Reset PID
-        if (this.pidManager && this.pidManager.setEnabled) {
-            this.pidManager.setTarget(0);
-            this.pidManager.setEnabled(false);
-        }
-
+        this.pidManager?.setEnabled?.(false);
+        this.pidManager?.setTarget?.(0);
+        this.state = idleState();
         this.lastTempLogTime = 0;
-        log.info('Reset to IDLE');
         this.emit('update', this.state);
     }
 
-    start(recipe, sessionId = null, mode = 'mash', deviceId = 'local_serial', sensorAddress = null) {
-        if (this.state.status !== PROCESS_STATUS.IDLE && this.state.status !== PROCESS_STATUS.COMPLETED) {
-            throw new Error('Process is already running');
+    persist(eventType, nextState, { sessionStatus, safety = false, payload = {} } = {}) {
+        try {
+            const result = this.store.transition({ userId: this.userId, sessionId: nextState.sessionId,
+                eventType, snapshot: nextState, sessionStatus, payload, context: this.context });
+            this.state = { ...nextState, aggregateSequence: result.sequence };
+            this.emit('domainEvent', result.event);
+            return result.event;
+        } catch (err) {
+            if (!safety) throw err;
+            this.state = { ...nextState, persistenceError: true, recoveryRequired: true };
+            log.error({ err, userId: this.userId, sessionId: nextState.sessionId, eventType }, 'Safe process action could not be persisted');
+            return null;
         }
-
-        let savedElapsed = 0;
-        let savedStartTime = Date.now();
-        if (this.state.status === PROCESS_STATUS.COMPLETED) {
-            savedElapsed = this.state.elapsedTime;
-            savedStartTime = this.state.startTime || Date.now();
-            this.reset();
-        }
-
-        let steps = [];
-        if (mode === 'mash') {
-            steps = recipe.mash_steps || recipe.steps || [];
-            if (steps.length === 0) throw new Error('No mash steps in recipe');
-        } else if (mode === 'boil') {
-            if (!recipe.boil_time) throw new Error('No boil time in recipe');
-            // boiling_temp is configurable for test benches (default 100°C).
-            // Read per-user setting first, fall back to global, then to 100°C.
-            // TODO #30: remove boiling_temp override — production should always use 100°C.
-            const boilingTemp = parseFloat(settingsQueries.get('boiling_temp', this.userId))
-                || parseFloat(settingsQueries.get('boiling_temp', null))
-                || 100;
-            steps = [{
-                name: 'Boiling',
-                temp: boilingTemp,
-                duration: parseInt(recipe.boil_time),
-                hop_additions: recipe.hop_additions || []
-            }];
-        } else {
-            throw new Error(`Unknown mode: ${mode}`);
-        }
-
-        let finalSessionId = sessionId;
-        let needsNewSession = false;
-
-        if (!finalSessionId || finalSessionId === 'new') {
-            needsNewSession = true;
-        } else {
-            try {
-                const existing = sessionQueries.getById(finalSessionId);
-                if (!existing) needsNewSession = true;
-            } catch (err) {
-                needsNewSession = true;
-            }
-        }
-
-        if (needsNewSession) {
-            try {
-                const newSession = sessionQueries.create({
-                    recipe_id: recipe.id || null,
-                    type: mode,
-                    status: 'active',
-                    notes: 'Auto-created by ProcessManager'
-                });
-                finalSessionId = newSession.id;
-            } catch (err) {
-                log.warn({ err }, 'Failed to create session with recipe_id (likely FK missing). Retrying without recipe_id...');
-                try {
-                    const fallbackSession = sessionQueries.create({
-                        recipe_id: null,
-                        type: mode,
-                        status: 'active',
-                        notes: 'Auto-created fallback'
-                    });
-                    finalSessionId = fallbackSession.id;
-                } catch (e2) {
-                    log.error({ err: e2 }, 'Fatal: Could not create session in DB');
-                    finalSessionId = Date.now().toString(); // Fallback, though it might fail FK constraint later
-                }
-            }
-        }
-
-        this.state = {
-            status: PROCESS_STATUS.HEATING,
-            mode: mode,
-            recipeName: recipe.name,
-            steps: steps,
-            currentStepIndex: 0, // Always start at 0
-            stepPhase: 'heating',
-            remainingTime: steps[0].duration * 60,
-            startTime: savedStartTime,
-            elapsedTime: savedElapsed,
-            recipeId: recipe.id,
-            sessionId: finalSessionId,
-            deviceId: deviceId, // Assigned device
-            sensorAddress: sensorAddress, // Specific sensor address to track
-            notifiedEvents: []
-        };
-
-        log.info({
-            mode,
-            recipe: recipe.name,
-            deviceId,
-            sensorAddress: sensorAddress || 'auto',
-            sessionId: finalSessionId,
-            steps: steps.map((s, i) => `${i}: ${s.name} ${s.temp}°C/${s.duration}min`),
-        }, `START ${mode.toUpperCase()}`);
-
-        // Initialize hardware
-        const initialTemp = this.state.steps[0].temp;
-        log.info({ target: initialTemp, mode: 'heating' }, 'Enabling PID');
-        if (this.pidManager && this.pidManager.setEnabled) {
-            if (this.pidManager.setSensorAddress) this.pidManager.setSensorAddress(sensorAddress);
-            this.pidManager.setTarget(initialTemp);
-            this.pidManager.setMode('heating'); // Start in heating mode (full power with ramp-down)
-            this.pidManager.setEnabled(true);
-        }
-        // Turn on pump automatically when process starts
-        log.info('Turning pump ON');
-        setPumpState(true, this.userId);
-
-        // Start loop
-        this.startLoop();
-
-        // Notify
-        telegram.setCurrentProcessType(mode);
-        const startMsg = mode === 'mash' ? 'Начало затирания' : 'Начало кипячения';
-        telegram.notifyPhaseChange(mode, startMsg, `Рецепт: ${recipe.name}`);
-        this.emit('update', this.state);
     }
 
-    stop() {
-        const oldSessionId = this.state.sessionId;
+    notify(event) {
+        if (!event) return;
+        try {
+            Promise.resolve(telegram.notifyProcessEvent(event)).catch(err => log.error({ err, userId: this.userId }, 'Process notification failed'));
+        } catch (err) { log.error({ err, userId: this.userId }, 'Process notification failed'); }
+    }
 
-        this.reset(); // This disables PID (turns off heater)
-        telegram.sendMessage('🛑 Процесс остановлен вручную');
-        // NOTE: Pump state is NOT changed — user controls pump manually
-
-        if (oldSessionId) {
-            try {
-                sessionQueries.cancel(oldSessionId);
-            } catch (err) {
-                log.error({ err }, 'Failed to cancel session in DB');
-            }
+    start(recipe, sessionId = null, mode = 'mash', deviceId = 'local_serial', sensorAddress = null, context = {}) {
+        if (!['IDLE', 'COMPLETED'].includes(this.state.status)) throw new Error('Process is already running');
+        if (this.state.persistenceError || this.recovery.length) throw new Error('Interrupted process needs operator acknowledgement; stop before starting again');
+        let steps;
+        if (mode === 'mash') steps = recipe.mash_steps || recipe.steps || [];
+        else if (mode === 'boil') {
+            const temp = parseFloat(settingsQueries.get('boiling_temp', this.userId)) || parseFloat(settingsQueries.get('boiling_temp', null)) || 100;
+            steps = [{ name: 'Boiling', temp, duration: Number(recipe.boil_time), hop_additions: recipe.hop_additions || [] }];
+        } else throw new Error('Unknown process mode');
+        if (!Array.isArray(steps) || steps.length === 0 || steps.length > 100) throw new Error('Recipe needs between 1 and 100 steps');
+        steps = structuredClone(steps);
+        for (const step of steps) {
+            step.temp = Number(step.temp);
+            step.duration = Number(step.duration);
+            if (!Number.isFinite(step.temp) || !Number.isFinite(step.duration) || step.duration <= 0) throw new Error('Invalid step temperature or duration');
         }
+        this.context = { correlationId: context.correlationId || randomUUID() };
+        const snapshot = { ...idleState(), status: 'START_REQUESTED', mode, recipeName: recipe.name || '', steps,
+            currentStepIndex: 0, remainingTime: steps[0].duration * 60,
+            startTime: this.state.status === 'COMPLETED' ? (this.state.startTime || Date.now()) : Date.now(),
+            elapsedTime: this.state.status === 'COMPLETED' ? this.state.elapsedTime : 0,
+            recipeId: recipe.id || null, deviceId, sensorAddress };
+        // Session, ownership, snapshot and start_requested commit BEFORE enabling heat.
+        const prepared = this.store.prepareStart({ userId: this.userId, recipe, sessionId, mode, snapshot,
+            context: { ...this.context, sensorVerified: context.sensorVerified === true } });
+        this.state = { ...prepared.snapshot, aggregateSequence: prepared.sequence };
+        this.emit('domainEvent', prepared.event);
+        try {
+            this.pidManager?.setSensorAddress?.(sensorAddress);
+            this.pidManager?.setTarget?.(steps[0].temp);
+            this.pidManager?.setMode?.('heating');
+            this.pidManager?.setEnabled?.(true);
+            setPumpState(true, this.userId);
+            // A server transition, not a claim that the hardware acknowledged execution.
+            const event = this.persist('process.started', { ...this.state, status: 'HEATING' }, { sessionStatus: 'active' });
+            this.startLoop();
+            telegram.setCurrentProcessType(mode, this.userId);
+            this.notify(event);
+            this.emit('update', this.state);
+        } catch (err) {
+            this.pidManager?.setEnabled?.(false);
+            const failed = this.persist('process.start_failed', { ...this.state, status: 'START_FAILED' }, { sessionStatus: 'cancelled', safety: true });
+            if (failed) this.state = idleState();
+            else this.state = { ...this.state, status: 'PAUSED', persistenceError: true, recoveryRequired: true };
+            throw err;
+        }
+    }
+
+    stop({ safety = false } = {}) {
+        const previous = this.state;
+        this.reset(); // Direct safety action always precedes the database attempt.
+        let failed = false;
+        if (previous.sessionId && (previous.status !== 'COMPLETED' || previous.persistenceError)) {
+            const event = this.persist(safety ? 'process.safety_stop' : 'process.stopped',
+                { ...previous, status: 'STOPPED', remainingTime: 0 }, { sessionStatus: 'cancelled', safety: true });
+            failed = !event;
+            this.notify(event);
+        }
+        this.recovery = (this.recovery || []).filter(item => !this.persist('process.stopped',
+            { ...item.snapshot, status: 'STOPPED' }, { sessionStatus: 'cancelled', safety: true }));
+        // Keep the last session available to retry its stop if persistence is temporarily unavailable.
+        this.state = failed ? { ...previous, status: 'PAUSED', persistenceError: true, recoveryRequired: true }
+            : { ...idleState(), persistenceError: this.recovery.length > 0 };
+        this.emit('update', this.state);
     }
 
     pause() {
-        if (this.state.status === PROCESS_STATUS.IDLE || this.state.status === PROCESS_STATUS.COMPLETED) return;
-
-        this.state.status = PROCESS_STATUS.PAUSED;
-        // Turn off heater (PID disabled → setHeaterState(0))
-        if (this.pidManager && this.pidManager.setEnabled) this.pidManager.setEnabled(false);
-        // NOTE: Pump state is NOT changed — user controls pump manually
+        if (!['HEATING', 'HOLDING'].includes(this.state.status)) return;
+        this.pidManager?.setEnabled?.(false);
+        const event = this.persist('process.paused', { ...this.state, status: 'PAUSED' }, { sessionStatus: 'paused', safety: true });
+        this.notify(event);
         this.emit('update', this.state);
-        telegram.sendMessage('⏸ Процесс поставлен на паузу');
     }
 
     resume() {
-        if (this.state.status !== PROCESS_STATUS.PAUSED) return;
-
-        this.state.status = this.state.stepPhase === 'heating' ? PROCESS_STATUS.HEATING : PROCESS_STATUS.HOLDING;
-        if (this.pidManager && this.pidManager.setEnabled) {
-            // Restore PID mode based on current phase
-            this.pidManager.setMode(this.state.stepPhase); // 'heating' or 'holding'
-            this.pidManager.setEnabled(true);
+        if (this.state.status !== 'PAUSED') return;
+        if (this.state.persistenceError || this.state.recoveryRequired) throw new Error('Persistence needs operator acknowledgement; stop and start a new process');
+        this.persist('process.resume_requested', { ...this.state }, { sessionStatus: 'paused' });
+        try {
+            this.pidManager?.setMode?.(this.state.stepPhase);
+            this.pidManager?.setEnabled?.(true);
+            const status = this.state.stepPhase === 'heating' ? 'HEATING' : 'HOLDING';
+            const event = this.persist('process.resumed', { ...this.state, status }, { sessionStatus: 'active' });
+            this.notify(event);
+            this.emit('update', this.state);
+        } catch (err) {
+            this.pidManager?.setEnabled?.(false);
+            this.persist('process.paused', { ...this.state, status: 'PAUSED' }, { sessionStatus: 'paused', safety: true });
+            throw err;
         }
-        // NOTE: Pump state is NOT changed — user controls pump manually
-        this.emit('update', this.state);
-        telegram.sendMessage('▶️ Процесс возобновлен');
     }
 
     skip() {
-        if (this.state.status === PROCESS_STATUS.IDLE) return;
-        this.advanceStep();
+        if (!['HEATING', 'HOLDING', 'PAUSED'].includes(this.state.status)) return;
+        try { this.advanceStep(); } catch (err) { this.failSafely(err); throw err; }
     }
 
     startLoop() {
@@ -232,222 +157,98 @@ class ProcessManager extends EventEmitter {
         this.timerInterval = setInterval(this.updateLoop, 1000);
     }
 
+    failSafely(err) {
+        this.pidManager?.setEnabled?.(false);
+        this.persist('process.safety_stop', { ...this.state, status: 'PAUSED', recoveryRequired: true }, { sessionStatus: 'paused', safety: true });
+        log.error({ err, userId: this.userId, sessionId: this.state.sessionId }, 'Process paused after persistence or transition failure');
+        this.emit('update', this.state);
+    }
+
     updateLoop() {
-        if (this.state.status === PROCESS_STATUS.IDLE) return;
-
-        // General brew timer ticks unconditionally (except IDLE)
+        if (['IDLE', 'COMPLETED'].includes(this.state.status)) return;
         this.state.elapsedTime++;
-
-        // Stop remainingTime tick and updates if paused
-        if (this.state.status === PROCESS_STATUS.PAUSED) {
-            this.emit('update', this.state);
-            return;
+        if (this.state.status !== 'PAUSED') {
+            try { this.tickTimer(); } catch (err) { this.failSafely(err); }
         }
-
-        this.tickTimer();
-
+        // UI timer ticks are deliberately not domain events or outbox writes.
         this.emit('update', this.state);
     }
 
     handleSensorData(deviceId, data) {
-        // Always forward to PID — it has its own sensor address logic and handles
-        // both normal PID control and autotune regardless of process status.
-        if (this.pidManager) {
-            this.pidManager.update(data);
-        }
-
-        // Process state machine only runs when actively heating/holding
-        if (this.state.status !== PROCESS_STATUS.HEATING && this.state.status !== PROCESS_STATUS.HOLDING) return;
-        if (this.state.status === PROCESS_STATUS.PAUSED) return;
-
-        // Only process data from the assigned device
-        if (this.state.deviceId && deviceId !== this.state.deviceId) {
-            // Don't spam logs - only log once per minute
-            if (!this._lastDeviceMismatchLog || Date.now() - this._lastDeviceMismatchLog > 60000) {
-                log.warn({ expected: this.state.deviceId, got: deviceId }, 'Device mismatch, ignoring sensor data');
-                this._lastDeviceMismatchLog = Date.now();
-            }
-            return;
-        }
-
-        // Extract boiler temp using ONLY the selected sensor if sensorAddress is set.
-        // NEVER fallback to data.boiler when sensorAddress is set — boiler mapping
-        // can randomly point to a different sensor (e.g. the room-temp one at 20°C).
+        if (this.state.sessionId && this.state.deviceId !== deviceId) return;
+        this.pidManager?.update?.(data);
+        if (!['HEATING', 'HOLDING'].includes(this.state.status)) return;
         let currentTemp;
-        const hasSensorsArray = data.sensors && Array.isArray(data.sensors);
-
         if (this.state.sensorAddress) {
-            // Specific sensor required — find it by address
-            if (hasSensorsArray) {
-                const targetSensor = data.sensors.find(s => s.address === this.state.sensorAddress);
-                if (targetSensor) {
-                    currentTemp = targetSensor.temp ?? targetSensor.value;
-                }
-            }
-            // If sensor not found in this packet — skip entirely (mock or wrong device)
-            if (currentTemp === undefined) {
-                return;
-            }
-        } else {
-            // No specific sensor — use mapped boiler value (legacy / auto mode)
-            currentTemp = data.boiler;
-            if (typeof currentTemp === 'object' && currentTemp !== null) currentTemp = currentTemp.value;
-        }
-
-        if (currentTemp === undefined) {
-            log.warn({ dataKeys: Object.keys(data) }, 'No boiler temperature in sensor data');
-            return;
-        }
-
-        const currentStep = this.state.steps[this.state.currentStepIndex];
-        if (!currentStep) return;
-
-        // Logic: if heating and temp reached -> switch to holding
-        // Use step's configured temp for both mash and boil (boilingTemp already set in state.steps on start)
-        const targetTemp = parseFloat(currentStep.temp);
-        const currentTempFloat = parseFloat(currentTemp);
-
-        // Hand off to PID 1°C before target to prevent overshoot
-        const targetReached = !isNaN(currentTempFloat) && !isNaN(targetTemp) && (currentTempFloat >= targetTemp - 1);
-
-        if (this.state.stepPhase === 'heating' && targetReached) {
-            log.info({ target: currentStep.temp, current: currentTempFloat, handoff: targetTemp - 1, holdMin: currentStep.duration }, 'Target -1°C reached → PID HOLDING');
-            this.state.stepPhase = 'holding';
-            this.state.status = PROCESS_STATUS.HOLDING;
-            this.state.remainingTime = currentStep.duration * 60;
-
-            // CRITICAL: Switch PID to holding mode (resets integral to prevent overshoot)
-            if (this.pidManager && this.pidManager.setMode) {
-                this.pidManager.setMode('holding');
-            }
-
-            if (this.state.mode === 'mash') {
-                telegram.notifyMashStep('reached', currentStep);
-            } else {
-                telegram.notifyPhaseChange('boil', 'Кипячение достигнуто', 'Начинаем обратный отсчет');
-            }
-            this.emit('update', this.state);
-        }
-
-        // Log temperature every 10 seconds (10000ms)
-        const now = Date.now();
-        if (now - this.lastTempLogTime > 10000 && this.state.sessionId) {
+            const selected = data.sensors?.find(sensor => sensor.address === this.state.sensorAddress);
+            currentTemp = selected?.temp ?? selected?.value;
+        } else currentTemp = typeof data.boiler === 'object' ? data.boiler?.value : data.boiler;
+        if (currentTemp === undefined || !Number.isFinite(Number(currentTemp))) return;
+        const step = this.state.steps[this.state.currentStepIndex];
+        if (!step) return;
+        if (this.state.stepPhase === 'heating' && Number(currentTemp) >= step.temp - 1) {
             try {
-                temperatureQueries.insert(this.state.sessionId, 'boiler', currentTemp);
-                this.lastTempLogTime = now;
-            } catch (err) {
-                log.error({ err }, 'Failed to log temperature to DB');
-            }
+                const event = this.persist('process.step_reached', { ...this.state, status: 'HOLDING',
+                    stepPhase: 'holding', remainingTime: step.duration * 60 }, { payload: { stepName: step.name || '', target: step.temp } });
+                this.pidManager?.setMode?.('holding');
+                this.notify(event);
+                this.emit('update', this.state);
+            } catch (err) { this.failSafely(err); return; }
         }
-
-        // Note: pidManager.update(data) is called at the top of this method
-        // unconditionally so that PID/autotune runs even when no process is active.
+        const now = Date.now();
+        if (now - this.lastTempLogTime > 10000) {
+            try { temperatureQueries.insert(this.state.sessionId, 'boiler', Number(currentTemp)); this.lastTempLogTime = now; }
+            catch (err) { log.error({ err, userId: this.userId }, 'Failed to log temperature to DB'); }
+        }
     }
 
-    // Called every second by loop
     tickTimer() {
-        if (this.state.status !== PROCESS_STATUS.HOLDING) return;
-
+        if (this.state.status !== 'HOLDING') return;
         this.state.remainingTime--;
-
-        const currentStep = this.state.steps[this.state.currentStepIndex];
-
-        // Check for Boil Hop Additions
-        if (this.state.mode === 'boil' && currentStep.hop_additions) {
-            const timeLeftMins = Math.floor(this.state.remainingTime / 60);
-            const timeLeftSecs = this.state.remainingTime % 60;
-
-            // Check specifically at exact minute mark
-            if (timeLeftSecs === 0) {
-                // Hops
-                currentStep.hop_additions.forEach(hop => {
-                    if (hop.time === timeLeftMins) {
-                        const key = `hop_${hop.name}_${hop.time}`;
-                        if (!this.state.notifiedEvents.includes(key)) {
-                            telegram.sendMessage(`📥 *ВОМЯ ВНЕСЕНИЯ ХМЕЛЯ!*\nХмель: ${hop.name}\nКол-во: ${hop.amount}г\nВремя: ${hop.time} мин`);
-                            this.state.notifiedEvents.push(key);
-                        }
-                    }
-                });
-
-                // Reminders (10, 5 mins)
-                if ([10, 5].includes(timeLeftMins)) {
-                    const key = `rem_${timeLeftMins}`;
-                    if (!this.state.notifiedEvents.includes(key)) {
-                        telegram.sendMessage(`⏳ До конца кипячения: ${timeLeftMins} мин`);
-                        this.state.notifiedEvents.push(key);
-                    }
+        const step = this.state.steps[this.state.currentStepIndex];
+        if (this.state.mode === 'boil' && step.hop_additions && this.state.remainingTime % 60 === 0) {
+            const mins = Math.floor(this.state.remainingTime / 60);
+            for (const hop of step.hop_additions) {
+                const key = 'hop_' + hop.name + '_' + hop.time;
+                if (Number(hop.time) === mins && !this.state.notifiedEvents.includes(key)) {
+                    telegram.sendMessage('Время внесения хмеля: ' + hop.name + ', ' + hop.amount + ' г', { userId: this.userId });
+                    this.state.notifiedEvents.push(key);
                 }
             }
-        }
-
-        // Check if step completed
-        if (this.state.remainingTime <= 0) {
-            if (this.state.mode === 'mash') {
-                telegram.notifyMashStep('completed', currentStep);
+            const key = 'rem_' + mins;
+            if ([10, 5].includes(mins) && !this.state.notifiedEvents.includes(key)) {
+                telegram.sendMessage('До конца кипячения: ' + mins + ' мин', { userId: this.userId });
+                this.state.notifiedEvents.push(key);
             }
-            this.advanceStep();
         }
+        if (this.state.remainingTime <= 0) this.advanceStep();
     }
 
     advanceStep() {
         const nextIndex = this.state.currentStepIndex + 1;
-        if (nextIndex >= this.state.steps.length) {
-            log.info('All steps complete → finishing');
-            this.complete();
-        } else {
-            this.state.currentStepIndex = nextIndex;
-            this.state.stepPhase = 'heating';
-            this.state.status = PROCESS_STATUS.HEATING;
-            const nextStep = this.state.steps[nextIndex];
-
-            log.info({ step: nextIndex + 1, name: nextStep.name, temp: nextStep.temp, duration: nextStep.duration }, 'Advancing to next step');
-
-            // Set new target and switch PID to heating mode
-            if (this.pidManager && this.pidManager.setEnabled) {
-                this.pidManager.resetIntegral(); // Clear old integral from previous step
-                this.pidManager.setTarget(nextStep.temp);
-                this.pidManager.setMode('heating'); // Back to heating mode (full power)
-            }
-
-            this.state.remainingTime = nextStep.duration * 60; // Pre-set for display
-
-            if (this.state.mode === 'mash') {
-                telegram.notifyPhaseChange('mash', `Шаг ${nextIndex + 1}: ${nextStep.name}`, `${nextStep.temp}°C / ${nextStep.duration} мин`);
-            }
-            this.emit('update', this.state);
-        }
-    }
-
-    complete() {
-        const prevMode = this.state.mode;
-        this.state.status = PROCESS_STATUS.COMPLETED;
-        this.state.remainingTime = 0;
-        // Turn off heater (PID disabled → setHeaterState(0))
-        if (this.pidManager && this.pidManager.setEnabled) {
-            this.pidManager.setEnabled(false);
-        }
-        // NOTE: Pump state is NOT changed — user controls pump manually
-
-        if (this.timerInterval) clearInterval(this.timerInterval);
-        this.timerInterval = null;
-
-        if (this.state.mode === 'boil' && this.state.sessionId) {
-            try {
-                sessionQueries.complete(this.state.sessionId);
-            } catch (err) {
-                log.error({ err }, 'Failed to complete session in DB');
-            }
-        }
-
-        const nextAction = prevMode === 'mash' ? 'Можно переходить к кипячению' : 'Варка завершена! Охлаждайте сусло.';
-        telegram.notifyComplete(prevMode, { notes: nextAction });
+        if (nextIndex >= this.state.steps.length) { this.complete(); return; }
+        const step = this.state.steps[nextIndex];
+        const status = this.state.status === 'PAUSED' ? 'PAUSED' : 'HEATING';
+        const event = this.persist('process.step_changed', { ...this.state, currentStepIndex: nextIndex, stepPhase: 'heating',
+            status, remainingTime: step.duration * 60 }, { payload: { previousStep: this.state.currentStepIndex, stepName: step.name || '', target: step.temp } });
+        this.pidManager?.resetIntegral?.();
+        this.pidManager?.setTarget?.(step.temp);
+        this.pidManager?.setMode?.('heating');
+        this.notify(event);
         this.emit('update', this.state);
     }
 
-    getState() {
-        return this.state;
+    complete() {
+        this.pidManager?.setEnabled?.(false);
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = null;
+        // Mash and boil can share the same session; only boil finalizes that session.
+        const event = this.persist('process.completed', { ...this.state, status: 'COMPLETED', remainingTime: 0 },
+            { sessionStatus: this.state.mode === 'boil' ? 'completed' : 'active', safety: true });
+        this.notify(event);
+        this.emit('update', this.state);
     }
-}
 
+    getState() { return { ...this.state, recovery: this.recovery || [] }; }
+}
 export default ProcessManager;

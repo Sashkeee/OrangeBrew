@@ -1,0 +1,14 @@
+# Merge with the test app Compose and the same APP_ENV used by observability.
+# e.g. APP_ENV=test docker compose -f docker-compose.test.yml -f docker-compose.kafka.yml up -d
+services:
+  backend-test:
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: orangebrew-test-backend
+      KAFKA_PUBLISH_ENABLED: "true"
+      EVENTS_CAPTURE_ENABLED: "true"
+    networks: [default, observability]
+networks:
+  observability:
+    external: true
+    name: orangebrew-observability-${APP_ENV:-test}

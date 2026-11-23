@@ -13,11 +13,11 @@ Multi-tenant SaaS архитектура: данные изолированы п
 | Слой | Технологии |
 |------|-----------|
 | **Frontend** | React 19, Vite 7, React Router 7, Recharts, Framer Motion, Lucide React, CodeMirror |
-| **Backend** | Node.js (ESM), Express 4, WebSocket (`ws`), JWT auth, bcrypt, Pino structured logging |
+| **Backend** | Node.js (ESM), Express 4, WebSocket (`ws`), JWT auth, bcrypt, Winston ECS logging |
 | **Database** | SQLite (better-sqlite3), FTS5 полнотекстовый поиск |
 | **Hardware** | ESP32 / ESP32-C3 / ESP32-S3 / ESP8266 через WiFi WebSocket или MockSerial (симуляция) |
 | **PID** | PID-контроллер с двумя режимами (heating/holding), Kalman-фильтр, автотюнинг (relay-метод) |
-| **Infrastructure** | Docker, Caddy (reverse proxy), GitHub Actions CI/CD, Vector + Betterstack (логи) |
+| **Infrastructure** | Docker, Caddy, GitHub Actions, Filebeat → Kafka → Logstash → Elasticsearch → Kibana |
 | **Тесты** | Vitest, @testing-library/react, Playwright |
 
 ---
@@ -49,13 +49,13 @@ OrangeBrew/
 │   ├── server.js              # Точка входа: Express + WS + per-user ProcessManager
 │   ├── swagger.js             # Swagger/OpenAPI конфигурация
 │   ├── config/                # env.js (валидация), constants.js (именованные константы)
-│   ├── utils/                 # logger.js (Pino), audit.js, sensorMapper.js, scaleRecipe.js
+│   ├── utils/                 # Winston logger, log context/redaction, audit, sensorMapper
 │   ├── beerxml/               # BeerXML импорт/экспорт (parser, generator, mapper)
 │   ├── db/
 │   │   ├── database.js        # better-sqlite3, все query-объекты
 │   │   ├── schema.sql         # DDL схема
 │   │   ├── migrate.js         # Система миграций
-│   │   ├── migrations/        # SQL-миграции (001–005)
+│   │   ├── migrations/        # SQL-миграции, включая outbox и notification delivery ledger
 │   │   ├── trainer-seed.sql   # Данные для SQL Trainer (in-memory sandbox)
 │   │   └── sql-tasks.json     # 43 SQL-задачи
 │   ├── services/              # ProcessManager (конечный автомат), Telegram
@@ -80,7 +80,9 @@ OrangeBrew/
 │   ├── esp32s3/               # Прошивка ESP32-S3 Super Mini v1.2.0 + диагностика
 │   └── esp8266/               # Прошивка ESP8266
 ├── docker-compose.prod.yml    # Production
-├── docker-compose.test.yml    # Test + Vector
+├── docker-compose.test.yml    # Test application
+├── docker-compose.observability.yml # Отдельный локальный/test Kafka и Elastic
+├── infra/                    # Filebeat, Kafka, Logstash, Elastic/Kibana bootstrap и smoke
 ├── CLAUDE.md                  # Руководство для Claude AI
 └── SCHEMA.md                  # Схема БД
 ```
@@ -126,6 +128,12 @@ OrangeBrew/
 | `JWT_SECRET` | *обязателен* | Секрет для JWT токенов |
 | `LOG_FORMAT` | auto | `json` для Docker |
 | `LOG_LEVEL` | `debug`/`info` | Уровень логирования |
+| `APP_ENV` | по NODE_ENV | `development`, `test` или `prod`; изоляция событий и логов |
+| `EVENTS_CAPTURE_ENABLED` | `true` | Сохранять события процесса в SQLite outbox |
+| `KAFKA_PUBLISH_ENABLED` | `false` | Публиковать outbox и запускать Kafka consumers |
+| `KAFKA_BROKERS` | пусто | Kafka bootstrap servers через запятую |
+| `NOTIFICATIONS_TRANSPORT` | `direct` | `direct` или `kafka`; Kafka режим требует capture/publish |
+| `SQLITE_SYNCHRONOUS` | `FULL` | Устойчивость локальных транзакций; допустим также NORMAL |
 | `NODE_ENV` | `development` | Влияет на логи и CORS |
 | `FRONTEND_URL` | `http://localhost:5173` | URL фронтенда для CORS |
 | `SWAGGER_ENABLED` | `true` (dev) | Swagger UI на `/api-docs` |
@@ -214,6 +222,7 @@ OrangeBrew/
 |-------|----------|---------|
 | `GET` | `/api/admin/users` | Пользователи |
 | `GET` | `/api/admin/audit` | Аудит-лог |
+| `GET` | `/api/admin/observability` | Outbox, relay, consumers и состояние логгера |
 | `POST` | `/api/admin/users/:id/ban` | Бан |
 | `POST` | `/api/admin/users/:id/unban` | Разбан |
 
@@ -240,6 +249,23 @@ cd frontend && npm test   # Vitest frontend
 ## Deploy
 
 Docker + GitHub Actions CI/CD. Caddy как reverse proxy.
+
+### Kafka и Elastic
+
+Winston пишет ECS JSON в stdout, Filebeat собирает Docker logs, Kafka сохраняет поток, Logstash нормализует его для Elasticsearch, Kibana показывает данные. Старые зависимости Pino и сервис Vector удалены. Подготовка секретов, запуск, диагностика и удаление оставшейся внешней интеграции описаны в [инструкции эксплуатации](docs/OBSERVABILITY_RUNBOOK.md).
+
+```bash
+node infra/observability/validate.mjs
+node infra/observability/generate-env.mjs test
+docker compose --env-file .env.observability -f docker-compose.observability.yml up -d
+node infra/observability/smoke.mjs
+```
+
+Инфраструктурный Compose — single-node test стенд; production TLS/HA provision описан отдельно в инструкции. Обновление приложения не пересоздаёт Kafka/Elasticsearch. Обычный backend запускается с выключенным publisher и продолжает управление при недоступном ingest.
+
+Процесс сначала сохраняет принадлежащую пользователю сессию, snapshot и start_requested. Сетевой relay публикует outbox отдельно от управления. Повторы используют прежний event ID; projection consumer идемпотентен. После перезапуска незавершённый процесс требует явного подтверждения остановки; команды оборудованию автоматически не воспроизводятся.
+
+Telegram хранит настройки и контекст по пользователю; direct и Kafka delivery используют общий журнал отправок. Для environment credentials нужно задать `TELEGRAM_OWNER_USER_ID`; глобальные credentials не наследуются всеми пользователями. Настройки в интерфейсе сохраняются для текущего пользователя. Новые telemetry/audit topics подготовлены как точки расширения; публикация этих потоков пока не включена.
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d

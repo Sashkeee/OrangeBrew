@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "_meta": {"description": "OrangeBrew ECS logs; unknown fields are stored but not dynamically indexed"},
+  "template": {
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "message": {"type": "match_only_text"},
+        "ecs": {"properties": {"version": {"type": "keyword"}}},
+        "log": {"properties": {"level": {"type": "keyword"}, "logger": {"type": "keyword"}}},
+        "service": {"properties": {"name": {"type": "keyword"}, "version": {"type": "keyword"}}},
+        "deployment": {"properties": {"environment": {"properties": {"name": {"type": "keyword"}}}}},
+        "event": {"properties": {"id": {"type": "keyword"}, "action": {"type": "keyword"}, "dataset": {"type": "keyword"}, "duration": {"type": "long"}, "ingested": {"type": "date"}, "created": {"type": "date"}}},
+        "data_stream": {"properties": {"type": {"type": "constant_keyword", "value": "logs"}, "dataset": {"type": "constant_keyword"}, "namespace": {"type": "constant_keyword"}}},
+        "user": {"properties": {"id": {"type": "keyword"}}},
+        "error": {"properties": {"type": {"type": "keyword"}, "message": {"type": "match_only_text"}, "stack_trace": {"type": "wildcard"}}},
+        "http": {"properties": {"request": {"properties": {"method": {"type": "keyword"}}}, "response": {"properties": {"status_code": {"type": "integer"}}}}},
+        "url": {"properties": {"path": {"type": "wildcard"}}},
+        "trace": {"properties": {"id": {"type": "keyword"}}},
+        "span": {"properties": {"id": {"type": "keyword"}}},
+        "container": {"properties": {"id": {"type": "keyword"}, "name": {"type": "keyword"}}},
+        "host": {"properties": {"name": {"type": "keyword"}}},
+        "orangebrew": {"properties": {
+          "request": {"properties": {"id": {"type": "keyword"}}},
+          "correlation": {"properties": {"id": {"type": "keyword"}}},
+          "device": {"properties": {"id": {"type": "keyword"}}},
+          "session": {"properties": {"id": {"type": "keyword"}}},
+          "process": {"properties": {"state": {"type": "keyword"}}},
+          "http": {"properties": {"route": {"type": "keyword"}}},
+          "ingestion_delay_ms": {"type": "double"},
+          "metrics": {"properties": {
+            "rss_mb": {"type": "double"}, "heap_mb": {"type": "double"},
+            "ui_clients": {"type": "long"}, "hw_clients": {"type": "long"},
+            "uptime_seconds": {"type": "long"}, "outbox_pending": {"type": "long"},
+            "outbox_pending_bytes": {"type": "long"}, "outbox_oldest_age_ms": {"type": "double"},
+            "log_dropped": {"type": "long"}
+          }},
+          "context": {"type": "flattened"}
+        }}
+      }
+    }
+  }
+}

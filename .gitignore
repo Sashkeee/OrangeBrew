@@ -12,6 +12,9 @@ build/
 
 # Environment variables (SECURITY!)
 .env
+.env.observability
+.env.observability.production
+.local/
 .inv
 .env.local
 .env.development.local

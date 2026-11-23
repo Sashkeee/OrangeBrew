@@ -2,7 +2,7 @@
 
 Полная схема SQLite базы данных. Файл DDL: `backend/db/schema.sql`. Запросы: `backend/db/database.js`.
 Миграции (добавление колонок для мультитенантности): `backend/db/migrate.js`.
-Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`, `004_audit_log.sql`, `005_sensor_roles.sql`.
+Миграции в `backend/db/migrations/`: `001_multitenancy.sql`, `002_sensors_table.sql`, `002_recipe_social_v1.sql`, `003_recipe_search.sql`, `004_audit_log.sql`, `005_sensor_roles.sql`, `006_process_events.sql`, `007_notification_delivery.sql`.
 
 ---
 
@@ -11,8 +11,10 @@
 ```sql
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
-PRAGMA synchronous = NORMAL;
+PRAGMA synchronous = FULL;
 ```
+
+`SQLITE_SYNCHRONOUS` допускает FULL (по умолчанию) или NORMAL. FULL выбран для сохранности подтверждённых outbox транзакций при потере питания; задержки записи нужно измерить на production диске.
 
 ---
 
@@ -464,6 +466,25 @@ CREATE VIRTUAL TABLE recipes_fts USING fts5(name, style, notes, content='recipes
 - `getByYookassaId(yookassaId)`
 
 ---
+
+## Durable process events
+
+Миграция `006_process_events.sql`. Query-объекты: `processEventQueries`, `eventOutboxQueries` в `database.js`. Сетевые операции выполняются relay за пределами SQLite транзакции.
+
+| Таблица | Ключи и поля | Назначение |
+|---|---|---|
+| `process_runtime_state` | session_id PK/FK, user_id FK, snapshot JSON, sequence, recovery_required, updated_at | Последнее сохранённое состояние; startup маркирует незавершённые процессы для подтверждения оператором |
+| `event_outbox` | id PK, event_id UNIQUE, user_id FK, aggregate_id/aggregate_sequence UNIQUE, topic, message_key, payload, payload_bytes, created_at, published_at, attempts, next_attempt_at, last_error | Атомарная очередь фактов; pending записи не удаляются по TTL |
+| `processed_events` | consumer_name + event_id PK, processed_at | Дедупликация эффекта consumer в одной транзакции с проекцией |
+| `process_event_projection` | consumer_name + aggregate_id PK, user_id FK, sequence, event_type, event_id, payload, updated_at | Последовательная проекция событий без команд оборудованию |
+
+`processEventQueries.prepareStart` проверяет владельца объектов и создаёт сессию, snapshot и start_requested одной транзакцией. `transition` сохраняет snapshot/sequence/outbox и соответствующий статус brew_sessions. `markInterrupted` и `getRecoverable` обслуживают безопасное восстановление без auto resume.
+
+`eventOutboxQueries.nextBatch` не пропускает неопубликованное предыдущее событие того же aggregate. После Kafka ack relay выставляет published_at; сбой между ack и отметкой допускает повтор с тем же event ID. Ёмкость ограничена по числу pending и сумме payload_bytes; 20% резервируется для переходов уже активных процессов.
+
+## Notification delivery
+
+Миграция `007_notification_delivery.sql`. `notification_delivery`: event_id + channel PK, user_id FK (CASCADE DELETE), status (`sending`, `sent`, `skipped`, `failed`), attempts, lease_until и updated_at (epoch ms). Общий журнал direct/Kafka уведомлений предотвращает повторную отправку уже доставленного backlog при cutover. Lease ограничивает конкурентные отправки; Telegram send и запись статуса не являются одной транзакцией, поэтому окно повтора при аварийном завершении остаётся. Очистка — 45 суток.
 
 ## Распиновка плат
 

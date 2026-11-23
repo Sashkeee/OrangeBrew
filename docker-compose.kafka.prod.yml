@@ -1,0 +1,20 @@
+# Merge with docker-compose.prod.yml after production Kafka provisioning.
+services:
+  backend-prod:
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Set the production Kafka brokers}
+      KAFKA_CLIENT_ID: orangebrew-prod-backend
+      KAFKA_PUBLISH_ENABLED: "true"
+      EVENTS_CAPTURE_ENABLED: "true"
+      KAFKA_SSL: ${KAFKA_SSL:?Set true for production TLS}
+      KAFKA_SSL_CA_LOCATION: /app/certs/kafka-ca.crt
+      KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-SCRAM-SHA-512}
+      KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:?Set the Kafka service principal}
+      KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:?Set the Kafka service password}
+    volumes:
+      - ${OBSERVABILITY_CERTS_DIR:?Provide production CA directory}:/app/certs:ro
+    networks: [default, observability]
+networks:
+  observability:
+    external: true
+    name: orangebrew-observability-prod

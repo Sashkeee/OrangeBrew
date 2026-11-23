@@ -1,0 +1,46 @@
+name: observability-validate
+on:
+  push:
+    branches: ['codex/kafka-elastic-logging']
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'docker-compose*.yml'
+      - '.github/workflows/observability-validate.yml'
+      - 'backend/Dockerfile'
+      - 'backend/package*.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate topology and bootstrap artifacts
+        run: node infra/observability/validate.mjs
+      - name: Validate shell scripts
+        run: |
+          for script in infra/elastic/*.sh infra/kibana/*.sh infra/kafka/*.sh infra/observability/*.sh; do
+            bash -n "$script"
+          done
+      - name: Check whitespace
+        run: git diff --check
+      - name: Validate Filebeat and Logstash inside pinned images
+        run: node infra/observability/validate.mjs --runtime
+      - name: Build backend image and load native bindings
+        run: |
+          docker build -t orangebrew-backend-check ./backend
+          docker run --rm --entrypoint node orangebrew-backend-check --input-type=module -e "import Database from 'better-sqlite3'; import {createKafkaClient,readKafkaConfig} from './infrastructure/kafka/client.js'; const db=new Database(':memory:'); db.close(); const client=await createKafkaClient(readKafkaConfig({KAFKA_BROKERS:'127.0.0.1:9092'})); client.producer({'enable.idempotence':true}); console.log('Native SQLite and Kafka bindings loaded');"
+      - name: Verify log ingestion through Kafka and Elasticsearch
+        run: |
+          sudo sysctl -w vm.max_map_count=1048576
+          node infra/observability/generate-env.mjs test
+          node infra/observability/smoke.mjs --start --ci
+      - name: Show service status after failure
+        if: failure()
+        run: docker compose --env-file .env.observability -f docker-compose.observability.yml -f docker-compose.observability.ci.yml ps -a

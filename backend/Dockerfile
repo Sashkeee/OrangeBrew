@@ -4,19 +4,22 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install build dependencies for native modules
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ openssl-dev
 
 # Copy package files first for better caching
 COPY package*.json ./
 
 # Install ALL dependencies (including dev for building if needed, though here we just need native builds)
-RUN npm install
+RUN npm ci && npm prune --omit=dev
 
 # Copy source code (will skip node_modules due to .dockerignore)
 COPY . .
 
 # Stage 2: Production
 FROM node:22-alpine
+
+# Native SQLite/Kafka bindings require the C++ runtime and OpenSSL libraries.
+RUN apk add --no-cache libstdc++ openssl
 
 WORKDIR /app
 
