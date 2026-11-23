@@ -17,18 +17,26 @@
 
 Локально на Windows с Node.js 24:
 
-- Backend: 322 теста, 25 файлов — успешно.
+- Backend: 325 тестов, 26 файлов — успешно.
 - Frontend: 71 тест, 8 файлов — успешно; production build успешен.
 - Реальный HTTP subprocess: login, mock process, outbox, ECS/request ID, отсутствие query token в логах и штатное завершение — успешно.
 - Native Kafka adapter: загрузка библиотеки и сценарий недоступного broker/producer/consumer при shutdown — успешно.
 - Compose test/CI/production collectors и app overlays, persistent volumes, private listeners, mappings, Kibana references, shell syntax и workflow YAML — статические проверки успешны.
 - Прямые и транзитивные production зависимости Pino отсутствуют по npm ls.
 
-Docker Desktop установлен, но локальный Linux Engine недоступен. Поэтому Filebeat/Logstash validation в реальных образах и canary Filebeat → Kafka → Logstash → Elasticsearch локально не подтверждены. В workflow observability-validate добавлены runtime validation, Alpine backend native-bindings check и canary на отдельном CI стенде с меньшими heap limits. CI canary не запускает Kibana; её реальный bootstrap/доступ также проверяется при приёмке стенда.
+Docker Desktop установлен, но локальный Linux Engine недоступен. Проверки в реальных Linux-образах выполнены в GitHub Actions с Node.js 22. [Полный успешный прогон](https://github.com/Sashkeee/OrangeBrew/actions/runs/45245302376) проверяет код коммита `4808db9`:
+
+- Все 325 backend-тестов, статическая проверка Compose/overlays, shell scripts, mappings и Kibana references.
+- Конфигурации Filebeat/Logstash, встроенные Ruby tests normalizer и создание сертификатов в закреплённых образах.
+- Сборка Alpine backend и загрузка native SQLite/Kafka bindings.
+- Доставка fixture canary Filebeat → Kafka → Logstash → Elasticsearch.
+- Настоящие broker acknowledgements из outbox, проекция трёх переходов процесса и повтор того же event ID без повторного DB effect.
+- Winston → Docker json-file/autodiscovery → Filebeat → Kafka → Logstash → Elasticsearch. Проверяется настоящий плоский ECS JSON приложения.
+- Запуск Kibana по HTTPS, импорт data view/dashboard/шести расследований и чтение этих объектов отдельным клиентом с учётной записью оператора. Визуальная проверка интерфейса на целевом стенде остаётся приёмочной задачей.
 
 ## Следующие проверки и расширения
 
-1. Принять CI runtime/canary, затем запустить полный test стек и проверить реальный Docker collection, Kibana import и поиск по request/device/session.
+1. На целевом test стенде проверить реальные запросы API, устройство, интерфейс Kibana и поиск по request/device/session.
 2. На целевом хосте измерить RAM/SSD/IOPS и объёмы потоков, подобрать ёмкость очередей и retention; выполнить outages Kafka/ES, disk saturation, DLQ replay и snapshot restore.
 3. Подключить production Kafka/Elasticsearch clusters, PKI, ACL/quotas, snapshots и независимые оповещения. Single-node test Compose не задаёт HA topology.
 4. После приёмки оператор удаляет/отзывает прежние Better Stack credentials и связанные alerts/dashboards на внешнем сервисе. Эти действия на VPS/аккаунте здесь не выполнялись.

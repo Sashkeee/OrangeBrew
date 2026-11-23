@@ -60,6 +60,17 @@ node infra/observability/smoke.mjs --start
 
 Этот canary не заменяет проверку Docker collection и Winston. После подключения backend выполнить реальный запрос API и найти его по `orangebrew.request.id`. Проверить устройство через `device_log`, выбранную session и пользователя. Для Docker Desktop fixture input позволяет проверить ingest при недоступном host mount контейнерных файлов.
 
+На Linux-хосте с json-file logs можно отдельно проверить Winston и Docker autodiscovery без запуска управления оборудованием:
+
+```bash
+docker build -t orangebrew-backend-check ./backend
+node infra/observability/docker-smoke.mjs
+```
+
+Проверка создаёт изолированный контейнер без сети с test labels, пишет запись через настоящий logger, ждёт её в Elasticsearch и удаляет только свой контейнер. Полный test стенд должен быть запущен, а Filebeat иметь доступ к `/var/lib/docker/containers`.
+
+Импорт объектов и готовность Kibana можно повторно проверить командой `node infra/observability/kibana-smoke.mjs`. В CI используется overlay `docker-compose.observability.ci.yml` и флаг `--ci`: ingest останавливается после своих проверок, чтобы освободить память для Kibana; дополнительно проверяется доступ оператора к data view, dashboard и сохранённым расследованиям. Этот режим предназначен для одноразового CI стенда.
+
 Проверка конфигураций внутри реальных образов, включая встроенные Ruby tests normalizer:
 
 ```bash
