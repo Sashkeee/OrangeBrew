@@ -46,6 +46,9 @@ jobs:
         run: |
           sudo sysctl -w vm.max_map_count=1048576
           node infra/observability/smoke.mjs --start --ci
+      - name: Verify native process outbox and idempotent consumer
+        run: |
+          docker run --rm --network orangebrew-observability-test --entrypoint node -e CI=true -e APP_ENV=test -e NODE_ENV=test -e LOG_FORMAT=json -e JWT_SECRET=synthetic-ci-kafka-smoke-key -e CONNECTION_TYPE=mock -e KAFKA_PUBLISH_ENABLED=true -e EVENTS_CAPTURE_ENABLED=true -e KAFKA_BROKERS=kafka:9092 -e KAFKA_DELIVERY_TIMEOUT_MS=2000 orangebrew-backend-check scripts/kafka-smoke.js
       - name: Show service status after failure
         if: failure()
         run: node infra/observability/diagnostics.mjs --ci
