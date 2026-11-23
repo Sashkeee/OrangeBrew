@@ -48,7 +48,4 @@ jobs:
           node infra/observability/smoke.mjs --start --ci
       - name: Show service status after failure
         if: failure()
-        run: |
-          if [ -f .env.observability ]; then
-            docker compose --env-file .env.observability -f docker-compose.observability.yml -f docker-compose.observability.ci.yml ps -a
-          fi
+        run: node infra/observability/diagnostics.mjs --ci
