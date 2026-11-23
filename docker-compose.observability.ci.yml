@@ -13,9 +13,15 @@ services:
     environment:
       LS_JAVA_OPTS: -Xms512m -Xmx512m
     mem_limit: 1536m
-  kibana:
+  kibana-check:
+    image: orangebrew-backend-check
+    pull_policy: never
+    profiles: [smoke]
+    entrypoint: ["node", "/smoke/check-kibana.cjs"]
     environment:
       APP_ENV: ${APP_ENV:-test}
       OPERATOR_PASSWORD: ${OPERATOR_PASSWORD:?Generate .env.observability first}
     volumes:
+      - elastic-certs:/certs:ro
       - ./infra/observability:/smoke:ro
+    networks: [observability]

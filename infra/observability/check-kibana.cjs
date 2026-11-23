@@ -2,11 +2,11 @@ const assert = require('node:assert/strict');
 const https = require('node:https');
 const { readFileSync } = require('node:fs');
 
-const ca = readFileSync('/usr/share/kibana/config/certs/ca/ca.crt');
+const ca = readFileSync('/certs/ca/ca.crt');
 const auth = `orangebrew_operator:${process.env.OPERATOR_PASSWORD}`;
 function get(path) {
   return new Promise((resolve, reject) => {
-    const request = https.get({ hostname: 'localhost', port: 5601, path, auth, ca, timeout: 10000 }, response => {
+    const request = https.get({ hostname: 'kibana', port: 5601, path, auth, ca, timeout: 10000 }, response => {
       let body = '';
       response.setEncoding('utf8');
       response.on('data', chunk => { body += chunk; });
