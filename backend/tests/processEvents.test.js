@@ -36,6 +36,15 @@ afterEach(() => {
 });
 
 describe('durable process transitions', () => {
+    it('continues forwarding per-user PID/autotune data after a previous process completed', () => {
+        manager.start(recipe);
+        manager.complete();
+        const data = { boiler: 20, sensors: [{ address: 'new-selected-sensor', temp: 20 }] };
+        pid.update.mockClear();
+        manager.handleSensorData('another-owned-device', data);
+        expect(pid.update).toHaveBeenCalledWith(data);
+        expect(manager.getState().status).toBe('COMPLETED');
+    });
     it('commits scoped session and request before enabling heat; timer ticks are not events', () => {
         vi.useFakeTimers();
         pid.setEnabled.mockImplementation(enabled => {

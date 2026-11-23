@@ -175,7 +175,9 @@ class ProcessManager extends EventEmitter {
     }
 
     handleSensorData(deviceId, data) {
-        if (this.state.sessionId && this.state.deviceId !== deviceId) return;
+        // An active run owns its sensor stream. After completion the per-user
+        // PID may be used for a new autotune on another selected device/sensor.
+        if (this.state.sessionId && !['IDLE', 'COMPLETED'].includes(this.state.status) && this.state.deviceId !== deviceId) return;
         this.pidManager?.update?.(data);
         if (!['HEATING', 'HOLDING'].includes(this.state.status)) return;
         let currentTemp;
