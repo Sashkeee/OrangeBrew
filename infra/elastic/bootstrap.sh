@@ -25,13 +25,20 @@ api POST _security/user/kibana_system/_password "{\"password\":\"$KIBANA_SYSTEM_
 api PUT _component_template/orangebrew-ecs-v1 "$(cat /bootstrap/component-template.json)"
 for dataset in backend device proxy audit debug; do
   case $dataset in audit) days=30;; debug) days=3;; *) days=14;; esac
+  # Resolve constant_keyword values during privileged bootstrap. Otherwise the
+  # first document requires an automatic mapping update, which create_doc-only
+  # runtime ingest intentionally cannot perform.
+  routing="{\"properties\":{\"data_stream\":{\"properties\":{\"type\":{\"type\":\"constant_keyword\",\"value\":\"logs\"},\"dataset\":{\"type\":\"constant_keyword\",\"value\":\"orangebrew.$dataset\"},\"namespace\":{\"type\":\"constant_keyword\",\"value\":\"$APP_ENV\"}}}}}"
   api PUT "_ilm/policy/orangebrew-$dataset" "{\"policy\":{\"phases\":{\"hot\":{\"actions\":{\"rollover\":{\"max_age\":\"7d\",\"max_primary_shard_size\":\"20gb\"}}},\"delete\":{\"min_age\":\"${days}d\",\"actions\":{\"delete\":{}}}}}}"
-  api PUT "_index_template/orangebrew-$dataset-$APP_ENV" "{\"index_patterns\":[\"logs-orangebrew.$dataset-$APP_ENV\"],\"priority\":501,\"data_stream\":{},\"composed_of\":[\"orangebrew-ecs-v1\"],\"template\":{\"settings\":{\"index.lifecycle.name\":\"orangebrew-$dataset\",\"number_of_shards\":1,\"number_of_replicas\":0}}}"
+  api PUT "_index_template/orangebrew-$dataset-$APP_ENV" "{\"index_patterns\":[\"logs-orangebrew.$dataset-$APP_ENV\"],\"priority\":501,\"data_stream\":{},\"composed_of\":[\"orangebrew-ecs-v1\"],\"template\":{\"settings\":{\"index.lifecycle.name\":\"orangebrew-$dataset\",\"number_of_shards\":1,\"number_of_replicas\":0},\"mappings\":$routing}}"
   # PUT data stream returns 400 if it already exists; inspect existence first.
   if ! curl --silent --fail --max-time 15 --cacert /certs/ca/ca.crt -u "elastic:$ELASTIC_PASSWORD" "https://elasticsearch:9200/_data_stream/logs-orangebrew.$dataset-$APP_ENV" >/dev/null; then
     # The create-data-stream API does not accept an HTTP request body.
     api PUT "_data_stream/logs-orangebrew.$dataset-$APP_ENV"
   fi
+  # Also initialise streams created by an earlier bootstrap before their first
+  # successful write. Explicitly conflicting constants fail instead of rerouting.
+  api PUT "logs-orangebrew.$dataset-$APP_ENV/_mapping" "$routing"
 done
 api PUT _security/role/orangebrew_ingest "{\"cluster\":[\"monitor\"],\"indices\":[{\"names\":[\"logs-orangebrew.*-$APP_ENV\"],\"privileges\":[\"create_doc\",\"view_index_metadata\"]}]}"
 api PUT _security/user/orangebrew_ingest "{\"password\":\"$LOGSTASH_PASSWORD\",\"roles\":[\"orangebrew_ingest\"]}"
