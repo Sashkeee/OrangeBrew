@@ -12,3 +12,9 @@ services:
     environment:
       LS_JAVA_OPTS: -Xms512m -Xmx512m
     mem_limit: 1536m
+  kibana:
+    environment:
+      APP_ENV: ${APP_ENV:-test}
+      OPERATOR_PASSWORD: ${OPERATOR_PASSWORD:?Generate .env.observability first}
+    volumes:
+      - ./infra/observability:/smoke:ro

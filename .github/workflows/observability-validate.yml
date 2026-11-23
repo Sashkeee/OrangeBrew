@@ -7,15 +7,14 @@ on:
       - 'infra/**'
       - 'docker-compose*.yml'
       - '.github/workflows/observability-validate.yml'
-      - 'backend/Dockerfile'
-      - 'backend/package*.json'
+      - 'backend/**'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   configuration:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +38,7 @@ jobs:
       - name: Validate Filebeat and Logstash inside pinned images
         run: node infra/observability/validate.mjs --runtime
       - name: Build backend image and load native bindings
+        id: backend_image
         run: |
           docker build -t orangebrew-backend-check ./backend
           docker run --rm --entrypoint node orangebrew-backend-check --input-type=module -e "import Database from 'better-sqlite3'; import {createKafkaClient,readKafkaConfig} from './infrastructure/kafka/client.js'; const db=new Database(':memory:'); db.close(); const client=await createKafkaClient(readKafkaConfig({KAFKA_BROKERS:'127.0.0.1:9092'})); client.producer({'enable.idempotence':true}); console.log('Native SQLite and Kafka bindings loaded');"
@@ -47,8 +47,13 @@ jobs:
           sudo sysctl -w vm.max_map_count=1048576
           node infra/observability/smoke.mjs --start --ci
       - name: Verify native process outbox and idempotent consumer
+        if: ${{ !cancelled() && steps.backend_image.outcome == 'success' }}
         run: |
           docker run --rm --network orangebrew-observability-test --entrypoint node -e CI=true -e APP_ENV=test -e NODE_ENV=test -e LOG_FORMAT=json -e JWT_SECRET=synthetic-ci-kafka-smoke-key -e CONNECTION_TYPE=mock -e KAFKA_PUBLISH_ENABLED=true -e EVENTS_CAPTURE_ENABLED=true -e KAFKA_BROKERS=kafka:9092 -e KAFKA_DELIVERY_TIMEOUT_MS=2000 orangebrew-backend-check scripts/kafka-smoke.js
+      - name: Verify Winston and real Docker log collection
+        run: node infra/observability/docker-smoke.mjs --ci
+      - name: Verify Kibana bootstrap and operator access
+        run: node infra/observability/kibana-smoke.mjs --ci
       - name: Show service status after failure
         if: failure()
         run: node infra/observability/diagnostics.mjs --ci
