@@ -228,6 +228,19 @@ describe('outbox delivery and idempotent projection', () => {
         expect(rows()[0].published_at).toBeNull();
     });
 
+    it('constructs the real idempotent producer and reaches the broker connection', async () => {
+        const publisher = createKafkaPublisher(readKafkaConfig({ APP_ENV: 'test', KAFKA_BROKERS: '127.0.0.1:1',
+            KAFKA_PUBLISH_ENABLED: 'true', KAFKA_DELIVERY_TIMEOUT_MS: '1000' }));
+        try {
+            let failure;
+            try { await publisher.publish({ topic: 'orangebrew.test.process.events.v1', key: 'synthetic', value: '{}', eventId: 'synthetic' }); }
+            catch (error) { failure = error; }
+            // Transport failure or connection timeout, never invalid configuration
+            // (e.g. zero message retries with enable.idempotence=true).
+            expect([-195, -185]).toContain(failure?.code);
+        } finally { await publisher.disconnect(); }
+    }, 10000);
+
     it('keeps Kafka client lazy when disabled and waits for delivery acknowledgement when enabled', async () => {
         const factory = vi.fn();
         const disabled = createKafkaPublisher(readKafkaConfig({ APP_ENV: 'test' }), { clientFactory: factory });

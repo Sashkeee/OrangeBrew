@@ -17,7 +17,10 @@ const deadline = setTimeout(() => process.exit(1), 45000);
 const config = readKafkaConfig();
 const correlationId = `ci-${randomUUID()}`;
 const publisher = createKafkaPublisher(config);
-const relay = createOutboxRelay({ config, publisher });
+const relay = createOutboxRelay({ config, publisher: { ...publisher, async publish(record) {
+    try { await publisher.publish(record); }
+    catch (error) { process.stderr.write(`Synthetic CI publication failed: ${error.message}\n`); throw error; }
+} } });
 let manager;
 let consumer;
 try {

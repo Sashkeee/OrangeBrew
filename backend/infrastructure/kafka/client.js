@@ -47,6 +47,10 @@ export function createKafkaPublisher(config = readKafkaConfig(), { clientFactory
             const kafka = await clientFactory(config);
             if (closed) throw new Error('Kafka publisher stopped');
             const attempt = kafka.producer({ 'enable.idempotence': true, 'acks': 'all',
+                // KafkaJS retry.retries also maps to native message retries.
+                // Keep connection retries disabled above, but permit idempotent
+                // delivery retries within message.timeout.ms.
+                'retries': 5,
                 'message.timeout.ms': config.deliveryTimeoutMs, 'allow.auto.create.topics': false });
             producer = attempt;
             await attempt.connect();
