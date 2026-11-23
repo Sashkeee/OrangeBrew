@@ -11,7 +11,7 @@ filebeat.autodiscover:
           config:
             - type: filestream
               id: orangebrew-${data.docker.container.id}
-              paths: [/var/lib/docker/containers/${data.docker.container.id}/*-json.log]
+              paths: ["/var/lib/docker/containers/${data.docker.container.id}/*-json.log"]
               parsers:
                 - container: {stream: all, format: docker}
                 - ndjson:

@@ -21,6 +21,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install and test backend on the production Node major
+        run: |
+          npm --prefix backend ci
+          npm --prefix backend test -- --reporter=dot
       - name: Validate topology and bootstrap artifacts
         run: node infra/observability/validate.mjs
       - name: Validate shell scripts
