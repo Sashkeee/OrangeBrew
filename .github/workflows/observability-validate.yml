@@ -53,6 +53,7 @@ jobs:
       - name: Verify Winston and real Docker log collection
         run: node infra/observability/docker-smoke.mjs --ci
       - name: Verify Kibana bootstrap and operator access
+        if: ${{ !cancelled() && steps.backend_image.outcome == 'success' }}
         run: node infra/observability/kibana-smoke.mjs --ci
       - name: Show service status after failure
         if: failure()

@@ -17,4 +17,6 @@ if (process.argv.includes('--ci')) compose(['stop', 'filebeat', 'logstash', 'kaf
 compose(['up', '-d', '--wait', '--wait-timeout', '240', 'kibana'], 300000);
 compose(['run', '--rm', '--no-deps', 'kibana-bootstrap'], 120000);
 if (process.argv.includes('--ci')) compose(['exec', '-T', 'kibana', '/usr/share/kibana/node/bin/node', '/smoke/check-kibana.cjs'], 30000);
-process.stdout.write('PASS: Kibana HTTPS, operator login, imported data view, dashboard and saved investigations.\n');
+process.stdout.write(process.argv.includes('--ci')
+  ? 'PASS: Kibana HTTPS, operator login, imported data view, dashboard and saved investigations.\n'
+  : 'PASS: Kibana HTTPS readiness and saved object import.\n');

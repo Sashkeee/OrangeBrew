@@ -57,6 +57,13 @@ try {
   const ids = new Set(saved.map(object => `${object.type}:${object.id}`));
   assert(saved.some(object => object.type === 'dashboard'));
   for (const object of saved) for (const ref of object.references || []) assert(ids.has(`${ref.type}:${ref.id}`), `Missing saved object reference ${ref.id}`);
+  for (const object of saved) {
+    const source = object.attributes.kibanaSavedObjectMeta;
+    if (!source) continue;
+    const query = JSON.parse(source.searchSourceJSON).query.query;
+    assert.equal(typeof query, 'string');
+    assert(!query.includes('\\"'), `Over-escaped KQL quotes in ${object.id}`);
+  }
   const pipeline = readFileSync(resolve(root, 'infra/logstash/pipeline/logs.conf'), 'utf8');
   assert(pipeline.includes('enable_auto_commit => false'));
   assert(!pipeline.match(/topics\s*=>[^\n]*quarantine/), 'Quarantine must not be recursively consumed');

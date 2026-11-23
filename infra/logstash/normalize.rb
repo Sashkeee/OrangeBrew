@@ -11,6 +11,30 @@ def nested(value, *path)
   path.reduce(value) { |current, key| current.is_a?(Hash) ? current[key] : nil }
 end
 
+def merge_fields!(destination, source)
+  source.each do |key, value|
+    if destination.key?(key)
+      raise ArgumentError, "Conflicting ECS keys" unless destination[key].is_a?(Hash) && value.is_a?(Hash)
+      merge_fields!(destination[key], value)
+    else
+      destination[key] = value
+    end
+  end
+end
+
+def expand_object(value, depth = 0)
+  result = {}
+  value.each do |key, item|
+    raise ArgumentError, "Invalid ECS key" unless key.is_a?(String) && key.length <= 256
+    parts = key.split(".", -1)
+    raise ArgumentError, "Invalid ECS path" if parts.any?(&:empty?) || depth + parts.length > 8
+    leaf = item.is_a?(Hash) ? expand_object(item, depth + parts.length) : item
+    branch = parts.reverse.reduce(leaf) { |child, part| {part => child} }
+    merge_fields!(result, branch)
+  end
+  result
+end
+
 def safe_string(value, limit = 8192)
   return nil if value.nil? || value.is_a?(Hash) || value.is_a?(Array)
   value.to_s[0, limit]
@@ -49,9 +73,13 @@ def filter(event)
   return quarantine(event, "unknown_source") unless source.is_a?(Hash) && source["environment"] == @environment && %w[backend proxy].include?(source["service"])
   return quarantine(event, "invalid_json") unless raw.is_a?(Hash) && !(event.get("tags") || []).include?("_jsonparsefailure") && event.get("[error][type]") != "json"
   return quarantine(event, "invalid_message") unless raw["message"].is_a?(String) && !raw["message"].empty?
-  # Dotted keys should already have been expanded by Filebeat. Reject leftovers
-  # instead of silently merging ambiguous dotted/object representations.
-  return quarantine(event, "unexpanded_or_conflicting_keys") if raw.keys.any? { |key| key.include?(".") }
+  # ECS Winston emits dotted keys. Filebeat's ndjson target may retain them;
+  # accept both representations without silently overwriting conflicting paths.
+  begin
+    raw = expand_object(raw)
+  rescue ArgumentError
+    return quarantine(event, "unexpanded_or_conflicting_keys")
+  end
 
   begin
     source_time = LogStash::Timestamp.parse_iso8601(raw.fetch("@timestamp"))
@@ -138,6 +166,22 @@ test "dotted key collisions are quarantined" do
     {"orangebrew_source" => {"environment" => "test", "service" => "backend"}, "orangebrew_raw" => {"@timestamp" => "2026-11-23T10:00:00Z", "message" => "x", "log.level" => "warn", "log" => {"level" => "info"}}}
   end
   expect("rejects conflicting representation") { |events| events[0].get("[@metadata][quarantine]") == true }
+end
+
+test "flat Winston ECS payload survives Docker ndjson target" do
+  parameters { {"environment" => "test"} }
+  in_event do
+    {"orangebrew_source" => {"environment" => "test", "service" => "backend", "container_id" => "docker-canary"},
+     "orangebrew_raw" => {"@timestamp" => "2026-11-23T10:00:00Z", "message" => "Winston canary", "log.level" => "info",
+       "log.logger" => "DockerSmoke", "ecs.version" => "8.10.0", "event.id" => "flat-canary", "event.dataset" => "orangebrew.backend",
+       "orangebrew.request.id" => "request-canary", "service.name" => "untrusted"}}
+  end
+  expect("expands ECS while preserving trusted routing") do |events|
+    event = events[0]
+    event.get("[@metadata][quarantine]") != true && event.get("[event][id]") == "flat-canary" &&
+      event.get("[orangebrew][request][id]") == "request-canary" && event.get("[log][logger]") == "DockerSmoke" &&
+      event.get("[service][name]") == "orangebrew-backend"
+  end
 end
 
 test "Winston heartbeat metadata and numeric metrics survive normalization" do
