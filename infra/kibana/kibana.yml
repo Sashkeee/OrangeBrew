@@ -12,3 +12,5 @@ xpack.security.encryptionKey: ${KIBANA_ENCRYPTION_KEY}
 xpack.encryptedSavedObjects.encryptionKey: ${KIBANA_ENCRYPTION_KEY}
 xpack.reporting.encryptionKey: ${KIBANA_ENCRYPTION_KEY}
 telemetry.enabled: false
+uiSettings.overrides:
+  "dateFormat:tz": Europe/Moscow
