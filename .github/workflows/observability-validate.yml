@@ -30,6 +30,8 @@ jobs:
           done
       - name: Check whitespace
         run: git diff --check
+      - name: Generate disposable test credentials
+        run: node infra/observability/generate-env.mjs test
       - name: Validate Filebeat and Logstash inside pinned images
         run: node infra/observability/validate.mjs --runtime
       - name: Build backend image and load native bindings
@@ -39,8 +41,10 @@ jobs:
       - name: Verify log ingestion through Kafka and Elasticsearch
         run: |
           sudo sysctl -w vm.max_map_count=1048576
-          node infra/observability/generate-env.mjs test
           node infra/observability/smoke.mjs --start --ci
       - name: Show service status after failure
         if: failure()
-        run: docker compose --env-file .env.observability -f docker-compose.observability.yml -f docker-compose.observability.ci.yml ps -a
+        run: |
+          if [ -f .env.observability ]; then
+            docker compose --env-file .env.observability -f docker-compose.observability.yml -f docker-compose.observability.ci.yml ps -a
+          fi
