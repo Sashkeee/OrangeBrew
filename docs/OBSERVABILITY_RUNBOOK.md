@@ -2,6 +2,8 @@
 
 Реализованный локальный/test конвейер: Winston ECS JSON → Docker json-file → Filebeat → Kafka → Logstash → Elasticsearch → Kibana. Stateful сервисы запускаются отдельно от приложения; штатный deploy backend/frontend их не пересоздаёт. Управление оборудованием не зависит от доступности этого конвейера.
 
+Подробный разбор проекта, полей логов, Kafka groups/offsets и практические примеры поиска/графиков: [руководство по архитектуре и логированию](PROJECT_AND_LOGGING_GUIDE.md).
+
 ## Версии и границы стенда
 
 Образы закреплены: Elastic Stack 9.5.7, Apache Kafka 4.4.0 JVM, BusyBox 1.37.0 для canary. Проверять совместимость при обновлении всего набора. Compose требует современный Docker Compose v2 с `service_completed_successfully` и `config --format json`.
